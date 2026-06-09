@@ -1,0 +1,28 @@
+name: Docs
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Build & deploy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      # Build the notebook from its jupytext source, then build+execute the site.
+      - run: uv sync --group docs
+      - run: uv run jupytext --to ipynb docs/walkthrough.md
+      - run: uv run mkdocs gh-deploy --force

@@ -31,7 +31,14 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
-dev = ["ruff", "mypy", "pytest", "benchkit[all]"]
+dev = ["ruff", "mypy", "pytest", "benchkit[all]", { include-group = "docs" }]
+docs = [
+    "jupytext",
+    "ipykernel",
+    "mkdocs",
+    "mkdocs-material",
+    "mkdocs-jupyter",
+]
 
 [tool.ruff]
 line-length = 100

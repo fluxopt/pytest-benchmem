@@ -1,0 +1,41 @@
+site_name: benchkit
+site_description: Generic time + peak-memory benchmarking around a Case.
+repo_url: https://github.com/fluxopt/benchkit
+docs_dir: docs
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      toggle: { icon: material/weather-night, name: Dark mode }
+    - scheme: slate
+      primary: indigo
+      toggle: { icon: material/weather-sunny, name: Light mode }
+  features:
+    - navigation.instant
+    - content.code.copy
+
+nav:
+  - Home: index.md
+  - Walkthrough: walkthrough.ipynb
+
+plugins:
+  - search
+  - mkdocs-jupyter:
+      execute: true
+      include: ["walkthrough.ipynb"]
+      include_source: true
+
+# walkthrough.md is the jupytext source. Run `jupytext --to ipynb
+# docs/walkthrough.md` before building (the docs workflow does this in CI);
+# mkdocs-jupyter then executes the generated .ipynb. Exclude the raw .md so it
+# isn't also served as its own page.
+exclude_docs: |
+  walkthrough.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - tables

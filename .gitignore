@@ -10,6 +10,11 @@ build/
 .pytest_cache/
 *.bin
 
+# jupytext-built notebooks (source is the .md) + mkdocs build
+docs/*.ipynb
+site/
+.cache/
+
 # editors
 .idea/
 .vscode/
