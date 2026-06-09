@@ -20,6 +20,9 @@ from collections.abc import Callable, Mapping
 from contextlib import AbstractContextManager
 from typing import NamedTuple
 
+#: A value of a dim axis — categorical (str) or numeric (int/float).
+DimValue = str | int | float
+
 #: A zero-arg callable doing the work that gets timed / memory-tracked.
 Action = Callable[[], object]
 
@@ -40,5 +43,5 @@ class Case(NamedTuple):
     """
 
     id: str
-    dims: Mapping[str, object]
+    dims: Mapping[str, DimValue]
     run: CaseFactory

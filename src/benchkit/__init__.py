@@ -9,26 +9,27 @@ submodules directly when needed.
 from __future__ import annotations
 
 from benchkit import bench
-from benchkit.case import Action, Case, CaseFactory
+from benchkit.case import Action, Case, CaseFactory, DimValue
 from benchkit.memray import measure, measure_peak
 from benchkit.snapshot import (
-    Metric,
+    Sample,
+    from_pytest_benchmark,
     load_long_df,
     load_snapshot,
-    write_memory_snapshot,
-    write_timing_snapshot,
+    write_snapshot,
 )
 
 __all__ = [
     "Action",
     "Case",
     "CaseFactory",
-    "Metric",
+    "DimValue",
+    "Sample",
     "bench",
+    "from_pytest_benchmark",
     "load_long_df",
     "load_snapshot",
     "measure",
     "measure_peak",
-    "write_memory_snapshot",
-    "write_timing_snapshot",
+    "write_snapshot",
 ]

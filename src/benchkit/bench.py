@@ -6,7 +6,7 @@ DataFrame or drop it into a snapshot the ``plot`` / ``compare`` machinery reads:
     from benchkit import bench
 
     r = bench.time(build_model, 100)
-    r.to_snapshot("a.json", spec="basic", size=100, phase="build")
+    r.to_snapshot("a.json", dims={"op": "build", "subject": "basic", "n": 100})
     bench.compare({"v1": f1, "v2": f2}).to_snapshot("cmp.json")
 
 Timing uses :class:`timeit.Timer` (``autorange`` picks the inner iteration count
@@ -16,36 +16,21 @@ pytest-benchmark's timer, so compare ``bench`` to ``bench``, suite to suite.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from statistics import mean, median, stdev
 from timeit import Timer
 from typing import TYPE_CHECKING, Any, Literal
 
-from benchkit.snapshot import (
-    parse_test_id,
-    synth_test_id,
-    write_memory_snapshot,
-    write_timing_snapshot,
-)
+from benchkit.case import DimValue
+from benchkit.snapshot import Sample, write_snapshot
 
 if TYPE_CHECKING:
     import pandas as pd
 
-__all__ = [
-    "MemoryResult",
-    "ResultSet",
-    "TimingResult",
-    "compare",
-    "memory",
-    "time",
-]
+__all__ = ["MemoryResult", "ResultSet", "TimingResult", "compare", "memory", "time"]
 
-# Floor / cap on the auto-tuned round count when ``rounds`` is unset.
-# The floor guarantees a meaningful min-of-N even for slow callables that
-# blow past ``min_time`` in one shot; the cap stops a microsecond callable
-# from spinning forever.
 _ROUND_FLOOR = 5
 _ROUND_CAP = 10_000
 
@@ -55,33 +40,21 @@ def _fn_name(fn: Callable[..., object]) -> str:
     return getattr(fn, "__name__", None) or repr(fn)
 
 
-def _row(test_id: str, value: float) -> dict[str, object]:
-    """One ``load_long_df``-shaped row for an in-process result."""
-    phase, spec, size, axis = parse_test_id(test_id)
-    return {
-        "snapshot": test_id,
-        "test_id": test_id,
-        "phase": phase,
-        "spec": spec,
-        "size": size,
-        "axis": axis,
-        "value": value,
-    }
-
-
-def _frame(rows: list[dict[str, object]]) -> pd.DataFrame:
-    """Build a DataFrame with the exact column set/dtype of ``load_long_df``."""
+def _frame(samples: list[Sample]) -> pd.DataFrame:
+    """A ``load_long_df``-shaped frame from in-process samples."""
     import pandas as pd
 
-    df = pd.DataFrame(
-        rows,
-        columns=["snapshot", "test_id", "phase", "spec", "size", "axis", "value"],
+    return pd.DataFrame(
+        [{"snapshot": s.id, "id": s.id, "value": s.value, **s.dims} for s in samples]
     )
-    df["size"] = df["size"].astype("Int64")
-    return df
 
 
-# --- Result types ----------------------------------------------------------
+def _html_table(kind: str, header: str, rows: Sequence[tuple[str, object]]) -> str:
+    body = "".join(
+        f"<tr><th style='text-align:left;padding-right:1em'>{k}</th><td>{v}</td></tr>"
+        for k, v in rows
+    )
+    return f"<b>{kind}</b> <code>{header}</code><table style='font-size:90%'>{body}</table>"
 
 
 @dataclass(frozen=True)
@@ -92,21 +65,15 @@ class TimingResult:
     stats: dict[str, float]
     unit: Literal["s"] = "s"
 
-    def to_snapshot(
-        self,
-        path: str | Path,
-        *,
-        spec: str | None = None,
-        size: int | None = None,
-        phase: str | None = None,
-    ) -> Path:
-        """Write a pytest-benchmark-shaped timing snapshot (seconds)."""
-        test_id = synth_test_id(self.label, spec=spec, size=size, phase=phase)
-        return write_timing_snapshot(path, [(test_id, dict(self.stats))])
+    def to_snapshot(self, path: str | Path, *, dims: Mapping[str, DimValue] | None = None) -> Path:
+        """Write a one-sample timing snapshot (seconds), with optional ``dims``."""
+        return write_snapshot(
+            path, self.label, [Sample(self.label, self.stats["min"], dims or {})], "s"
+        )
 
     def to_df(self) -> pd.DataFrame:
         """``load_long_df``-shaped frame (one row, ``value`` = min seconds)."""
-        return _frame([_row(self.label, self.stats["min"])])
+        return _frame([Sample(self.label, self.stats["min"], {})])
 
     def __repr__(self) -> str:
         return (
@@ -122,7 +89,6 @@ class TimingResult:
             ("max", f"{self.stats['max']:.4g} s"),
             ("stddev", f"{self.stats['stddev']:.4g} s"),
             ("rounds", int(self.stats["rounds"])),
-            ("iterations", int(self.stats.get("iterations", 1))),
         ]
         return _html_table("TimingResult", self.label, rows)
 
@@ -135,21 +101,15 @@ class MemoryResult:
     peak_mib: float
     unit: Literal["MiB"] = "MiB"
 
-    def to_snapshot(
-        self,
-        path: str | Path,
-        *,
-        spec: str | None = None,
-        size: int | None = None,
-        phase: str | None = None,
-    ) -> Path:
-        """Write a memory.py-shaped snapshot (peak MiB)."""
-        test_id = synth_test_id(self.label, spec=spec, size=size, phase=phase)
-        return write_memory_snapshot(path, self.label, {test_id: self.peak_mib})
+    def to_snapshot(self, path: str | Path, *, dims: Mapping[str, DimValue] | None = None) -> Path:
+        """Write a one-sample memory snapshot (peak MiB), with optional ``dims``."""
+        return write_snapshot(
+            path, self.label, [Sample(self.label, self.peak_mib, dims or {})], "MiB"
+        )
 
     def to_df(self) -> pd.DataFrame:
         """``load_long_df``-shaped frame (one row, ``value`` = peak MiB)."""
-        return _frame([_row(self.label, self.peak_mib)])
+        return _frame([Sample(self.label, self.peak_mib, {})])
 
     def __repr__(self) -> str:
         return f"MemoryResult({self.label!r}, peak={self.peak_mib:.1f} MiB)"
@@ -160,36 +120,31 @@ class MemoryResult:
 
 @dataclass(frozen=True)
 class ResultSet:
-    """Several results of one kind (all timing, or all memory).
-
-    ``to_snapshot`` writes every result into a single file keyed by its
-    label — the natural "compare these N variants" case. For
-    size-parametrized ``scaling`` plots, write each result individually
-    with ``spec``/``size``/``phase`` instead.
-    """
+    """Several results of one kind (all timing, or all memory)."""
 
     results: list[TimingResult | MemoryResult] = field(default_factory=list)
     unit: Literal["s", "MiB"] = "s"
 
+    def _samples(self) -> list[Sample]:
+        return [
+            Sample(
+                r.label,
+                r.stats["min"] if isinstance(r, TimingResult) else r.peak_mib,
+                {},
+            )
+            for r in self.results
+        ]
+
     def to_snapshot(self, path: str | Path) -> Path:
         """Write all results into one snapshot, each keyed by its label."""
-        if self.unit == "s":
-            return write_timing_snapshot(
-                path,
-                [(r.label, dict(r.stats)) for r in self.results if isinstance(r, TimingResult)],
-            )
-        peaks = {r.label: r.peak_mib for r in self.results if isinstance(r, MemoryResult)}
-        return write_memory_snapshot(path, "compare", peaks)
+        return write_snapshot(path, "compare", self._samples(), self.unit)
 
     def to_df(self) -> pd.DataFrame:
-        """Concatenate the per-result frames (shares ``load_long_df`` columns)."""
-        import pandas as pd
-
-        return pd.concat([r.to_df() for r in self.results], ignore_index=True)
+        """A ``load_long_df``-shaped frame, one row per result."""
+        return _frame(self._samples())
 
     def __repr__(self) -> str:
-        labels = ", ".join(r.label for r in self.results)
-        return f"ResultSet(unit={self.unit!r}, [{labels}])"
+        return f"ResultSet(unit={self.unit!r}, [{', '.join(r.label for r in self.results)}])"
 
     def _repr_html_(self) -> str:
         rows = [
@@ -204,18 +159,6 @@ class ResultSet:
         return _html_table("ResultSet", self.unit, rows)
 
 
-def _html_table(kind: str, header: str, rows: Sequence[tuple[str, object]]) -> str:
-    """Compact two-column Jupyter table, mirroring ``ModelSpec._repr_html_``."""
-    body = "".join(
-        f"<tr><th style='text-align:left;padding-right:1em'>{k}</th><td>{v}</td></tr>"
-        for k, v in rows
-    )
-    return f"<b>{kind}</b> <code>{header}</code><table style='font-size:90%'>{body}</table>"
-
-
-# --- Entry points ----------------------------------------------------------
-
-
 def time(
     fn: Callable[..., object],
     /,
@@ -228,44 +171,26 @@ def time(
 ) -> TimingResult:
     """Time ``fn(*args, **kwargs)`` and return a :class:`TimingResult`.
 
-    Built on :class:`timeit.Timer`: an ``autorange`` calibration first
-    picks the inner iteration count so timer resolution doesn't dominate
-    for fast callables (the bespoke "one call per round" loop this
-    replaced was unstable in exactly that regime). Each round then runs
-    that many calibrated iterations; the per-iteration time is the
-    sample. ``warmup`` rounds are discarded to prime caches.
-
-    With ``rounds`` set, run exactly that many rounds; otherwise
-    auto-tune — keep going until cumulative timed wall-clock reaches
-    ``min_time`` (floor of 5 rounds, hard cap). The headline number is
-    ``stats["min"]``; ``stats["iterations"]`` records the calibrated
-    inner count.
-
-    This is *not* pytest-benchmark's calibrated timer — ``bench`` numbers
-    are only comparable to other ``bench`` numbers, not to suite
-    snapshots.
+    Built on :class:`timeit.Timer`: ``autorange`` first calibrates the inner
+    iteration count so timer resolution doesn't dominate for fast callables;
+    ``warmup`` rounds prime caches. With ``rounds`` set, run exactly that many;
+    otherwise auto-tune until cumulative time reaches ``min_time`` (floor of 5).
+    The headline is ``stats["min"]``. Not pytest-benchmark's timer.
     """
     timer = Timer(lambda: fn(*args, **kwargs))
-
-    # Calibrate inner iterations so a single round is long enough that
-    # ``perf_counter`` granularity is negligible (timeit targets ~0.2 s).
     number, _ = timer.autorange()
-
     for _ in range(max(0, warmup)):
         timer.timeit(number)
 
-    samples: list[float] = []  # per-iteration seconds
     if rounds is not None:
         samples = [t / number for t in timer.repeat(repeat=max(1, rounds), number=number)]
     else:
-        total = 0.0
+        samples, total = [], 0.0
         while True:
             t = timer.timeit(number)
             samples.append(t / number)
             total += t
-            if len(samples) >= _ROUND_FLOOR and total >= min_time:
-                break
-            if len(samples) >= _ROUND_CAP:
+            if (len(samples) >= _ROUND_FLOOR and total >= min_time) or len(samples) >= _ROUND_CAP:
                 break
 
     stats = {
@@ -288,11 +213,7 @@ def memory(
     label: str | None = None,
     **kwargs: object,
 ) -> MemoryResult:
-    """Peak-RSS profile ``fn(*args, **kwargs)`` and return a :class:`MemoryResult`.
-
-    Thin wrapper over :func:`benchkit.memray.measure_peak`; ``repeats > 1``
-    keeps the minimum peak. Raises on Windows (no ``memray``).
-    """
+    """Peak-RSS profile ``fn(*args, **kwargs)`` → :class:`MemoryResult` (memray)."""
     from benchkit.memray import measure_peak
 
     peak = measure_peak(lambda: fn(*args, **kwargs), repeats=repeats)
@@ -307,9 +228,8 @@ def compare(
 ) -> ResultSet:
     """Run each zero-arg callable in ``cases`` and collect a :class:`ResultSet`.
 
-    ``kind`` selects timing (default) or memory; ``opts`` are forwarded to
-    :func:`time` / :func:`memory` (e.g. ``rounds=``, ``repeats=``). The
-    dict key becomes each case's label.
+    ``kind`` selects timing (default) or memory; ``opts`` forward to :func:`time`
+    / :func:`memory`. The dict key becomes each case's label.
     """
     if kind == "time":
         results: list[TimingResult | MemoryResult] = [

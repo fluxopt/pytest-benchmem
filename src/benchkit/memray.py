@@ -19,6 +19,7 @@ from collections.abc import Callable, Iterable
 from pathlib import Path
 
 from benchkit.case import Action, Case
+from benchkit.snapshot import Sample
 
 
 def _require_memray() -> None:
@@ -69,25 +70,29 @@ def measure(
     repeats: int = 1,
     select: Callable[[Case], bool] | None = None,
     on_result: Callable[[str, float], None] | None = None,
-) -> dict[str, float]:
-    """Measure peak memory for each case and return ``{id: peak_mib}``.
+    on_error: Callable[[str, Exception], None] | None = None,
+) -> list[Sample]:
+    """Measure peak memory for each case and return a list of :class:`Sample`.
 
-    ``select`` filters cases (e.g. your size tier); ``on_result(id, peak)`` is
-    called as each completes (e.g. to print progress). A case that raises is
-    skipped, not fatal.
+    Each sample carries the case's ``id``, the peak (MiB), and the case's
+    ``dims``. ``select`` filters cases (e.g. your size tier); ``on_result(id,
+    peak)`` fires per success; ``on_error(id, exc)`` fires for a case whose
+    action raised (it's skipped, not fatal — surface it via this hook).
     """
     _require_memray()
-    results: dict[str, float] = {}
+    samples: list[Sample] = []
     for case in cases:
         if select is not None and not select(case):
             continue
         try:
             with case.run() as action:
                 peak = measure_peak(action, repeats=repeats)
-        except Exception:  # noqa: BLE001 — one bad case shouldn't sink the run
+        except Exception as exc:  # noqa: BLE001 — one bad case shouldn't sink the run
+            if on_error is not None:
+                on_error(case.id, exc)
             continue
-        results[case.id] = peak
+        samples.append(Sample(id=case.id, value=peak, dims=case.dims))
         if on_result is not None:
             on_result(case.id, peak)
         gc.collect()
-    return results
+    return samples

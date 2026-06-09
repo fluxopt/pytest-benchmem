@@ -25,12 +25,30 @@ def _cases():
     ]
 
 
-def test_measure_returns_peak_per_case():
-    peaks = measure(_cases())
-    assert set(peaks) == {"double[n=1000]", "double[n=10000]"}
-    assert all(v >= 0 for v in peaks.values())
+def test_measure_returns_samples_with_dims():
+    samples = measure(_cases())
+    assert {s.id for s in samples} == {"double[n=1000]", "double[n=10000]"}
+    assert all(s.value >= 0 for s in samples)
+    assert samples[0].dims["op"] == "double"
 
 
 def test_select_filters_cases():
-    peaks = measure(_cases(), select=lambda c: c.dims["n"] == 1000)
-    assert set(peaks) == {"double[n=1000]"}
+    samples = measure(_cases(), select=lambda c: c.dims["n"] == 1000)
+    assert {s.id for s in samples} == {"double[n=1000]"}
+
+
+def test_on_error_surfaces_failures():
+    from contextlib import contextmanager
+
+    from benchkit import Case
+
+    @contextmanager
+    def boom():
+        yield lambda: (_ for _ in ()).throw(RuntimeError("nope"))
+
+    errs = []
+    samples = measure(
+        [Case(id="bad", dims={}, run=boom)], on_error=lambda i, e: errs.append((i, str(e)))
+    )
+    assert samples == []
+    assert errs == [("bad", "nope")]
