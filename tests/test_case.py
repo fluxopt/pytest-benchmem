@@ -32,8 +32,22 @@ def test_measure_returns_samples_with_dims():
     assert samples[0].dims["op"] == "double"
 
 
-def test_select_filters_cases():
-    samples = measure(_cases(), select=lambda c: c.dims["n"] == 1000)
+def test_filter_before_convert():
+    # Selection is the consumer's job, done before building Cases: keep your own
+    # rich source, filter it, map only survivors to Case. measure() runs all it's handed.
+    rich = [{"n": n, "skip": n != 1000} for n in (1000, 10_000)]
+
+    @contextmanager
+    def case(n):
+        data = list(range(n))
+        yield lambda: [x * 2 for x in data]
+
+    cases = [
+        Case(id=f"double[n={c['n']}]", dims={"n": c["n"]}, run=lambda n=c["n"]: case(n))
+        for c in rich
+        if not c["skip"]
+    ]
+    samples = measure(cases)
     assert {s.id for s in samples} == {"double[n=1000]"}
 
 

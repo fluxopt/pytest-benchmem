@@ -22,6 +22,7 @@ import numpy as np
 from peakbench.snapshot import load_long_df
 
 if TYPE_CHECKING:
+    import numpy.typing as npt
     import pandas as pd
     from plotly.graph_objects import Figure
 
@@ -40,7 +41,9 @@ def _diverging_kwargs(midpoint: float = 0.0) -> dict[str, object]:
     }
 
 
-def _symmetric_clip(magnitudes: np.ndarray, override: float | None, pct: float = 95.0) -> float:
+def _symmetric_clip(
+    magnitudes: npt.NDArray[np.float64], override: float | None, pct: float = 95.0
+) -> float:
     """Symmetric colour bound: ``override`` if given, else the ``pct`` percentile
     of ``|magnitudes|`` so outliers don't wash the rest to the midpoint.
     """

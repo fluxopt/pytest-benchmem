@@ -68,22 +68,34 @@ def measure(
     cases: Iterable[Case],
     *,
     repeats: int = 1,
-    select: Callable[[Case], bool] | None = None,
     on_result: Callable[[str, float], None] | None = None,
     on_error: Callable[[str, Exception], None] | None = None,
 ) -> list[Sample]:
     """Measure peak memory for each case and return a list of :class:`Sample`.
 
     Each sample carries the case's ``id``, the peak (MiB), and the case's
-    ``dims``. ``select`` filters cases (e.g. your size tier); ``on_result(id,
-    peak)`` fires per success; ``on_error(id, exc)`` fires for a case whose
-    action raised (it's skipped, not fatal — surface it via this hook).
+    ``dims``. ``on_result(id, peak)`` fires per success; ``on_error(id, exc)``
+    fires for a case whose action raised (it's skipped, not fatal — surface it
+    via this hook).
+
+    ``measure`` runs every case it's handed — selection is the consumer's job,
+    done *before* building cases. Keep your own rich case type (carrying whatever
+    you select on — a spec object, solver availability, a size tier), filter it,
+    and map only the survivors to :class:`Case`::
+
+        cases = [
+            Case(id=mk_id(c), dims=mk_dims(c), run=c.run)
+            for c in my_cases
+            if not c.skip and dep_available(c) and c.size in tier
+        ]
+        measure(cases)
+
+    This keeps consumer state on your side of the seam and ``Case`` minimal —
+    rather than a ``select=``/``meta=`` channel pushing it through the library.
     """
     _require_memray()
     samples: list[Sample] = []
     for case in cases:
-        if select is not None and not select(case):
-            continue
         try:
             with case.run() as action:
                 peak = measure_peak(action, repeats=repeats)
