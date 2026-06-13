@@ -1,5 +1,5 @@
 [project]
-name = "peakbench"
+name = "pytest-benchmem"
 dynamic = ["version"]
 description = "The memory companion to pytest-benchmark: a memray peak-memory pass on the same test, plus dims-aware plots and cross-version sweeps."
 readme = "README.md"
@@ -23,16 +23,16 @@ dependencies = [
 plot = ["pandas", "plotly>=5", "typer>=0.12"]
 
 [project.scripts]
-peakbench = "peakbench.cli:app"
+benchmem = "pytest_benchmem.cli:app"
 
 [project.entry-points.pytest11]
-peakbench = "peakbench.pytest_plugin"
+benchmem = "pytest_benchmem.pytest_plugin"
 
 [project.urls]
-Homepage = "https://github.com/fluxopt/peakbench"
-Documentation = "https://fluxopt.github.io/peakbench/"
-Repository = "https://github.com/fluxopt/peakbench"
-Issues = "https://github.com/fluxopt/peakbench/issues"
+Homepage = "https://github.com/fluxopt/pytest-benchmem"
+Documentation = "https://fluxopt.github.io/pytest-benchmem/"
+Repository = "https://github.com/fluxopt/pytest-benchmem"
+Issues = "https://github.com/fluxopt/pytest-benchmem/issues"
 
 [build-system]
 requires = ["hatchling", "hatch-vcs"]
@@ -42,7 +42,7 @@ build-backend = "hatchling.build"
 source = "vcs"
 
 [dependency-groups]
-dev = ["ruff", "mypy", "peakbench[plot]", { include-group = "docs" }]
+dev = ["ruff", "mypy", "pytest-benchmem[plot]", { include-group = "docs" }]
 docs = [
     "jupytext",
     "ipykernel",
@@ -68,7 +68,7 @@ strict = true
 warn_unused_ignores = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/peakbench"]
+packages = ["src/pytest_benchmem"]
 
 [[tool.mypy.overrides]]
 module = ["pandas", "pandas.*", "plotly", "plotly.*", "memray", "memray.*"]

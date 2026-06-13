@@ -1,6 +1,6 @@
 """The reading spine — normalize pytest-benchmark JSON into a tidy frame for plots.
 
-peakbench defines no on-disk format of its own. The source of truth is the JSON
+pytest-benchmem defines no on-disk format of its own. The source of truth is the JSON
 pytest-benchmark writes under ``.benchmarks/<machine>/NNNN_*.json``; a single
 file carries *both* metrics for each benchmark id:
 

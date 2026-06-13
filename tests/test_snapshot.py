@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from peakbench.snapshot import (
+from pytest_benchmem.snapshot import (
     from_pytest_benchmark,
     load_long_df,
     load_samples,

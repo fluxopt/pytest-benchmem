@@ -1,10 +1,10 @@
-"""Peak-memory measurement via ``memray`` — the core peakbench engine.
+"""Peak-memory measurement via ``memray`` — the core pytest-benchmem engine.
 
 :func:`measure_peak` runs one action under a ``memray.Tracker`` and returns the
 peak in MiB. It's what the ``benchmark_memory`` pytest fixture calls for its
 memory pass, and it doubles as a standalone one-liner for a REPL or notebook::
 
-    from peakbench import measure_peak
+    from pytest_benchmem import measure_peak
 
     peak = measure_peak(lambda: build_model(1000))   # MiB
 
@@ -48,7 +48,7 @@ def measure_peak(action: Action, repeats: int = 1) -> float:
 
     peaks: list[float] = []
     for _ in range(max(1, repeats)):
-        with tempfile.TemporaryDirectory(prefix="peakbench-") as tmp:
+        with tempfile.TemporaryDirectory(prefix="pytest-benchmem-") as tmp:
             out = Path(tmp) / "track.bin"  # memray must create the file itself
             with memray.Tracker(out):
                 action()

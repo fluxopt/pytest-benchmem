@@ -11,21 +11,21 @@ kernelspec:
   name: python3
 ---
 
-# peakbench — walkthrough
+# pytest-benchmem — walkthrough
 
 > ⚠️ **This `.md` is the source.** It renders as docs on GitHub *and*
 > converts to a runnable notebook: `jupytext --to ipynb docs/walkthrough.md`,
 > then open `walkthrough.ipynb` in JupyterLab / PyCharm / VSCode. The
 > `.ipynb` is gitignored — edit the `.md`, re-convert.
 
-peakbench is the **memory companion to pytest-benchmark**: you write ordinary
+pytest-benchmem is the **memory companion to pytest-benchmark**: you write ordinary
 pytest-benchmark tests, swap the `benchmark` fixture for `benchmark_memory`, and
 get a memray **peak-memory** number recorded right next to the timing — same
 test, same run, same JSON file. This notebook runs that end to end: write a
 benchmark suite, execute it, then read, compare, and plot both metrics.
 
 The fixture and memray ship with the core install; the plots and CLI need
-`peakbench[plot]`. Memory measurement is Linux/macOS only (timing works
+`pytest-benchmem[plot]`. Memory measurement is Linux/macOS only (timing works
 everywhere).
 
 ## Setup
@@ -43,10 +43,10 @@ from pathlib import Path
 import plotly.io as pio
 
 os.environ["FORCE_COLOR"] = "1"
-# Make the `!pytest` / `!peakbench` cells resolve to this kernel's environment.
+# Make the `!pytest` / `!pytest-benchmem` cells resolve to this kernel's environment.
 os.environ["PATH"] = f"{Path(sys.executable).parent}{os.pathsep}{os.environ['PATH']}"
 pio.renderers.default = "notebook_connected"  # load plotly.js from CDN — light pages
-_tmp = Path(tempfile.mkdtemp(prefix="peakbench-"))
+_tmp = Path(tempfile.mkdtemp(prefix="pytest-benchmem-"))
 print(f"tempdir: {_tmp}")
 ```
 
@@ -87,13 +87,13 @@ baseline = _tmp / "baseline.json"
 
 ## Read both metrics back
 
-peakbench reads that one file *per metric*: `from_pytest_benchmark` pulls timing
+pytest-benchmem reads that one file *per metric*: `from_pytest_benchmark` pulls timing
 (seconds, from `stats`), `memory_from_pytest_benchmark` pulls peak memory (MiB,
 from `extra_info`). Dims default to the parametrize `params`, so each sample
 knows its `n` without anyone parsing the id.
 
 ```{code-cell} ipython3
-from peakbench import from_pytest_benchmark, memory_from_pytest_benchmark
+from pytest_benchmem import from_pytest_benchmark, memory_from_pytest_benchmark
 
 _, time_samples, tunit = from_pytest_benchmark(baseline)
 _, mem_samples, munit = memory_from_pytest_benchmark(baseline)
@@ -110,7 +110,7 @@ for s in mem_samples:
 one row per `(run, id)` for the chosen metric, one column per dim:
 
 ```{code-cell} ipython3
-from peakbench import load_long_df
+from pytest_benchmem import load_long_df
 
 df, unit = load_long_df([baseline], metric="memory")
 print(f"unit: {unit}")
@@ -124,7 +124,7 @@ it a zero-arg callable, get the peak MiB. (`repeats > 1` takes the min, since
 peak memory is noisy.)
 
 ```{code-cell} ipython3
-from peakbench import measure_peak
+from pytest_benchmem import measure_peak
 
 measure_peak(lambda: [0] * 5_000_000)
 ```
@@ -140,31 +140,31 @@ candidate = _tmp / "candidate.json"
 !pytest {suite} --benchmark-only --benchmark-json={candidate} -q -p no:cacheprovider
 ```
 
-## CLI — `peakbench compare`
+## CLI — `benchmem compare`
 
 A per-id delta table with percent change, for whichever `--metric` you ask for.
 Ids in only one run show `—`.
 
 ```{code-cell} ipython3
-!peakbench compare {baseline} {candidate} --metric memory
+!benchmem compare {baseline} {candidate} --metric memory
 ```
 
 ```{code-cell} ipython3
-!peakbench compare {baseline} {candidate} --metric time
+!benchmem compare {baseline} {candidate} --metric time
 ```
 
 > For *timing* comparisons you can also use pytest-benchmark's own tooling
-> directly — `pytest-benchmark compare`, `--benchmark-histogram`. peakbench
+> directly — `pytest-benchmark compare`, `--benchmark-histogram`. pytest-benchmem
 > doesn't reimplement those; it adds the memory-aware, dims-aware views.
 
-## CLI — `peakbench plot`
+## CLI — `benchmem plot`
 
-`peakbench plot` writes an interactive plotly view to standalone HTML, picking a
+`benchmem plot` writes an interactive plotly view to standalone HTML, picking a
 view by run count (1 → `scaling`, 2 → `scatter`, 3+ → `sweep`) and the metric you
 pass:
 
 ```{code-cell} ipython3
-!peakbench plot --metric memory {baseline} {candidate} -o {_tmp / "scatter.html"}
+!benchmem plot --metric memory {baseline} {candidate} -o {_tmp / "scatter.html"}
 ```
 
 Every view is a `plot_*` function over the same `load_long_df` seam — call them
@@ -175,7 +175,7 @@ directly to render the *same figures* inline, no HTML round-trip. Each takes a
 absolute Δ. Top-right is the "big and got bigger" zone. Here on memory:
 
 ```{code-cell} ipython3
-from peakbench import plotting
+from pytest_benchmem import plotting
 
 plotting.plot_scatter([baseline, candidate], metric="memory")[0]
 ```
@@ -195,7 +195,7 @@ curve:
 plotting.plot_scaling([baseline], metric="memory")[0]
 ```
 
-## Cross-version sweeps — `peakbench.sweep`
+## Cross-version sweeps — `pytest_benchmem.sweep`
 
 To benchmark *across installed versions* of a package — something
 pytest-benchmark has no answer for — `sweep` provisions one fresh `uv` venv per
@@ -205,7 +205,7 @@ Everything package-specific is injected, so it isn't tied to any one library:
 
 ```python
 import subprocess
-from peakbench.sweep import sweep
+from pytest_benchmem.sweep import sweep
 
 failed = sweep(
     ["1.2.0", "1.3.0", "git+https://github.com/me/pkg@main"],
@@ -220,6 +220,6 @@ failed = sweep(
 )
 ```
 
-Point `peakbench plot` at the per-version JSONs — with 3+ it defaults to the
+Point `benchmem plot` at the per-version JSONs — with 3+ it defaults to the
 `sweep` view, a log₂ fold-change heatmap — and pick `--metric time` or
 `--metric memory` for either picture across versions.
