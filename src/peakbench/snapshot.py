@@ -1,29 +1,36 @@
-"""The snapshot spine — the :class:`Sample` record, the on-disk JSON shape, and the
-tidy long-DataFrame loader.
+"""The reading spine — normalize pytest-benchmark JSON into a tidy frame for plots.
 
-A snapshot is a list of :class:`Sample` — each an opaque ``id``, a ``value``, and
-structured ``dims`` for analysis. Nothing parses the id: structure lives in
-``dims``, which flows from :class:`~peakbench.case.Case` through ``measure`` to the
-snapshot and out to the plots.
+peakbench defines no on-disk format of its own. The source of truth is the JSON
+pytest-benchmark writes under ``.benchmarks/<machine>/NNNN_*.json``; a single
+file carries *both* metrics for each benchmark id:
 
-On-disk shape::
+- ``stats`` — timing (min/mean/median/…), in seconds.
+- ``extra_info.peak_mib`` — peak memory in MiB, written by the
+  ``benchmark_memory`` fixture.
 
-    {"label": "v1", "unit": "MiB",
-     "samples": [{"id": "...", "value": 18.8, "dims": {"op": "build", "n": 10}}]}
-
-``peakbench.measure`` and ``peakbench.bench`` write this natively. pytest-benchmark
-JSON (no dims) is lifted in via :func:`from_pytest_benchmark`, which the consumer
-feeds the dims for each id.
+So reads are *per metric*: :func:`from_pytest_benchmark` pulls timing,
+:func:`memory_from_pytest_benchmark` pulls memory, each yielding a list of
+:class:`Sample` — an opaque ``id``, a ``value``, and analysis ``dims``. Dims come
+from the benchmark's ``params`` (``@pytest.mark.parametrize``) plus any scalar
+``extra_info`` you set in the test. :func:`load_long_df` stacks several files
+(e.g. one per version from a sweep) into the single frame every plot pivots.
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
-from peakbench.case import DimValue
+#: A value of a dim axis — categorical (str) or numeric (int/float).
+DimValue = str | int | float
+
+#: Which metric to read out of a pytest-benchmark file.
+Metric = Literal["time", "memory"]
+
+#: Default key under which ``benchmark_memory`` stores the peak (MiB).
+PEAK_KEY = "peak_mib"
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -37,53 +44,8 @@ class Sample(NamedTuple):
     dims: Mapping[str, DimValue]
 
 
-def write_snapshot(path: str | Path, label: str, samples: list[Sample], unit: str) -> Path:
-    """Write ``samples`` to ``path`` as a peakbench snapshot."""
-    data = {
-        "label": label,
-        "unit": unit,
-        "samples": [{"id": s.id, "value": s.value, "dims": dict(s.dims)} for s in samples],
-    }
-    out = Path(path)
-    out.write_text(json.dumps(data, indent=2))
-    return out
-
-
-def load_snapshot(path: str | Path) -> tuple[str, list[Sample], str]:
-    """Return ``(label, samples, unit)`` for a peakbench snapshot.
-
-    Raises a clear, file-named :class:`ValueError` on a malformed file or one
-    that isn't the peakbench ``samples`` shape (e.g. a raw pytest-benchmark file —
-    convert those with :func:`from_pytest_benchmark`).
-    """
-    try:
-        data = json.loads(Path(path).read_text())
-    except (OSError, json.JSONDecodeError) as exc:
-        raise ValueError(f"{path}: not a readable JSON snapshot ({exc})") from exc
-    if "samples" not in data or "unit" not in data:
-        raise ValueError(
-            f"{path}: not a peakbench snapshot (expected 'samples' + 'unit' keys). "
-            "Convert pytest-benchmark JSON with from_pytest_benchmark()."
-        )
-    label = data.get("label", Path(path).stem)
-    samples = [
-        Sample(id=s["id"], value=s["value"], dims=s.get("dims", {})) for s in data["samples"]
-    ]
-    return label, samples, data["unit"]
-
-
-def from_pytest_benchmark(
-    path: str | Path,
-    *,
-    dims_for: Callable[[str], Mapping[str, DimValue]] = lambda _id: {},
-    metric: str = "min",
-) -> tuple[str, list[Sample], str]:
-    """Lift a pytest-benchmark JSON file into ``(label, samples, "s")``.
-
-    ``dims_for(id)`` supplies the analysis dims for each benchmark id (the
-    benchmark JSON carries none); ``metric`` picks the stat (``min`` / ``median``
-    / …). Use this to bring timing snapshots into the peakbench format.
-    """
+def _read_benchmarks(path: str | Path) -> tuple[Path, list[dict[str, Any]]]:
+    """Read a pytest-benchmark file, returning ``(path, benchmarks)`` or raising."""
     p = Path(path)
     try:
         data = json.loads(p.read_text())
@@ -91,41 +53,89 @@ def from_pytest_benchmark(
         raise ValueError(f"{path}: not a readable JSON file ({exc})") from exc
     if "benchmarks" not in data:
         raise ValueError(f"{path}: not a pytest-benchmark file (no 'benchmarks' key)")
+    return p, data["benchmarks"]
+
+
+def _dims(bm: Mapping[str, Any]) -> dict[str, DimValue]:
+    """Analysis dims for one benchmark — its parametrize ``params`` plus any
+    scalar ``extra_info`` (minus the reserved ``peak_mib``). No id parsing.
+    """
+    dims: dict[str, DimValue] = {}
+    params = bm.get("params")
+    if isinstance(params, Mapping):
+        dims.update(params)
+    extra = bm.get("extra_info")
+    if isinstance(extra, Mapping):
+        dims.update({k: v for k, v in extra.items() if k != PEAK_KEY})
+    return dims
+
+
+def from_pytest_benchmark(
+    path: str | Path, *, metric: str = "min"
+) -> tuple[str, list[Sample], str]:
+    """Read timing out of a pytest-benchmark file → ``(label, samples, "s")``.
+
+    ``metric`` picks the stat (``min`` / ``median`` / …). Dims come from each
+    benchmark's parametrize ``params`` and ``extra_info``.
+    """
+    p, benchmarks = _read_benchmarks(path)
     samples = [
-        Sample(id=bm["fullname"], value=bm["stats"][metric], dims=dict(dims_for(bm["fullname"])))
-        for bm in data["benchmarks"]
+        Sample(id=bm["fullname"], value=bm["stats"][metric], dims=_dims(bm)) for bm in benchmarks
     ]
     return p.stem, samples, "s"
 
 
-def discover_snapshots(root: str | Path = ".benchmarks") -> list[Path]:
-    """Return JSON snapshot files under ``root`` (for CLI suggestions)."""
+def memory_from_pytest_benchmark(
+    path: str | Path, *, key: str = PEAK_KEY
+) -> tuple[str, list[Sample], str]:
+    """Read peak memory out of a pytest-benchmark file → ``(label, samples, "MiB")``.
+
+    The ``benchmark_memory`` fixture stores each run's peak under
+    ``extra_info[key]``, keyed by the same benchmark id pytest-benchmark uses.
+    Benchmarks lacking the key (timing-only tests) are skipped. Dims come from
+    parametrize ``params`` and ``extra_info``.
+    """
+    p, benchmarks = _read_benchmarks(path)
+    samples = [
+        Sample(id=bm["fullname"], value=float(bm["extra_info"][key]), dims=_dims(bm))
+        for bm in benchmarks
+        if isinstance(bm.get("extra_info"), Mapping) and bm["extra_info"].get(key) is not None
+    ]
+    return p.stem, samples, "MiB"
+
+
+def load_samples(
+    path: str | Path, *, metric: Metric = "time", stat: str = "min"
+) -> tuple[str, list[Sample], str]:
+    """Read one pytest-benchmark file for the chosen ``metric`` → ``(label, samples, unit)``."""
+    if metric == "time":
+        return from_pytest_benchmark(path, metric=stat)
+    if metric == "memory":
+        return memory_from_pytest_benchmark(path)
+    raise ValueError(f"metric must be 'time' or 'memory', got {metric!r}")
+
+
+def discover_runs(root: str | Path = ".benchmarks") -> list[Path]:
+    """Return pytest-benchmark JSON files under ``root`` (for CLI suggestions)."""
     base = Path(root)
     return sorted(base.rglob("*.json")) if base.exists() else []
 
 
-def _check_same_unit(units: set[str]) -> str:
-    if len(units) > 1:
-        raise ValueError(f"snapshots mix units {units}; can't compare across metrics")
-    return next(iter(units))
+def load_long_df(
+    runs: Sequence[str | Path], *, metric: Metric = "time", stat: str = "min"
+) -> tuple[pd.DataFrame, str]:
+    """Stack pytest-benchmark files into one long frame → ``(df, unit)``.
 
-
-def load_long_df(snapshots: Sequence[str | Path]) -> tuple[pd.DataFrame, str]:
-    """Return ``(df, unit)`` — one row per ``(snapshot, id)``.
-
-    Columns: ``snapshot``, ``id``, ``value``, then one column per dim key seen
-    across the samples (missing dims are ``NaN``). ``unit`` is the shared unit;
-    every loaded snapshot must agree. Every plot view pivots this single frame.
+    One row per ``(run, id)`` for the chosen ``metric``. Columns: ``snapshot``
+    (the file stem / version label), ``id``, ``value``, then one column per dim
+    key seen (missing dims are ``NaN``). Every plot view pivots this frame.
     """
     import pandas as pd
 
     rows: list[dict[str, object]] = []
-    units: set[str] = set()
-    for path in snapshots:
-        label, samples, unit = load_snapshot(path)
-        units.add(unit)
+    unit = ""
+    for path in runs:
+        label, samples, unit = load_samples(path, metric=metric, stat=stat)
         for s in samples:
             rows.append({"snapshot": label, "id": s.id, "value": s.value, **s.dims})
-    unit = _check_same_unit(units)
-    df = pd.DataFrame(rows)
-    return df, unit
+    return pd.DataFrame(rows), unit

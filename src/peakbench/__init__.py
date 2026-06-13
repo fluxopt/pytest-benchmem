@@ -1,36 +1,38 @@
-"""peakbench — generic time + peak-memory benchmarking around a ``Case``.
+"""peakbench — the memory companion to pytest-benchmark.
 
-Light to import: only the core (``Case``, the memray engine, snapshots) is
-re-exported here. ``peakbench.plotting`` pulls numpy/plotly, ``peakbench.cli``
-pulls typer, and ``peakbench.sweep`` shells out to ``uv`` — import those
-submodules directly when needed.
+pytest-benchmark times your code; peakbench adds a memray peak-memory pass to the
+same test via the ``benchmark_memory`` fixture, stored in the same run, plus
+dims-aware plots and cross-version sweeps it has no answer for.
+
+Light to import: this re-exports only the engine (``measure_peak``) and the
+readers/loader that turn pytest-benchmark JSON into a tidy frame. ``peakbench.plotting``
+pulls numpy/plotly and ``peakbench.sweep`` shells out to ``uv`` — import those
+submodules directly when needed. The ``benchmark_memory`` fixture is delivered by
+the pytest plugin (entry point), not by import.
 """
 
 from __future__ import annotations
 
-from peakbench import bench
-from peakbench.case import Action, Case, CaseFactory, DimValue, build_once
-from peakbench.memray import measure, measure_peak
+from peakbench.memray import measure_peak
 from peakbench.snapshot import (
+    DimValue,
+    Metric,
     Sample,
+    discover_runs,
     from_pytest_benchmark,
     load_long_df,
-    load_snapshot,
-    write_snapshot,
+    load_samples,
+    memory_from_pytest_benchmark,
 )
 
 __all__ = [
-    "Action",
-    "Case",
-    "CaseFactory",
     "DimValue",
+    "Metric",
     "Sample",
-    "bench",
-    "build_once",
+    "discover_runs",
     "from_pytest_benchmark",
     "load_long_df",
-    "load_snapshot",
-    "measure",
+    "load_samples",
     "measure_peak",
-    "write_snapshot",
+    "memory_from_pytest_benchmark",
 ]

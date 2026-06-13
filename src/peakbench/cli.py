@@ -1,7 +1,9 @@
-"""peakbench CLI — ``plot`` and ``compare`` over snapshot files.
+"""peakbench CLI — ``plot`` and ``compare`` over pytest-benchmark JSON runs.
 
-These are the registry-free commands (they read JSON only). A consumer that
-wants ``run`` / ``sweep`` builds those on its own ``Case`` source.
+Both commands read the JSON pytest-benchmark writes (``.benchmarks/…``) and pick
+a ``--metric`` (``time`` from ``stats``, ``memory`` from ``extra_info.peak_mib``).
+Timing comparison/histograms are pytest-benchmark's own job; these commands are
+the memory-aware, dims-aware views on top.
 """
 
 from __future__ import annotations
@@ -12,9 +14,11 @@ from typing import Annotated
 
 import typer
 
-from peakbench.snapshot import discover_snapshots
+from peakbench.snapshot import Metric, discover_runs
 
-app = typer.Typer(help="peakbench — plot and compare benchmark snapshots.", no_args_is_help=True)
+app = typer.Typer(help="peakbench — plot and compare benchmark runs.", no_args_is_help=True)
+
+MetricOpt = Annotated[Metric, typer.Option(help="Which metric to read: time | memory.")]
 
 
 def _need_plotly() -> None:
@@ -29,7 +33,8 @@ def _need_plotly() -> None:
 
 @app.command()
 def plot(
-    snapshots: Annotated[list[Path], typer.Argument(help="Snapshot JSON file(s).")],
+    runs: Annotated[list[Path], typer.Argument(help="pytest-benchmark JSON file(s).")],
+    metric: MetricOpt = "time",
     view: Annotated[
         str | None,
         typer.Option(help="compare | scatter | sweep | scaling (default: by count)."),
@@ -40,30 +45,28 @@ def plot(
     output: Annotated[Path | None, typer.Option("--output", "-o", help="HTML out.")] = None,
     open_browser: Annotated[bool, typer.Option("--open/--no-open")] = False,
 ) -> None:
-    """Render an interactive plotly view from one or more snapshots."""
-    missing = [p for p in snapshots if not p.exists()]
+    """Render an interactive plotly view from one or more pytest-benchmark runs."""
+    missing = [p for p in runs if not p.exists()]
     if missing:
         typer.secho(f"missing: {[str(p) for p in missing]}", fg=typer.colors.RED, err=True)
-        found = discover_snapshots()
+        found = discover_runs()
         if found:
             typer.echo("available:\n  " + "\n  ".join(str(p) for p in found), err=True)
         raise typer.Exit(code=2)
 
-    chosen = view or (
-        "scaling" if len(snapshots) == 1 else "scatter" if len(snapshots) == 2 else "sweep"
-    )
+    chosen = view or ("scaling" if len(runs) == 1 else "scatter" if len(runs) == 2 else "sweep")
     _need_plotly()
     from peakbench import plotting
 
     try:
         if chosen == "compare":
-            fig, n = plotting.plot_compare(snapshots, facet=facet, clip=clip)
+            fig, n = plotting.plot_compare(runs, metric=metric, facet=facet, clip=clip)
         elif chosen == "scatter":
-            fig, n = plotting.plot_scatter(snapshots, facet=facet, clip=clip)
+            fig, n = plotting.plot_scatter(runs, metric=metric, facet=facet, clip=clip)
         elif chosen == "sweep":
-            fig, n = plotting.plot_sweep(snapshots, clip=clip)
+            fig, n = plotting.plot_sweep(runs, metric=metric, clip=clip)
         elif chosen == "scaling":
-            fig, n = plotting.plot_scaling(snapshots, x=x, facet=facet)
+            fig, n = plotting.plot_scaling(runs, metric=metric, x=x, facet=facet)
         else:
             typer.secho(f"unknown view {chosen!r}", fg=typer.colors.RED, err=True)
             raise typer.Exit(code=2)
@@ -71,10 +74,10 @@ def plot(
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1) from exc
 
-    output = output or Path(".benchmarks") / "plots" / f"{chosen}.html"
+    output = output or Path(".benchmarks") / "plots" / f"{chosen}-{metric}.html"
     output.parent.mkdir(parents=True, exist_ok=True)
     fig.write_html(output)
-    typer.secho(f"{chosen}: {n} ids → {output}", fg=typer.colors.GREEN)
+    typer.secho(f"{chosen} ({metric}): {n} ids → {output}", fg=typer.colors.GREEN)
     if open_browser:
         import webbrowser
 
@@ -83,18 +86,19 @@ def plot(
 
 @app.command()
 def compare(
-    a: Annotated[Path, typer.Argument(help="Baseline snapshot.")],
-    b: Annotated[Path, typer.Argument(help="Candidate snapshot.")],
+    a: Annotated[Path, typer.Argument(help="Baseline run.")],
+    b: Annotated[Path, typer.Argument(help="Candidate run.")],
+    metric: MetricOpt = "time",
 ) -> None:
-    """Print a per-id delta table for two snapshots."""
+    """Print a per-id delta table for two pytest-benchmark runs."""
     for p in (a, b):
         if not p.exists():
             typer.secho(f"missing: {p}", fg=typer.colors.RED, err=True)
             raise typer.Exit(code=2)
-    from peakbench.compare import compare_snapshots
+    from peakbench.compare import compare_runs
 
     try:
-        compare_snapshots(a, b)
+        compare_runs(a, b, metric=metric)
     except ValueError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1) from exc
