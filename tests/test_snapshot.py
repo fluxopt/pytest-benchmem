@@ -19,8 +19,11 @@ def _pb_file(tmp_path, benchmarks):
 
 
 def test_from_pytest_benchmark_reads_timing(tmp_path):
-    pb = _pb_file(tmp_path, [{"fullname": "test_x[n=10]", "stats": {"min": 0.1, "mean": 0.2}}])
-    label, samples, unit = from_pytest_benchmark(pb, dims_for=lambda _i: {"n": 10})
+    pb = _pb_file(
+        tmp_path,
+        [{"fullname": "test_x[n=10]", "stats": {"min": 0.1, "mean": 0.2}, "params": {"n": 10}}],
+    )
+    label, samples, unit = from_pytest_benchmark(pb)
     assert (label, unit) == ("0001_run", "s")
     assert samples[0].value == 0.1
     assert samples[0].dims == {"n": 10}
@@ -32,10 +35,20 @@ def test_metric_picks_the_stat(tmp_path):
     assert samples[0].value == 0.3
 
 
-def test_dims_default_to_parametrize_params(tmp_path):
-    pb = _pb_file(tmp_path, [{"fullname": "t[n=10]", "stats": {"min": 0.1}, "params": {"n": 10}}])
-    _l, samples, _u = from_pytest_benchmark(pb)  # no dims_for
-    assert samples[0].dims == {"n": 10}
+def test_dims_from_params_and_extra_info(tmp_path):
+    pb = _pb_file(
+        tmp_path,
+        [
+            {
+                "fullname": "t[n=10]",
+                "stats": {"min": 0.1},
+                "params": {"n": 10},
+                "extra_info": {"op": "sort", "peak_mib": 5.0},  # peak_mib excluded from dims
+            }
+        ],
+    )
+    _l, samples, _u = from_pytest_benchmark(pb)
+    assert samples[0].dims == {"n": 10, "op": "sort"}
 
 
 def test_memory_from_pytest_benchmark_reads_extra_info(tmp_path):

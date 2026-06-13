@@ -53,6 +53,16 @@ class MemoryBenchmark:
         self._repeats = repeats
         self.peak_mib: float | None = None
 
+    @property
+    def extra_info(self) -> dict[str, Any]:
+        """pytest-benchmark's per-benchmark metadata dict.
+
+        Set scalars here to attach analysis dims — ``benchmark_memory.extra_info["op"]
+        = "sort"`` — and peakbench's readers pick them up as dims alongside the
+        parametrize params. The peak is stored here too, under ``peak_mib``.
+        """
+        return self._benchmark.extra_info
+
     def __call__(self, function_to_benchmark: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """Time ``function_to_benchmark(*args, **kwargs)``, then record its peak memory."""
         result = self._benchmark(function_to_benchmark, *args, **kwargs)
