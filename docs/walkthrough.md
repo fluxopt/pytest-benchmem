@@ -113,7 +113,7 @@ one row per `(run, id)` for the chosen metric, one column per dim:
 ```{code-cell} ipython3
 from pytest_benchmem import load_long_df
 
-df, unit = load_long_df([baseline], metric="memory")
+df, unit = load_long_df([baseline], metric="peak")
 print(f"unit: {unit}")
 df
 ```
@@ -148,7 +148,7 @@ A per-id delta table with percent change, for whichever `--metric` you ask for.
 Ids in only one run show `—`.
 
 ```{code-cell} ipython3
-!benchmem compare {baseline} {candidate} --metric memory
+!benchmem compare {baseline} {candidate} --metric peak
 ```
 
 ```{code-cell} ipython3
@@ -166,7 +166,7 @@ view by run count (1 → `scaling`, 2 → `scatter`, 3+ → `sweep`) and the met
 pass:
 
 ```{code-cell} ipython3
-!benchmem plot --metric memory {baseline} {candidate} -o {_tmp / "scatter.html"}
+!benchmem plot --metric peak {baseline} {candidate} -o {_tmp / "scatter.html"}
 ```
 
 Every view is a `plot_*` function over the same `load_long_df` seam — call them
@@ -179,7 +179,7 @@ absolute Δ. Top-right is the "big and got bigger" zone. Here on memory:
 ```{code-cell} ipython3
 from pytest_benchmem import plotting
 
-plotting.plot_scatter([baseline, candidate], metric="memory")[0]
+plotting.plot_scatter([baseline, candidate], metric="peak")[0]
 ```
 
 **Compare** — the "did anything regress, ranked by impact" bar chart, sorted by
@@ -194,7 +194,7 @@ from the numeric `n` dim, so the baseline alone draws `sorted`'s peak-memory
 curve:
 
 ```{code-cell} ipython3
-plotting.plot_scaling([baseline], metric="memory")[0]
+plotting.plot_scaling([baseline], metric="peak")[0]
 ```
 
 ## Cross-version sweeps — `pytest_benchmem.sweep`
@@ -224,4 +224,4 @@ failed = sweep(
 
 Point `benchmem plot` at the per-version JSONs — with 3+ it defaults to the
 `sweep` view, a log₂ fold-change heatmap — and pick `--metric time` or
-`--metric memory` for either picture across versions.
+`--metric peak` for either picture across versions.

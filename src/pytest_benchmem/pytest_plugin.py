@@ -65,6 +65,7 @@ def _record_memory(
             int(existing["peak_bytes"]),
             int(existing["peak_bytes_max"]),
             int(existing["allocations"]),
+            int(existing.get("total_bytes", 0)),
             int(existing["repeats"]),
         )
     result = measure_memory(action, repeats=repeats)

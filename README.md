@@ -29,8 +29,10 @@ pytest --benchmark-only --benchmark-json=run.json
 One run, one `run.json`, for each benchmark id — both metrics, one node id:
 
 - `stats: {min, mean, median, …}` — **timing**, from pytest-benchmark.
-- `extra_info.benchmem: {peak_bytes, peak_bytes_max, allocations, repeats}` —
-  **memory**, from pytest-benchmem (bytes, so the display layer auto-scales).
+- `extra_info.benchmem: {peak_bytes, peak_bytes_max, allocations, total_bytes, repeats}`
+  — **memory**, from pytest-benchmem. The `peak` / `allocated` / `allocations`
+  metrics mirror what `memray stats` reports (bytes stored raw, so the display
+  layer auto-scales).
 
 The two passes never overlap: pytest-benchmark times the action untracked, then
 memray measures peak on a *separate, untimed* call — so the allocator hooks cost
@@ -64,8 +66,8 @@ Timing rides pytest-benchmark's own tooling (`pytest-benchmark compare`,
 and dims-aware views over either metric:
 
 ```bash
-benchmem compare base.json head.json --metric memory   # per-id delta table
-benchmem plot    base.json head.json --metric memory   # interactive plotly view
+benchmem compare base.json head.json --metric peak   # per-id delta table
+benchmem plot    base.json head.json --metric peak   # interactive plotly view
 ```
 
 ```
@@ -81,16 +83,16 @@ pytest-benchmark's `--benchmark-compare-fail=min:5%` grammar for memory:
 
 ```bash
 # standalone, over two saved JSON files:
-benchmem compare base.json head.json --fail-on peak:10% --fail-on allocations:5%
+benchmem compare base.json head.json --fail-on peak:10% --fail-on allocated:10% --fail-on allocations:5%
 
 # or inline in the pytest run, against a prior saved run (pytest-benchmark storage):
 pytest --benchmark-only --benchmark-memory \
        --benchmark-memory-compare --benchmark-memory-compare-fail=peak:10%
 ```
 
-Thresholds are percent (`peak:10%`) or absolute (`peak:5MiB`), on `peak` or
-`allocations` (allocation count is near-deterministic — often a better tripwire
-than peak bytes).
+Thresholds are percent (`peak:10%`) or absolute (`peak:5MiB`), on `peak`,
+`allocated` (total bytes — catches churn peak hides), or `allocations` (count,
+near-deterministic — often a better tripwire than peak bytes).
 
 Or pull the numbers into your own analysis:
 

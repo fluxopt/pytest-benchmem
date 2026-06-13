@@ -27,14 +27,19 @@ from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 #: A value of a dim axis — categorical (str) or numeric (int/float).
 DimValue = str | int | float
 
-#: Which metric to read out of a pytest-benchmark file.
-Metric = Literal["time", "memory"]
+#: Which metric to read out of a pytest-benchmark file — the memory ones mirror
+#: ``memray stats``: ``peak`` (peak memory), ``allocated`` (total memory
+#: allocated), ``allocations`` (total allocations).
+Metric = Literal["time", "peak", "allocated", "allocations"]
+
+#: Memory metric → its blob field.
+_METRIC_FIELD = {"peak": "peak_bytes", "allocated": "total_bytes", "allocations": "allocations"}
 
 #: Key under which ``benchmark_memory`` stores its memory blob in ``extra_info``.
 BENCHMEM_KEY = "benchmem"
 
 #: Display unit per memory blob field (count fields have no unit).
-_FIELD_UNIT = {"peak_bytes": "B", "peak_bytes_max": "B", "allocations": ""}
+_FIELD_UNIT = {"peak_bytes": "B", "peak_bytes_max": "B", "total_bytes": "B", "allocations": ""}
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -138,9 +143,10 @@ def load_samples(
     """Read one pytest-benchmark file for the chosen ``metric`` → ``(label, samples, unit)``."""
     if metric == "time":
         return from_pytest_benchmark(path, metric=stat)
-    if metric == "memory":
-        return memory_from_pytest_benchmark(path)
-    raise ValueError(f"metric must be 'time' or 'memory', got {metric!r}")
+    field = _METRIC_FIELD.get(metric)
+    if field is None:
+        raise ValueError(f"metric must be one of time, {', '.join(_METRIC_FIELD)}; got {metric!r}")
+    return memory_from_pytest_benchmark(path, field=field)
 
 
 def discover_runs(root: str | Path = ".benchmarks") -> list[Path]:

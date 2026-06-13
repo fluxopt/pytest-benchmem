@@ -32,6 +32,29 @@ def test_measure_memory_returns_result_with_allocations():
     assert res.repeats == 2
     assert res.allocations > 0
     assert res.peak_bytes > 0
-    # the reported peak is the floor; the worst observed peak is never below it
-    assert res.peak_bytes_max >= res.peak_bytes
+    assert res.peak_bytes_max >= res.peak_bytes  # reported peak is the floor
     assert res.as_dict()["peak_bytes"] == res.peak_bytes
+
+
+def test_total_bytes_mirrors_memray_stats():
+    # churn: many temporaries freed each iteration — total allocated >> peak.
+    def action():
+        for _ in range(20):
+            _ = [bytearray(4096) for _ in range(1000)]
+
+    res = measure_memory(action)
+    assert res.total_bytes > 0
+    assert res.total_bytes >= res.peak_bytes  # cumulative ≥ high-water mark
+    assert res.as_dict()["total_bytes"] == res.total_bytes
+
+
+def test_compute_statistics_missing_raises_actionably(monkeypatch):
+    import sys
+    import types
+
+    import pytest_benchmem.memray as m
+
+    # simulate a memray that no longer exposes the internal stats fn
+    monkeypatch.setitem(sys.modules, "memray._memray", types.ModuleType("memray._memray"))
+    with pytest.raises(RuntimeError, match="compute_statistics"):
+        m._compute_statistics()

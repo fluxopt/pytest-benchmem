@@ -18,7 +18,10 @@ from pytest_benchmem.snapshot import Metric, discover_runs
 
 app = typer.Typer(help="pytest-benchmem — plot and compare benchmark runs.", no_args_is_help=True)
 
-MetricOpt = Annotated[Metric, typer.Option(help="Which metric to read: time | memory.")]
+MetricOpt = Annotated[
+    Metric,
+    typer.Option(help="Metric: time | peak | allocated | allocations (memory ones mirror memray)."),
+]
 
 
 def _need_plotly() -> None:

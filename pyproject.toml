@@ -17,7 +17,7 @@ classifiers = [
 dependencies = [
     "pytest>=7",
     "pytest-benchmark>=4,<6",
-    "memray>=1.11; platform_system == 'Linux' or platform_system == 'Darwin'",
+    "memray>=1.11,<2; platform_system == 'Linux' or platform_system == 'Darwin'",
 ]
 
 [project.optional-dependencies]

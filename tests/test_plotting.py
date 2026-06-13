@@ -67,7 +67,7 @@ def test_sweep_three_runs(tmp_path):
 
 def test_metric_memory_unit_in_title(tmp_path):
     a = _run(tmp_path / "a.json", ROWS_A, memory=True)
-    fig, _n = plotting.plot_scaling([a], metric="memory")
+    fig, _n = plotting.plot_scaling([a], metric="peak")
     assert "peak" in fig.layout.title.text.lower()  # vlabel for MiB is "peak"
 
 
