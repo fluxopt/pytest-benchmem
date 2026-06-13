@@ -38,7 +38,9 @@ One run, one `run.json`, for each benchmark id — both metrics, one node id:
 The two passes never overlap: pytest-benchmark times the action untracked, then
 memray measures peak on a *separate, untimed* call — so the allocator hooks cost
 the timing nothing. The parametrize `params` become the analysis dims the plots
-scale by.
+scale by; for an axis `params` can't carry (a per-operation `phase`, or a clean
+label for an object you parametrize over), set a scalar on `extra_info` — see
+[Grouping axes](https://fluxopt.github.io/pytest-benchmem/#grouping-axes-dims).
 
 ## Already have a pytest-benchmark suite?
 
