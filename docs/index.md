@@ -38,9 +38,9 @@ pytest --benchmark-only --benchmark-json=run.json
 ```
 
 One run, one file: each benchmark id gets `stats` (timing, from pytest-benchmark)
-*and* `extra_info.peak_mib` (peak memory, from pytest-benchmem). The two passes never
-overlap, so memray's hooks cost the timing nothing; parametrize `params` become
-the dims the plots scale by.
+*and* `extra_info.benchmem` (peak memory in bytes + allocation count, from
+pytest-benchmem). The two passes never overlap, so memray's hooks cost the timing
+nothing; parametrize `params` become the dims the plots scale by.
 
 ## Next
 

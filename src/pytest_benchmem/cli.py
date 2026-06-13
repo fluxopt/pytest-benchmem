@@ -89,16 +89,40 @@ def compare(
     a: Annotated[Path, typer.Argument(help="Baseline run.")],
     b: Annotated[Path, typer.Argument(help="Candidate run.")],
     metric: MetricOpt = "time",
+    fail_on: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--fail-on",
+            help="Exit non-zero on a regression. FIELD:THRESHOLD, repeatable — "
+            "e.g. --fail-on peak:10% --fail-on allocations:5% --fail-on peak:5MiB.",
+        ),
+    ] = None,
 ) -> None:
-    """Print a per-id delta table for two pytest-benchmark runs."""
+    """Print a per-id delta table for two pytest-benchmark runs (and optionally gate CI)."""
     for p in (a, b):
         if not p.exists():
             typer.secho(f"missing: {p}", fg=typer.colors.RED, err=True)
             raise typer.Exit(code=2)
-    from pytest_benchmem.compare import compare_runs
+    from pytest_benchmem.compare import compare_runs, find_regressions, parse_threshold
 
     try:
         compare_runs(a, b, metric=metric)
     except ValueError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1) from exc
+
+    if not fail_on:
+        return
+    try:
+        thresholds = [parse_threshold(expr) for expr in fail_on]
+    except ValueError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+
+    regressions = find_regressions(a, b, thresholds)
+    if regressions:
+        typer.secho(f"{len(regressions)} regression(s) over threshold:", fg=typer.colors.RED)
+        for reg in regressions:
+            typer.secho(reg.format(), fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+    typer.secho("no regressions over thresholds", fg=typer.colors.GREEN)

@@ -29,7 +29,8 @@ pytest --benchmark-only --benchmark-json=run.json
 One run, one `run.json`, for each benchmark id — both metrics, one node id:
 
 - `stats: {min, mean, median, …}` — **timing**, from pytest-benchmark.
-- `extra_info: {"peak_mib": 3.81}` — **peak memory**, from pytest-benchmem.
+- `extra_info.benchmem: {peak_bytes, peak_bytes_max, allocations, repeats}` —
+  **memory**, from pytest-benchmem (bytes, so the display layer auto-scales).
 
 The two passes never overlap: pytest-benchmark times the action untracked, then
 memray measures peak on a *separate, untimed* call — so the allocator hooks cost
@@ -47,12 +48,14 @@ def test_sort(benchmark):            # unchanged
 ```
 
 ```bash
-pytest --benchmark-only --benchmark-memory   # timing + peak_mib for the whole suite
+pytest --benchmark-only --benchmark-memory   # timing + memory for the whole suite
 ```
 
 It's opt-in at the run level: without the flag, plain `benchmark` tests are
 untouched. (Reach for the `benchmark_memory` fixture when you want memory on
-specific tests only, or `pedantic` control.)
+specific tests only, or `pedantic` control.) Set `@pytest.mark.benchmem(repeats=N)`
+on a test to measure it `N` times and keep the min (peak memory is noisy — GC
+timing, lazy imports, page cache — so min-of-N is the cleanest floor).
 
 ## Reading it back
 
@@ -66,12 +69,28 @@ benchmem plot    base.json head.json --metric memory   # interactive plotly view
 ```
 
 ```
-id                          base.json    head.json     change  (MiB)
+id                          base.json    head.json     change  (B)
 --------------------------------------------------------------------
-test_sort[10000]                0.076        0.078       +2.6%
-test_sort[100000]               0.76         0.74        -2.6%
-test_sort[1000000]              7.63         9.155       +20.0%
+test_sort[10000]              824 KiB      848 KiB       +2.9%
+test_sort[100000]             7.6 MiB      7.4 MiB       -2.6%
+test_sort[1000000]            76 MiB       91 MiB       +20.0%
 ```
+
+**Gate CI on a memory regression** — exit non-zero past a threshold, mirroring
+pytest-benchmark's `--benchmark-compare-fail=min:5%` grammar for memory:
+
+```bash
+# standalone, over two saved JSON files:
+benchmem compare base.json head.json --fail-on peak:10% --fail-on allocations:5%
+
+# or inline in the pytest run, against a prior saved run (pytest-benchmark storage):
+pytest --benchmark-only --benchmark-memory \
+       --benchmark-memory-compare --benchmark-memory-compare-fail=peak:10%
+```
+
+Thresholds are percent (`peak:10%`) or absolute (`peak:5MiB`), on `peak` or
+`allocations` (allocation count is near-deterministic — often a better tripwire
+than peak bytes).
 
 Or pull the numbers into your own analysis:
 
@@ -79,11 +98,12 @@ Or pull the numbers into your own analysis:
 from pytest_benchmem import from_pytest_benchmark, memory_from_pytest_benchmark
 
 _, timing, _ = from_pytest_benchmark("run.json")         # seconds, from stats
-_, memory, _ = memory_from_pytest_benchmark("run.json")  # MiB, from extra_info
+_, memory, _ = memory_from_pytest_benchmark("run.json")  # bytes, from extra_info.benchmem
 ```
 
-Outside pytest, `measure_peak(lambda: build_model(1000))` is the bare memray
-engine — a one-liner peak number for a REPL or notebook.
+Outside pytest, `measure_peak(lambda: build_model(1000))` returns the bare peak in
+bytes; `measure_memory(...)` returns the full `MemoryResult` (peak, spread,
+allocation count) — a one-liner for a REPL or notebook.
 
 ## Where it sits
 

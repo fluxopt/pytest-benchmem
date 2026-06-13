@@ -32,8 +32,18 @@ def _run(tmp_path, name, benchmarks):
     return p
 
 
-def _bm(name, *, t=1.0):
-    return {"fullname": name, "stats": {"min": t}}
+def _bm(name, *, t=1.0, peak=None):
+    bm = {"fullname": name, "stats": {"min": t}}
+    if peak is not None:
+        bm["extra_info"] = {
+            "benchmem": {
+                "peak_bytes": peak,
+                "peak_bytes_max": peak,
+                "allocations": 0,
+                "repeats": 1,
+            }
+        }
+    return bm
 
 
 class _FakeFig:
@@ -57,6 +67,30 @@ def test_compare_missing_file_exits_2(tmp_path):
     result = runner.invoke(app, ["compare", str(a), str(tmp_path / "nope.json")])
     assert result.exit_code == 2
     assert "missing" in _text(result)
+
+
+def test_compare_fail_on_regression_exits_1(tmp_path):
+    a = _run(tmp_path, "base.json", [_bm("test_x", peak=100)])
+    b = _run(tmp_path, "head.json", [_bm("test_x", peak=130)])  # +30%
+    result = runner.invoke(app, ["compare", str(a), str(b), "--fail-on", "peak:10%"])
+    assert result.exit_code == 1
+    assert "regression" in _text(result)
+
+
+def test_compare_fail_on_within_threshold_exits_0(tmp_path):
+    a = _run(tmp_path, "base.json", [_bm("test_x", peak=100)])
+    b = _run(tmp_path, "head.json", [_bm("test_x", peak=105)])  # +5%
+    result = runner.invoke(app, ["compare", str(a), str(b), "--fail-on", "peak:10%"])
+    assert result.exit_code == 0
+    assert "no regressions" in _text(result)
+
+
+def test_compare_bad_threshold_exits_2(tmp_path):
+    a = _run(tmp_path, "base.json", [_bm("test_x", peak=100)])
+    b = _run(tmp_path, "head.json", [_bm("test_x", peak=130)])
+    result = runner.invoke(app, ["compare", str(a), str(b), "--fail-on", "bogus:5%"])
+    assert result.exit_code == 2
+    assert "unknown field" in _text(result)
 
 
 # --- plot view auto-selection ----------------------------------------------------
