@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.2.1](https://github.com/fluxopt/pytest-benchmem/compare/v0.2.0...v0.2.1) (2026-06-13)
+
+
+### Features
+
+* add `rss` memory mode — kernel resident high-water via a forked child ([#51](https://github.com/fluxopt/pytest-benchmem/issues/51)) ([c4ccd12](https://github.com/fluxopt/pytest-benchmem/commit/c4ccd1267b9b795d88f377e005b6b6f060ccc40a))
+* add peak_max and gross metrics; error on metric/mode mismatch ([#55](https://github.com/fluxopt/pytest-benchmem/issues/55)) ([df45d1f](https://github.com/fluxopt/pytest-benchmem/commit/df45d1fc44ece79db297ae5b0dbc1537f5cb3e8f))
+* built-in node.* dims (module/func/class/group), selectable in plots ([#54](https://github.com/fluxopt/pytest-benchmem/issues/54)) ([937ca0f](https://github.com/fluxopt/pytest-benchmem/commit/937ca0f470d467046d81d1db549a51cfa44dfdd0))
+* tag memory blobs with a `mode` and refuse to mix modes ([#40](https://github.com/fluxopt/pytest-benchmem/issues/40)) ([4251e16](https://github.com/fluxopt/pytest-benchmem/commit/4251e16a79d4ec66d5b39a41c924633c256287ee))
+
+
+### Bug Fixes
+
+* accept str and single-path snapshots in plot_* and load_long_df ([#52](https://github.com/fluxopt/pytest-benchmem/issues/52)) ([fdbc343](https://github.com/fluxopt/pytest-benchmem/commit/fdbc3432c8709ba0c3ed2f4c85df6ff4f45a4a30))
+* keep only scalar dims, dropping unserializable and structured values ([#45](https://github.com/fluxopt/pytest-benchmem/issues/45)) ([71cb05d](https://github.com/fluxopt/pytest-benchmem/commit/71cb05d464d66bb55699e582103261f335a3e1a3))
+* metric ergonomics — correct allocated label, accept memory alias ([#53](https://github.com/fluxopt/pytest-benchmem/issues/53)) ([a61c9be](https://github.com/fluxopt/pytest-benchmem/commit/a61c9befb6aae6feca5f504f9fb9e16b35ed5f3f))
+
+
+### Reverts
+
+* remove the `rss` memory mode ([#51](https://github.com/fluxopt/pytest-benchmem/issues/51)) ([#56](https://github.com/fluxopt/pytest-benchmem/issues/56)) ([99d908d](https://github.com/fluxopt/pytest-benchmem/commit/99d908d582094d982f421cc381639f53b6585a56))
+
 ## [0.2.0](https://github.com/fluxopt/pytest-benchmem/compare/v0.1.0...v0.2.0) (2026-06-13)
 
 
