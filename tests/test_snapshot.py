@@ -141,6 +141,48 @@ def test_load_long_df_stacks_runs_with_dim_columns(tmp_path):
     assert {"snapshot", "id", "value", "n"} <= set(df.columns)
 
 
+def test_memory_mode_defaults_to_heap_for_older_blobs(tmp_path):
+    # a blob predating the mode tag reads as the heap default.
+    pb = _pb_file(
+        tmp_path,
+        [{"fullname": "a", "stats": {"min": 0.1}, "extra_info": {"benchmem": _blob(99)}}],
+    )
+    _l, samples, _u = memory_from_pytest_benchmark(pb)
+    assert samples[0].dims["mode"] == "heap"
+
+
+def test_memory_mode_read_from_blob(tmp_path):
+    blob = {**_blob(99), "mode": "rss"}
+    pb = _pb_file(
+        tmp_path,
+        [{"fullname": "a", "stats": {"min": 0.1}, "extra_info": {"benchmem": blob}}],
+    )
+    _l, samples, _u = memory_from_pytest_benchmark(pb)
+    assert samples[0].dims["mode"] == "rss"
+
+
+def _mode_file(tmp_path, name, mode):
+    extra = {"benchmem": {**_blob(99), "mode": mode}}
+    bm = {"fullname": "x", "stats": {"min": 0.1}, "extra_info": extra}
+    p = tmp_path / name
+    p.write_text(json.dumps({"benchmarks": [bm]}))
+    return p
+
+
+def test_load_long_df_refuses_mixed_modes(tmp_path):
+    heap = _mode_file(tmp_path, "heap.json", "heap")
+    rss = _mode_file(tmp_path, "rss.json", "rss")
+    with pytest.raises(ValueError, match="mix memory modes"):
+        load_long_df([heap, rss], metric="peak")
+
+
+def test_load_long_df_allows_single_mode(tmp_path):
+    files = [_mode_file(tmp_path, "a.json", "heap"), _mode_file(tmp_path, "b.json", "heap")]
+    df, unit = load_long_df(files, metric="peak")
+    assert unit == "B"
+    assert set(df["mode"]) == {"heap"}
+
+
 def test_not_a_pytest_benchmark_file_raises(tmp_path):
     f = tmp_path / "bad.json"
     f.write_text('{"nope": []}')

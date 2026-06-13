@@ -6,8 +6,10 @@ file carries *both* metrics for each benchmark id:
 
 - ``stats`` — timing (min/mean/median/…), in seconds.
 - ``extra_info.benchmem`` — the memory blob written by the ``benchmark_memory``
-  fixture: ``{peak_bytes, peak_bytes_max, allocations, repeats}``, in **bytes**
-  (the raw memray unit; the display layer auto-scales).
+  fixture: ``{peak_bytes, peak_bytes_max, allocations, total_bytes, repeats, mode}``;
+  byte fields are in **bytes** (the raw memray unit; the display layer auto-scales).
+  ``mode`` names the metric that produced the blob (``heap`` today) so the readers
+  never compare incomparable metrics — see :func:`load_long_df`.
 
 So reads are *per metric*: :func:`from_pytest_benchmark` pulls timing,
 :func:`memory_from_pytest_benchmark` pulls memory, each yielding a list of
@@ -37,6 +39,15 @@ _METRIC_FIELD = {"peak": "peak_bytes", "allocated": "total_bytes", "allocations"
 
 #: Key under which ``benchmark_memory`` stores its memory blob in ``extra_info``.
 BENCHMEM_KEY = "benchmem"
+
+#: Blob field naming the metric that produced it, and its default for older blobs.
+MODE_KEY = "mode"
+DEFAULT_MODE = "heap"
+
+#: Long-frame columns that are *not* analysis dims — fixed axes plus ``mode``, which
+#: is provenance (which metric produced the value), not something to plot over. Plot
+#: views exclude these when inferring dim roles.
+RESERVED_COLUMNS = ("snapshot", "id", "value", MODE_KEY)
 
 #: Display unit per memory blob field (count fields have no unit).
 _FIELD_UNIT = {"peak_bytes": "B", "peak_bytes_max": "B", "total_bytes": "B", "allocations": ""}
@@ -133,7 +144,10 @@ def memory_from_pytest_benchmark(
         blob = _benchmem(bm)
         if blob is None or blob.get(field) is None:
             continue
-        samples.append(Sample(id=bm["fullname"], value=float(blob[field]), dims=_dims(bm)))
+        # mode rides along as a reserved provenance dim so readers/plots can refuse to
+        # mix incomparable metrics; blobs predating it (pre-rss) read as the heap default.
+        dims = {**_dims(bm), MODE_KEY: str(blob.get(MODE_KEY, DEFAULT_MODE))}
+        samples.append(Sample(id=bm["fullname"], value=float(blob[field]), dims=dims))
     return p.stem, samples, unit
 
 
@@ -172,4 +186,23 @@ def load_long_df(
         label, samples, unit = load_samples(path, metric=metric, stat=stat)
         for s in samples:
             rows.append({"snapshot": label, "id": s.id, "value": s.value, **s.dims})
-    return pd.DataFrame(rows), unit
+    df = pd.DataFrame(rows)
+    _guard_single_mode(df)
+    return df, unit
+
+
+def _guard_single_mode(df: pd.DataFrame) -> None:
+    """Refuse a frame that mixes memory ``mode``s — they're incomparable metrics.
+
+    A ``heap`` peak (allocator bytes) and an ``rss`` peak (resident pages) wear the
+    same unit but mean different things; stacking them into one comparison/plot axis
+    is exactly the error :data:`MODE_KEY` exists to catch.
+    """
+    if MODE_KEY not in df.columns:
+        return
+    modes = sorted(df[MODE_KEY].dropna().unique())
+    if len(modes) > 1:
+        raise ValueError(
+            f"these runs mix memory modes {modes}, which are not comparable "
+            f"(e.g. heap allocator bytes vs rss resident pages). Read one mode at a time."
+        )

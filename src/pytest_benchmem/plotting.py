@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
-from pytest_benchmem.snapshot import Metric, load_long_df
+from pytest_benchmem.snapshot import RESERVED_COLUMNS, Metric, load_long_df
 
 if TYPE_CHECKING:
     import numpy.typing as npt
@@ -91,8 +91,8 @@ def _axis_kwargs(unit: str) -> dict[str, object]:
 
 
 def _dim_columns(df: pd.DataFrame) -> list[str]:
-    """The dim columns (everything but the fixed snapshot/id/value)."""
-    return [c for c in df.columns if c not in ("snapshot", "id", "value")]
+    """The dim columns (everything but the fixed/reserved snapshot/id/value/mode)."""
+    return [c for c in df.columns if c not in RESERVED_COLUMNS]
 
 
 def plot_compare(
