@@ -102,6 +102,30 @@ there's no better handle; it's still far better than the dropped object.
 > Using the plain `benchmark` fixture (or `--benchmark-memory`)? Same recipe —
 > write to `benchmark.extra_info` exactly as above.
 
+### Built-in `node.*` dims
+
+You also get four structural dims for free, derived from each benchmark's pytest
+node id and group — no `extra_info`, no test changes:
+
+- `node.module` — the test file (`bench/test_ops.py`)
+- `node.func` — the test function (`test_to_lp`)
+- `node.class` — the test class, if any
+- `node.group` — pytest-benchmark's `group`, if set
+
+These are most useful when the axis you care about *is* the test — e.g. one
+function per operation. Facet a plot by it directly:
+
+```bash
+benchmem plot run.json --metric peak --facet node.func
+```
+
+They're **selectable but never auto-chosen**: a plot only splits by a `node.*`
+dim when you name it, so single-function suites and existing plots are
+unaffected. The `node.` namespace can't collide with your `params`/`extra_info`,
+and an `extra_info["node.func"]` you set yourself still wins. For a cleaner label
+than the raw function name (`to_lp` vs `test_to_lp`), set your own `phase` dim as
+above.
+
 ## Next
 
 → The **[Walkthrough](walkthrough.ipynb)** runs it end-to-end: write a suite,
