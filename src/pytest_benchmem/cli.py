@@ -126,3 +126,39 @@ def compare(
             typer.secho(reg.format(), fg=typer.colors.RED)
         raise typer.Exit(code=1)
     typer.secho("no regressions over thresholds", fg=typer.colors.GREEN)
+
+
+@app.command()
+def scaling(
+    runs: Annotated[
+        list[Path], typer.Argument(help="pytest-benchmark JSON file (uses the first).")
+    ],
+    metric: MetricOpt = "time",
+    x: Annotated[
+        str | None, typer.Option(help="Numeric dim to fit against (default: the lone one).")
+    ] = None,
+) -> None:
+    """Report the empirical scaling exponent (value ≈ c·nˣ) per benchmark family."""
+    missing = [p for p in runs if not p.exists()]
+    if missing:
+        typer.secho(f"missing: {[str(p) for p in missing]}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    from pytest_benchmem.scaling import fit_power_law
+    from pytest_benchmem.snapshot import load_long_df
+
+    try:
+        df, _unit = load_long_df(runs[:1], metric=metric)
+        fits = fit_power_law(df, x=x)
+    except ValueError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from exc
+
+    if not fits:
+        typer.secho("no families with ≥2 points to fit", fg=typer.colors.YELLOW)
+        return
+
+    typer.echo(f"\n{'family':<46} {'n':>3} {'fit':>11} {'R²':>7}   ({metric})")
+    typer.echo("-" * 78)
+    for f in fits:
+        flag = "" if f.n >= 3 and f.r2 >= 0.95 else "  ⚠ thin/noisy"
+        typer.echo(f"{f.family:<46} {f.n:>3}  O(n^{f.exponent:>4.2f}) {f.r2:>7.3f}{flag}")
