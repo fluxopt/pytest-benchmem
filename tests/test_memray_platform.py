@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-import pytest_benchmem.memray as memray_mod
+from pytest_benchmem import measure_peak
 
 
 def test_measure_peak_raises_on_unsupported_platform(monkeypatch):
-    monkeypatch.setattr(memray_mod.platform, "system", lambda: "Windows")
+    monkeypatch.setattr("pytest_benchmem.memray.platform.system", lambda: "Windows")
     with pytest.raises(RuntimeError, match="only Linux and macOS"):
-        memray_mod.measure_peak(lambda: None)
+        measure_peak(lambda: None)

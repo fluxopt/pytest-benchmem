@@ -21,3 +21,5 @@ site/
 # editors
 .idea/
 .vscode/
+
+.claude/worktrees/

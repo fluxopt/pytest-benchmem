@@ -68,23 +68,25 @@ def test_compare_missing_file_exits_2(tmp_path):
 )
 def test_plot_view_defaults_by_run_count(tmp_path, monkeypatch, n_runs, expected):
     calls = []
+
+    def _stub(name):
+        def _fn(*a, **k):
+            calls.append(name)
+            return _FakeFig(), 7
+
+        return _fn
+
     for name in ("plot_compare", "plot_scatter", "plot_sweep", "plot_scaling"):
-        monkeypatch.setattr(
-            plotting, name, lambda *a, _n=name, **k: (calls.append(_n), (_FakeFig(), 7))[1]
-        )
+        monkeypatch.setattr(plotting, name, _stub(name))
     runs = [_run(tmp_path, f"r{i}.json", [_bm("x")]) for i in range(n_runs)]
-    result = runner.invoke(
-        app, ["plot", *map(str, runs), "-o", str(tmp_path / "out.html")]
-    )
+    result = runner.invoke(app, ["plot", *map(str, runs), "-o", str(tmp_path / "out.html")])
     assert result.exit_code == 0, _text(result)
     assert calls == [expected]
 
 
 def test_plot_unknown_view_exits_2(tmp_path):
     r = _run(tmp_path, "r.json", [_bm("x")])
-    result = runner.invoke(
-        app, ["plot", str(r), "--view", "bogus", "-o", str(tmp_path / "o.html")]
-    )
+    result = runner.invoke(app, ["plot", str(r), "--view", "bogus", "-o", str(tmp_path / "o.html")])
     assert result.exit_code == 2
     assert "unknown view" in _text(result)
 

@@ -43,7 +43,7 @@ build-backend = "hatchling.build"
 source = "vcs"
 
 [dependency-groups]
-dev = ["ruff", "mypy", "pytest-benchmem[plot]", { include-group = "docs" }]
+dev = ["ruff", "mypy", "pre-commit", "pytest-benchmem[plot]", { include-group = "docs" }]
 docs = [
     "jupytext",
     "ipykernel",
@@ -74,3 +74,9 @@ packages = ["src/pytest_benchmem"]
 [[tool.mypy.overrides]]
 module = ["pandas", "pandas.*", "plotly", "plotly.*", "memray", "memray.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+disallow_untyped_calls = false
