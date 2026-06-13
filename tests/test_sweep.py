@@ -29,8 +29,6 @@ def test_plain_version_re_accepts_plain_versions(version):
     assert _PLAIN_VERSION_RE.match(version) is not None
 
 
-@pytest.mark.parametrize(
-    "spec", ["pkg==1.2", "git+https://x@main", "1.2.dev0", "1.2.3@main", ""]
-)
+@pytest.mark.parametrize("spec", ["pkg==1.2", "git+https://x@main", "1.2.dev0", "1.2.3@main", ""])
 def test_plain_version_re_rejects_pip_specs(spec):
     assert _PLAIN_VERSION_RE.match(spec) is None
