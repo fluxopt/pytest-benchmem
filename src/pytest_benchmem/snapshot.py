@@ -188,10 +188,17 @@ def discover_runs(root: str | Path = ".benchmarks") -> list[Path]:
     return sorted(base.rglob("*.json")) if base.exists() else []
 
 
+def _as_paths(runs: str | Path | Sequence[str | Path]) -> list[Path]:
+    """Coerce one path (a bare ``str`` is one path, not characters) or a sequence into paths."""
+    if isinstance(runs, (str, Path)):
+        return [Path(runs)]
+    return [Path(r) for r in runs]
+
+
 def load_long_df(
-    runs: Sequence[str | Path], *, metric: Metric = "time", stat: str = "min"
+    runs: str | Path | Sequence[str | Path], *, metric: Metric = "time", stat: str = "min"
 ) -> tuple[pd.DataFrame, str]:
-    """Stack pytest-benchmark files into one long frame → ``(df, unit)``.
+    """Stack pytest-benchmark files (one path or a sequence) into one long frame → ``(df, unit)``.
 
     One row per ``(run, id)`` for the chosen ``metric``. Columns: ``snapshot``
     (the file stem / version label), ``id``, ``value``, then one column per dim
@@ -201,7 +208,7 @@ def load_long_df(
 
     rows: list[dict[str, object]] = []
     unit = ""
-    for path in runs:
+    for path in _as_paths(runs):
         label, samples, unit = load_samples(path, metric=metric, stat=stat)
         for s in samples:
             rows.append({"snapshot": label, "id": s.id, "value": s.value, **s.dims})

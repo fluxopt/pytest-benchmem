@@ -65,6 +65,14 @@ def test_sweep_three_runs(tmp_path):
     assert fig.layout.title.text
 
 
+def test_plot_accepts_str_and_single_path(tmp_path):
+    p = _run(tmp_path / "a.json", ROWS_A)
+    fig_single, n_single = plotting.plot_scaling(p)  # single Path, not a list
+    fig_str, n_str = plotting.plot_scaling(str(p))  # str path (previously .stem crash)
+    assert n_single == n_str == 3
+    assert p.stem in fig_str.layout.title.text
+
+
 def test_metric_memory_unit_in_title(tmp_path):
     a = _run(tmp_path / "a.json", ROWS_A, memory=True)
     fig, _n = plotting.plot_scaling([a], metric="peak")
