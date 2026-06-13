@@ -5,56 +5,85 @@ import json
 import pytest
 
 from peakbench.snapshot import (
-    Sample,
     from_pytest_benchmark,
     load_long_df,
-    load_snapshot,
-    write_snapshot,
+    load_samples,
+    memory_from_pytest_benchmark,
 )
 
 
-def test_snapshot_roundtrip(tmp_path):
-    samples = [Sample("build[n=10]", 18.8, {"op": "build", "n": 10})]
-    p = write_snapshot(tmp_path / "m.json", "v1", samples, "MiB")
-    label, loaded, unit = load_snapshot(p)
-    assert label == "v1"
-    assert unit == "MiB"
-    assert loaded == samples
+def _pb_file(tmp_path, benchmarks):
+    p = tmp_path / "0001_run.json"
+    p.write_text(json.dumps({"benchmarks": benchmarks}))
+    return p
 
 
-def test_load_long_df_has_dim_columns(tmp_path):
-    write_snapshot(tmp_path / "a.json", "v1", [Sample("x", 1.0, {"op": "build", "n": 10})], "MiB")
-    df, unit = load_long_df([tmp_path / "a.json"])
-    assert unit == "MiB"
-    assert {"snapshot", "id", "value", "op", "n"} <= set(df.columns)
-    assert df.iloc[0]["n"] == 10
-
-
-def test_mixed_units_raise(tmp_path):
-    write_snapshot(tmp_path / "a.json", "v1", [Sample("x", 1.0, {})], "MiB")
-    write_snapshot(tmp_path / "b.json", "v2", [Sample("x", 1.0, {})], "s")
-    with pytest.raises(ValueError, match="mix units"):
-        load_long_df([tmp_path / "a.json", tmp_path / "b.json"])
-
-
-def test_from_pytest_benchmark(tmp_path):
-    pb = tmp_path / "t.json"
-    pb.write_text(json.dumps({"benchmarks": [{"fullname": "test_x[n=10]", "stats": {"min": 0.1}}]}))
-    _label, samples, unit = from_pytest_benchmark(pb, dims_for=lambda _i: {"n": 10})
-    assert unit == "s"
+def test_from_pytest_benchmark_reads_timing(tmp_path):
+    pb = _pb_file(tmp_path, [{"fullname": "test_x[n=10]", "stats": {"min": 0.1, "mean": 0.2}}])
+    label, samples, unit = from_pytest_benchmark(pb, dims_for=lambda _i: {"n": 10})
+    assert (label, unit) == ("0001_run", "s")
     assert samples[0].value == 0.1
     assert samples[0].dims == {"n": 10}
 
 
-def test_malformed_snapshot_raises(tmp_path):
+def test_metric_picks_the_stat(tmp_path):
+    pb = _pb_file(tmp_path, [{"fullname": "t", "stats": {"min": 0.1, "median": 0.3}}])
+    _l, samples, _u = from_pytest_benchmark(pb, metric="median")
+    assert samples[0].value == 0.3
+
+
+def test_dims_default_to_parametrize_params(tmp_path):
+    pb = _pb_file(tmp_path, [{"fullname": "t[n=10]", "stats": {"min": 0.1}, "params": {"n": 10}}])
+    _l, samples, _u = from_pytest_benchmark(pb)  # no dims_for
+    assert samples[0].dims == {"n": 10}
+
+
+def test_memory_from_pytest_benchmark_reads_extra_info(tmp_path):
+    pb = _pb_file(
+        tmp_path,
+        [
+            {"fullname": "a", "stats": {"min": 0.1}, "extra_info": {"peak_mib": 18.8}},
+            {"fullname": "b", "stats": {"min": 0.2}},  # timing-only — skipped
+            {"fullname": "c", "stats": {"min": 0.3}, "extra_info": {"peak_mib": None}},  # skipped
+        ],
+    )
+    _l, samples, unit = memory_from_pytest_benchmark(pb)
+    assert unit == "MiB"
+    assert [(s.id, s.value) for s in samples] == [("a", 18.8)]
+
+
+def test_load_samples_dispatches_on_metric(tmp_path):
+    pb = _pb_file(
+        tmp_path, [{"fullname": "a", "stats": {"min": 0.1}, "extra_info": {"peak_mib": 5.0}}]
+    )
+    assert load_samples(pb, metric="time")[2] == "s"
+    assert load_samples(pb, metric="memory")[2] == "MiB"
+
+
+def test_load_long_df_stacks_runs_with_dim_columns(tmp_path):
+    a = tmp_path / "v1.json"
+    b = tmp_path / "v2.json"
+    a.write_text(
+        json.dumps({"benchmarks": [{"fullname": "x", "stats": {"min": 1.0}, "params": {"n": 10}}]})
+    )
+    b.write_text(
+        json.dumps({"benchmarks": [{"fullname": "x", "stats": {"min": 2.0}, "params": {"n": 10}}]})
+    )
+    df, unit = load_long_df([a, b], metric="time")
+    assert unit == "s"
+    assert set(df["snapshot"]) == {"v1", "v2"}
+    assert {"snapshot", "id", "value", "n"} <= set(df.columns)
+
+
+def test_not_a_pytest_benchmark_file_raises(tmp_path):
+    f = tmp_path / "bad.json"
+    f.write_text('{"nope": []}')
+    with pytest.raises(ValueError, match="not a pytest-benchmark file"):
+        from_pytest_benchmark(f)
+
+
+def test_unreadable_json_raises(tmp_path):
     bad = tmp_path / "bad.json"
     bad.write_text("not json")
-    with pytest.raises(ValueError, match="not a readable JSON snapshot"):
-        load_snapshot(bad)
-
-
-def test_non_peakbench_snapshot_raises(tmp_path):
-    f = tmp_path / "pb.json"
-    f.write_text('{"benchmarks": []}')
-    with pytest.raises(ValueError, match="not a peakbench snapshot"):
-        load_snapshot(f)
+    with pytest.raises(ValueError, match="not a readable JSON file"):
+        from_pytest_benchmark(bad)

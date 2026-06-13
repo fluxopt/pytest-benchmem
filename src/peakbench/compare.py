@@ -1,4 +1,4 @@
-"""Text comparison of two snapshots — keyed on the opaque id."""
+"""Text comparison of two pytest-benchmark runs — keyed on the benchmark id."""
 
 from __future__ import annotations
 
@@ -6,17 +6,19 @@ import sys
 from pathlib import Path
 from typing import TextIO
 
-from peakbench.snapshot import load_long_df
+from peakbench.snapshot import Metric, load_long_df
 
 
-def compare_snapshots(a: str | Path, b: str | Path, *, out: TextIO | None = None) -> None:
-    """Print a per-id table of ``a`` vs ``b`` with percent change.
+def compare_runs(
+    a: str | Path, b: str | Path, *, metric: Metric = "time", out: TextIO | None = None
+) -> None:
+    """Print a per-id table of ``a`` vs ``b`` (for ``metric``) with percent change.
 
-    Works for any unit; mixing units raises (via :func:`load_long_df`). Ids
-    present in only one snapshot show ``—``.
+    Reads the chosen metric (timing or memory) from two pytest-benchmark files.
+    Ids present in only one run show ``—``.
     """
     out = out or sys.stdout
-    df, unit = load_long_df([Path(a), Path(b)])
+    df, unit = load_long_df([Path(a), Path(b)], metric=metric)
     labels = df["snapshot"].drop_duplicates().tolist()
     la, lb = labels[0], labels[1]
     wide = df.pivot(index="id", columns="snapshot", values="value")

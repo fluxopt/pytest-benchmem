@@ -1,8 +1,9 @@
-"""Interactive plotly views over peakbench snapshots — dims-driven.
+"""Interactive plotly views over pytest-benchmark runs — dims-driven.
 
-Four views, each returning ``(figure, n_rendered)``:
+Each view reads one ``metric`` (``"time"`` or ``"memory"``) out of the
+pytest-benchmark JSON files and returns ``(figure, n_rendered)``:
 
-- :func:`plot_compare` (2 snapshots) — bar chart of per-id delta.
+- :func:`plot_compare` (2 runs) — bar chart of per-id delta.
 - :func:`plot_scatter` (2+) — baseline cost vs ratio; top-right = the regressed one.
 - :func:`plot_sweep` (3+) — heatmap of per-id fold-change (log2 ratio) vs the first.
 - :func:`plot_scaling` (1) — cost vs a numeric dim, faceted/coloured by others.
@@ -19,7 +20,7 @@ from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
-from peakbench.snapshot import load_long_df
+from peakbench.snapshot import Metric, load_long_df
 
 if TYPE_CHECKING:
     import numpy.typing as npt
@@ -96,6 +97,7 @@ def _dim_columns(df: pd.DataFrame) -> list[str]:
 def plot_compare(
     snapshots: list[Path],
     *,
+    metric: Metric = "time",
     sort: SortMode = "absolute",
     facet: str | None = None,
     clip: float | None = None,
@@ -110,7 +112,7 @@ def plot_compare(
 
     import plotly.express as px
 
-    df_long, unit = load_long_df(snapshots[:2])
+    df_long, unit = load_long_df(snapshots[:2], metric=metric)
     vlabel = _value_label(unit)
     labels = df_long["snapshot"].drop_duplicates().tolist()
     a_label, b_label = labels[0], labels[1]
@@ -171,6 +173,7 @@ def plot_compare(
 def plot_scatter(
     snapshots: list[Path],
     *,
+    metric: Metric = "time",
     facet: str | None = None,
     clip: float | None = None,
 ) -> tuple[Figure, int]:
@@ -185,7 +188,7 @@ def plot_scatter(
     if len(snapshots) < 2:
         raise ValueError("scatter needs at least 2 snapshots (baseline + 1)")
 
-    df_long, unit = load_long_df(snapshots)
+    df_long, unit = load_long_df(snapshots, metric=metric)
     vlabel = _value_label(unit)
     labels = df_long["snapshot"].drop_duplicates().tolist()
     baseline_label = labels[0]
@@ -238,11 +241,13 @@ def plot_scatter(
     return fig, int(df["id"].nunique())
 
 
-def plot_sweep(snapshots: list[Path], *, clip: float | None = None) -> tuple[Figure, int]:
+def plot_sweep(
+    snapshots: list[Path], *, metric: Metric = "time", clip: float | None = None
+) -> tuple[Figure, int]:
     """Heatmap of per-id fold-change (log2 ratio) vs the first snapshot."""
     import plotly.express as px
 
-    df_long, unit = load_long_df(snapshots)
+    df_long, unit = load_long_df(snapshots, metric=metric)
     vlabel = _value_label(unit)
     versions = df_long["snapshot"].drop_duplicates().tolist()
     baseline = versions[0]
@@ -307,6 +312,7 @@ def _infer_roles(
 def plot_scaling(
     snapshots: list[Path],
     *,
+    metric: Metric = "time",
     x: str | None = None,
     color: str | None = None,
     facet: str | None = None,
@@ -320,7 +326,7 @@ def plot_scaling(
     """
     import plotly.express as px
 
-    df_long, unit = load_long_df(snapshots[:1])
+    df_long, unit = load_long_df(snapshots[:1], metric=metric)
     vlabel = _value_label(unit)
     x, color, facet = _infer_roles(df_long, x, color, facet)
     df = df_long.dropna(subset=[x]).sort_values([c for c in (facet, color, x) if c])
