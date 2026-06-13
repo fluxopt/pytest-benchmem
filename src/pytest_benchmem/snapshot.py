@@ -40,6 +40,14 @@ _METRIC_FIELD = {"peak": "peak_bytes", "allocated": "total_bytes", "allocations"
 #: Key under which ``benchmark_memory`` stores its memory blob in ``extra_info``.
 BENCHMEM_KEY = "benchmem"
 
+#: Prefix pytest-benchmark stamps onto a param it could not JSON-serialize (see
+#: ``pytest_benchmark.utils.safe_dumps``: ``"UNSERIALIZABLE[%s]" % repr(...)``).
+#: Such a value is identical across distinct objects of a type, so it's a broken
+#: analysis axis — :func:`_dims` drops it rather than carry the garbage string.
+#: Coupled to pytest-benchmark's internal format; ``test_dims_drops_unserializable``
+#: pins it so a rename surfaces as a failure instead of silently-bad dims.
+_UNSERIALIZABLE_PREFIX = "UNSERIALIZABLE["
+
 #: Blob field naming the metric that produced it, and its default for older blobs.
 MODE_KEY = "mode"
 DEFAULT_MODE = "heap"
@@ -90,14 +98,27 @@ def _read_benchmarks(path: str | Path) -> tuple[Path, list[dict[str, Any]]]:
 def _dims(bm: Mapping[str, Any]) -> dict[str, DimValue]:
     """Analysis dims for one benchmark — its parametrize ``params`` plus any
     scalar ``extra_info`` (minus the reserved ``benchmem`` blob). No id parsing.
+
+    Only scalar values (``DimValue``) survive: non-scalars (lists/dicts) and a
+    param pytest-benchmark couldn't serialize (``"UNSERIALIZABLE[<repr>]"``) are
+    dropped — neither is a usable axis. If a dropped value was the only thing
+    distinguishing two benchmarks they collapse as dims, but stay distinct as
+    samples (the ``fullname`` id still differs); mirror a clean scalar into
+    ``extra_info`` to keep it as an axis.
     """
+    def usable(k: str, v: Any) -> bool:
+        # A usable axis is a scalar (matching ``DimValue``). Drop: the benchmem
+        # blob; non-scalars like lists/dicts (unhashable — they'd break pandas
+        # groupby when faceting/scaling); and the scalar-but-garbage string
+        # pytest-benchmark emits for a param it couldn't serialize.
+        if k == BENCHMEM_KEY or not isinstance(v, (str, int, float)):
+            return False
+        return not (isinstance(v, str) and v.startswith(_UNSERIALIZABLE_PREFIX))
+
     dims: dict[str, DimValue] = {}
-    params = bm.get("params")
-    if isinstance(params, Mapping):
-        dims.update(params)
-    extra = bm.get("extra_info")
-    if isinstance(extra, Mapping):
-        dims.update({k: v for k, v in extra.items() if k != BENCHMEM_KEY})
+    for source in (bm.get("params"), bm.get("extra_info")):
+        if isinstance(source, Mapping):
+            dims.update({k: v for k, v in source.items() if usable(k, v)})
     return dims
 
 

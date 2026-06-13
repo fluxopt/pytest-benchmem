@@ -77,6 +77,44 @@ def test_dims_from_params_and_extra_info(tmp_path):
     assert samples[0].dims == {"n": 10, "op": "sort"}
 
 
+def test_dims_drops_unserializable(tmp_path):
+    # pytest-benchmark stamps a non-JSON param as "UNSERIALIZABLE[<repr>]"; it's a
+    # broken axis (identical across objects), so it must not appear as a dim. The
+    # literal prefix pins pytest-benchmark's format — a rename should fail here.
+    pb = _pb_file(
+        tmp_path,
+        [
+            {
+                "fullname": "t[basic-n=10]",
+                "stats": {"min": 0.1},
+                "params": {"spec": "UNSERIALIZABLE[BenchSpec('basic')]", "n": 10},
+                # also leaks via extra_info if the user stashes an object there
+                "extra_info": {"cfg": "UNSERIALIZABLE[Config()]", "op": "sort"},
+            }
+        ],
+    )
+    _l, samples, _u = from_pytest_benchmark(pb)
+    assert samples[0].dims == {"n": 10, "op": "sort"}
+
+
+def test_dims_drops_non_scalar_values(tmp_path):
+    # Lists/dicts are unhashable — they'd break pandas groupby on faceting, so a
+    # non-scalar param/extra_info value is not a usable axis and must be dropped.
+    pb = _pb_file(
+        tmp_path,
+        [
+            {
+                "fullname": "t[n=10]",
+                "stats": {"min": 0.1},
+                "params": {"sizes": [10, 250], "n": 10},
+                "extra_info": {"meta": {"k": "v"}, "op": "sort"},
+            }
+        ],
+    )
+    _l, samples, _u = from_pytest_benchmark(pb)
+    assert samples[0].dims == {"n": 10, "op": "sort"}
+
+
 def test_memory_from_pytest_benchmark_reads_blob(tmp_path):
     pb = _pb_file(
         tmp_path,
