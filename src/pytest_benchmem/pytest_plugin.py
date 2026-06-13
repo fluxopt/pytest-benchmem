@@ -42,6 +42,10 @@ if TYPE_CHECKING:
 MARKER = "benchmem"
 
 
+#: The memory metrics a test may select via marker / flag.
+VALID_MODES = ("heap", "rss")
+
+
 def _repeats_from_node(node: Any, default: int = 1) -> int:
     """Read ``repeats`` off a test's ``@pytest.mark.benchmem`` marker, if present."""
     marker = node.get_closest_marker(MARKER) if node is not None else None
@@ -50,26 +54,45 @@ def _repeats_from_node(node: Any, default: int = 1) -> int:
     return default
 
 
+def _mode_from_node(node: Any, default: str = "heap") -> str:
+    """Read ``mode`` off a test's ``@pytest.mark.benchmem`` marker, else ``default``."""
+    marker = node.get_closest_marker(MARKER) if node is not None else None
+    mode = marker.kwargs["mode"] if (marker is not None and "mode" in marker.kwargs) else default
+    if mode not in VALID_MODES:
+        raise pytest.UsageError(
+            f"@pytest.mark.benchmem(mode={mode!r}) is invalid; use one of {VALID_MODES}"
+        )
+    return str(mode)
+
+
+def _session_mode(config: pytest.Config) -> str:
+    """The session-default memory mode from ``--benchmark-memory-mode`` (a marker overrides it)."""
+    return str(config.getoption("--benchmark-memory-mode", "heap"))
+
+
 def _record_memory(
-    benchmark: BenchmarkFixture, action: Callable[[], Any], *, repeats: int = 1
+    benchmark: BenchmarkFixture, action: Callable[[], Any], *, repeats: int = 1, mode: str = "heap"
 ) -> MemoryResult:
     """Memory-profile ``action`` into ``benchmark.extra_info["benchmem"]``, once.
 
     Idempotent: if a blob is already recorded for this benchmark (e.g. the
     ``--benchmark-memory`` patch and the explicit fixture both fire), reuse it
-    rather than measuring twice.
+    rather than measuring twice. Reconstruction is tolerant of either mode's blob
+    shape (heap carries allocations/total_bytes; rss carries baseline/net).
     """
     existing = benchmark.extra_info.get(BENCHMEM_KEY)
     if isinstance(existing, Mapping):
         return MemoryResult(
             int(existing["peak_bytes"]),
-            int(existing["peak_bytes_max"]),
-            int(existing["allocations"]),
+            int(existing.get("peak_bytes_max", existing["peak_bytes"])),
+            int(existing.get("allocations", 0)),
             int(existing.get("total_bytes", 0)),
             int(existing["repeats"]),
             str(existing.get("mode", "heap")),
+            int(existing.get("baseline_bytes", 0)),
+            int(existing.get("gross_bytes", 0)),
         )
-    result = measure_memory(action, repeats=repeats)
+    result = measure_memory(action, repeats=repeats, mode=mode)
     benchmark.extra_info[BENCHMEM_KEY] = result.as_dict()
     return result
 
@@ -83,9 +106,12 @@ class MemoryBenchmark:
     ``extra_info["benchmem"]``.
     """
 
-    def __init__(self, benchmark: BenchmarkFixture, *, repeats: int = 1) -> None:
+    def __init__(
+        self, benchmark: BenchmarkFixture, *, repeats: int = 1, mode: str = "heap"
+    ) -> None:
         self._benchmark = benchmark
         self._repeats = repeats
+        self._mode = mode
         self.result: MemoryResult | None = None
 
     @property
@@ -107,7 +133,10 @@ class MemoryBenchmark:
         """Time ``function_to_benchmark(*args, **kwargs)``, then record its peak memory."""
         result = self._benchmark(function_to_benchmark, *args, **kwargs)
         self.result = _record_memory(
-            self._benchmark, lambda: function_to_benchmark(*args, **kwargs), repeats=self._repeats
+            self._benchmark,
+            lambda: function_to_benchmark(*args, **kwargs),
+            repeats=self._repeats,
+            mode=self._mode,
         )
         return result
 
@@ -138,7 +167,10 @@ class MemoryBenchmark:
             iterations=iterations,
         )
         self.result = _record_memory(
-            self._benchmark, _pedantic_action(target, args, kwargs, setup), repeats=self._repeats
+            self._benchmark,
+            _pedantic_action(target, args, kwargs, setup),
+            repeats=self._repeats,
+            mode=self._mode,
         )
         return result
 
@@ -169,11 +201,16 @@ def benchmark_memory(
     """Time *and* peak-memory-profile a callable in one pytest-benchmark test.
 
     Depends on the ``benchmark`` fixture, so timing rides pytest-benchmark fully;
-    the memray memory pass is added on top and stored in the same entry. The
-    ``@pytest.mark.benchmem(repeats=N)`` marker sets min-of-N passes for this test.
-    For an existing suite, prefer the ``--benchmark-memory`` flag over rewriting tests.
+    the memory pass is added on top and stored in the same entry. The
+    ``@pytest.mark.benchmem(repeats=N, mode=...)`` marker sets min-of-N passes and the
+    memory metric (``heap``/``rss``) for this test; ``--benchmark-memory-mode`` sets the
+    session default. For an existing suite, prefer the ``--benchmark-memory`` flag.
     """
-    return MemoryBenchmark(benchmark, repeats=_repeats_from_node(request.node))
+    return MemoryBenchmark(
+        benchmark,
+        repeats=_repeats_from_node(request.node),
+        mode=_mode_from_node(request.node, default=_session_mode(request.config)),
+    )
 
 
 # --- --benchmark-memory: augment the stock `benchmark` fixture --------------------
@@ -197,8 +234,12 @@ def _patch_compatible(fixture_cls: Any) -> bool:
     return pedantic_params >= _PEDANTIC_PARAMS
 
 
-def _install_auto_memory() -> None:
-    """Wrap ``BenchmarkFixture.__call__``/``.pedantic`` to also record peak memory."""
+def _install_auto_memory(default_mode: str = "heap") -> None:
+    """Wrap ``BenchmarkFixture.__call__``/``.pedantic`` to also record peak memory.
+
+    ``default_mode`` is the session memory metric (from ``--benchmark-memory-mode``); a
+    per-test ``@pytest.mark.benchmem(mode=...)`` marker overrides it.
+    """
     global _PATCHED
     if _PATCHED is not None:
         return
@@ -227,11 +268,16 @@ def _install_auto_memory() -> None:
     def _repeats(self: BenchmarkFixture) -> int:
         return _repeats_from_node(getattr(self, "_benchmem_node", None))
 
+    def _mode(self: BenchmarkFixture) -> str:
+        return _mode_from_node(getattr(self, "_benchmem_node", None), default=default_mode)
+
     def call(
         self: BenchmarkFixture, function_to_benchmark: Callable[..., Any], *a: Any, **k: Any
     ) -> Any:
         result = orig_call(self, function_to_benchmark, *a, **k)  # type: ignore[no-untyped-call]
-        _record_memory(self, lambda: function_to_benchmark(*a, **k), repeats=_repeats(self))
+        _record_memory(
+            self, lambda: function_to_benchmark(*a, **k), repeats=_repeats(self), mode=_mode(self)
+        )
         return result
 
     def pedantic(
@@ -255,7 +301,12 @@ def _install_auto_memory() -> None:
             warmup_rounds=warmup_rounds,
             iterations=iterations,
         )
-        _record_memory(self, _pedantic_action(target, args, kwargs, setup), repeats=_repeats(self))
+        _record_memory(
+            self,
+            _pedantic_action(target, args, kwargs, setup),
+            repeats=_repeats(self),
+            mode=_mode(self),
+        )
         return result
 
     BenchmarkFixture.__init__ = init  # type: ignore[method-assign]
@@ -281,8 +332,17 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--benchmark-memory",
         action="store_true",
         default=False,
-        help="Record peak memory (memray) for every benchmark() call, "
-        "not only benchmark_memory — no test changes needed.",
+        help="Record peak memory for every benchmark() call, not only benchmark_memory "
+        "— no test changes needed. Metric is set by --benchmark-memory-mode.",
+    )
+    group.addoption(
+        "--benchmark-memory-mode",
+        action="store",
+        choices=list(VALID_MODES),
+        default="heap",
+        help="Memory metric for benchmark_memory and --benchmark-memory: "
+        "'heap' (memray allocator demand, default) or 'rss' (kernel resident high-water, "
+        "Linux/macOS). A per-test @pytest.mark.benchmem(mode=...) overrides it.",
     )
     group.addoption(
         "--benchmark-memory-compare",
@@ -308,11 +368,12 @@ def pytest_configure(config: pytest.Config) -> None:
     """Register the ``benchmem`` marker; patch ``benchmark`` if ``--benchmark-memory`` is set."""
     config.addinivalue_line(
         "markers",
-        "benchmem(repeats=N): pytest-benchmem peak-memory options — "
-        "repeats sets the number of memray passes (the reported peak is the min).",
+        "benchmem(repeats=N, mode=heap|rss): pytest-benchmem peak-memory options — "
+        "repeats sets the number of passes (the reported peak is the min); "
+        "mode picks the metric (heap = memray allocator demand, rss = resident high-water).",
     )
     if config.getoption("--benchmark-memory"):
-        _install_auto_memory()
+        _install_auto_memory(_session_mode(config))
 
 
 def pytest_unconfigure(config: pytest.Config) -> None:
@@ -391,6 +452,7 @@ def pytest_terminal_summary(terminalreporter: Any, config: pytest.Config) -> Non
     from pytest_benchmem.compare import (
         _BLOB_FIELD,
         Regression,
+        assert_comparable_modes,
         memory_regressions,
         parse_threshold,
     )
@@ -424,6 +486,11 @@ def pytest_terminal_summary(terminalreporter: Any, config: pytest.Config) -> Non
         return
     if not baseline:
         write("benchmem-compare: no prior run with memory to compare against.")
+        return
+    try:
+        assert_comparable_modes(baseline, current)  # heap vs rss is not a comparison
+    except ValueError as exc:
+        write(f"benchmem-compare: {exc}")
         return
 
     write(f"\nMemory vs {label} (peak):")

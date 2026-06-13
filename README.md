@@ -32,8 +32,8 @@ One run, one `run.json`, for each benchmark id — both metrics, one node id:
 - `extra_info.benchmem: {peak_bytes, peak_bytes_max, allocations, total_bytes, repeats, mode}`
   — **memory**, from pytest-benchmem. The `peak` / `allocated` / `allocations`
   metrics mirror what `memray stats` reports (bytes stored raw, so the display
-  layer auto-scales). `mode` records which metric produced the blob (`heap` today);
-  the readers refuse to compare or co-plot different modes.
+  layer auto-scales). `mode` records which metric produced the blob (`heap` or `rss`,
+  see below); the readers refuse to compare or co-plot different modes.
 
 The two passes never overlap: pytest-benchmark times the action untracked, then
 memray measures peak on a *separate, untimed* call — so the allocator hooks cost
@@ -70,6 +70,39 @@ timing, lazy imports, page cache — so min-of-N is the cleanest floor).
 > that already-warmed state, not a cold run — silently. Benchmark a pure call,
 > or use the `benchmark_memory` fixture's `pedantic` form with a `setup` that
 > rebuilds fresh state before each measured call.
+
+### `heap` (default) and `rss` (resident footprint)
+
+**`heap`** — memray allocator demand, in-process, byte-exact: what did your code
+*request*? The default, and the right metric for **regression detection** — precise,
+low-noise, and it sees native (numpy / C-extension) allocations, not just Python objects.
+
+**`rss`** — the workload's peak **resident memory** (`ru_maxrss`), measured in a forked
+child: what the OS actually had to *hold*. It diverges from `heap` by ~15–40% on typical
+Python and in both directions — allocator/hashtable over-allocation and fragmentation push
+it *above* `heap` (a `set` or `dict` can be ~1.4× its allocated bytes), while untouched
+`mmap`'d arenas can push it *below*. Use it for **capacity** ("does this fit the box"); it's
+a kernel high-water, so unlike a polling sampler it can't miss a spike. Linux/macOS only.
+
+> ⚠️ **`rss` measures in a forked child, so it charges the workload for inputs it merely
+> *reads*.** In CPython even reading an object dirties its page (refcount bump), making it
+> resident in the child. So measure a call whose inputs are built *inside* it — or via the
+> `benchmark_memory` fixture's `pedantic` `setup` — otherwise `rss` counts inputs the code
+> only touches. `heap` is immune (it counts allocations, not touches).
+
+```bash
+pytest --benchmark-only --benchmark-memory --benchmark-memory-mode=rss
+```
+
+```python
+@pytest.mark.benchmem(mode="rss")    # or per-test
+def test_build(benchmark_memory):
+    benchmark_memory(lambda: build_model(1_000_000))   # inputs built inside the call
+```
+
+`heap` and `rss` are different quantities (allocator bytes vs resident pages), so the
+readers **refuse to compare or co-plot across modes**. If a benchmarked action dies under
+`rss` measurement (e.g. runs the box out of memory), the test simply fails.
 
 ## Reading it back
 

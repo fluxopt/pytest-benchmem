@@ -163,6 +163,42 @@ def _read_field(path: str | Path, field: str) -> dict[str, float]:
     return {s.id: s.value for s in samples}
 
 
+def _read_modes(path: str | Path) -> dict[str, str]:
+    """``{id: mode}`` for the memory-bearing benchmarks in a file (default ``heap``)."""
+    _l, samples, _u = memory_from_pytest_benchmark(path)
+    return {s.id: str(s.dims.get("mode", "heap")) for s in samples}
+
+
+def _assert_modes_match(base_modes: dict[str, str], head_modes: dict[str, str]) -> None:
+    """Refuse a comparison where a shared id was measured in different memory modes.
+
+    heap (allocator bytes) and rss (resident pages) are different metrics; comparing a
+    peak from one against the other is meaningless — fail loudly rather than mislead.
+    """
+    bad = [
+        (i, base_modes[i], head_modes[i])
+        for i in sorted(base_modes.keys() & head_modes.keys())
+        if base_modes[i] != head_modes[i]
+    ]
+    if bad:
+        i, bm, hm = bad[0]
+        raise ValueError(
+            f"can't compare memory across modes: {i.split('::')[-1]!r} is {bm!r} in the "
+            f"baseline but {hm!r} now — heap (allocator bytes) and rss (resident pages) are "
+            f"different metrics ({len(bad)} id(s) affected)."
+        )
+
+
+def assert_comparable_modes(
+    base_blobs: dict[str, dict[str, Any]], head_blobs: dict[str, dict[str, Any]]
+) -> None:
+    """:func:`_assert_modes_match` for two ``{id: benchmem-blob}`` maps (the inline gate)."""
+    _assert_modes_match(
+        {i: str(b.get("mode", "heap")) for i, b in base_blobs.items()},
+        {i: str(b.get("mode", "heap")) for i, b in head_blobs.items()},
+    )
+
+
 def _regressions_for(
     base: dict[str, float], head: dict[str, float], th: Threshold
 ) -> list[Regression]:
@@ -181,6 +217,8 @@ def _regressions_for(
 
 def find_regressions(a: str | Path, b: str | Path, thresholds: list[Threshold]) -> list[Regression]:
     """Ids in both runs whose field grew past a threshold (only growth counts)."""
+    if any(_FIELD[th.field][0] == "memory" for th in thresholds):
+        _assert_modes_match(_read_modes(a), _read_modes(b))  # never gate heap vs rss
     regressions: list[Regression] = []
     for th in thresholds:
         base, head = _read_field(a, th.field), _read_field(b, th.field)
@@ -202,6 +240,7 @@ def memory_regressions(
     Only ``peak`` / ``allocations`` are supported — timing is pytest-benchmark's
     own ``--benchmark-compare-fail``. Raises on an out-of-scope field.
     """
+    assert_comparable_modes(base_blobs, head_blobs)  # never gate heap vs rss
     regressions: list[Regression] = []
     for th in thresholds:
         if th.field not in _BLOB_FIELD:

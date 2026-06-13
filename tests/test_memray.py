@@ -48,6 +48,52 @@ def test_total_bytes_mirrors_memray_stats():
     assert res.as_dict()["total_bytes"] == res.total_bytes
 
 
+MIB = 1024 * 1024
+
+
+def _alloc_touch(mib):
+    """Allocate `mib` MiB and touch every page so it's actually resident."""
+    import resource
+
+    page = resource.getpagesize()
+    buf = bytearray(mib * MIB)
+    for i in range(0, len(buf), page):
+        buf[i] = 1
+    return buf
+
+
+def test_rss_mode_measures_net_above_baseline():
+    size = 80
+    res = measure_memory(lambda: _alloc_touch(size), mode="rss")
+    assert res.mode == "rss"
+    want = size * MIB
+    assert 0.8 * want <= res.peak_bytes <= 1.4 * want  # headline peak_bytes is NET ≈ allocated
+    assert res.gross_bytes > res.baseline_bytes > 0  # gross (capacity) above the no-op floor
+    assert res.peak_bytes <= res.gross_bytes  # net never exceeds gross
+
+
+def test_rss_blob_carries_baseline_gross_not_churn():
+    blob = measure_memory(lambda: _alloc_touch(40), mode="rss").as_dict()
+    assert blob["mode"] == "rss"
+    expected = {"peak_bytes", "peak_bytes_max", "baseline_bytes", "gross_bytes", "repeats"}
+    assert expected <= blob.keys()
+    assert "allocations" not in blob and "total_bytes" not in blob  # heap-only fields absent
+
+
+def test_rss_failure_raises_with_child_traceback():
+    def boom():
+        raise ValueError("kaboom-xyz")
+
+    with pytest.raises(RuntimeError, match="raised during rss measurement") as exc:
+        measure_memory(boom, mode="rss")
+    assert "kaboom-xyz" in str(exc.value)  # the child's traceback is surfaced
+
+
+def test_unknown_mode_raises():
+    with pytest.raises(ValueError, match="unknown memory mode"):
+        measure_memory(lambda: None, mode="bogus")
+
+
 def test_mode_defaults_to_heap_in_result_and_blob():
     res = measure_memory(lambda: [bytearray(1024) for _ in range(50)])
     assert res.mode == "heap"

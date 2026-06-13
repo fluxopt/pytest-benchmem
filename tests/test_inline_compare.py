@@ -4,11 +4,33 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from pytest_benchmem import pytest_plugin as P
+from pytest_benchmem.compare import assert_comparable_modes, memory_regressions, parse_threshold
 
 
 def _config(**opts):
     return SimpleNamespace(getoption=lambda name: opts.get(name, False))
+
+
+def test_assert_comparable_modes_rejects_cross_mode():
+    base = {"t::a": {"peak_bytes": 100, "mode": "heap"}}
+    head = {"t::a": {"peak_bytes": 100, "mode": "rss"}}
+    with pytest.raises(ValueError, match="across modes"):
+        assert_comparable_modes(base, head)
+
+
+def test_assert_comparable_modes_allows_same_and_missing_default_heap():
+    # a blob with no mode reads as heap, so heap-vs-(missing) is comparable
+    assert_comparable_modes({"a": {"peak_bytes": 1}}, {"a": {"peak_bytes": 2, "mode": "heap"}})
+
+
+def test_memory_regressions_rejects_cross_mode():
+    base = {"t::a": {"peak_bytes": 100, "mode": "heap"}}
+    head = {"t::a": {"peak_bytes": 200, "mode": "rss"}}
+    with pytest.raises(ValueError, match="across modes"):
+        memory_regressions(base, head, [parse_threshold("peak:10%")])
 
 
 def test_compare_requested_off_by_default():

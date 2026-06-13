@@ -139,6 +139,39 @@ def test_benchmem_marker_sets_repeats(pytester):
     assert by_name["test_marked_plain"]["extra_info"]["benchmem"]["repeats"] == 4
 
 
+# --- rss mode: @pytest.mark.benchmem(mode="rss") and --benchmark-memory-mode -----
+
+RSS_SUITE = """
+import pytest
+
+@pytest.mark.benchmem(mode="rss")
+def test_rss(benchmark_memory):
+    benchmark_memory(lambda: bytearray(50 * 1024 * 1024))
+"""
+
+
+def test_marker_mode_rss_records_rss_blob(pytester):
+    """@pytest.mark.benchmem(mode='rss') stores an rss blob (baseline/net, no churn fields)."""
+    pytester.makepyfile(RSS_SUITE)
+    out = pytester.path / "bench.json"
+    result = pytester.runpytest_subprocess(
+        "--benchmark-only", f"--benchmark-json={out}", "-p", "no:cacheprovider"
+    )
+    result.assert_outcomes(passed=1)
+    blob = json.loads(out.read_text())["benchmarks"][0]["extra_info"]["benchmem"]
+    assert blob["mode"] == "rss"
+    assert blob["peak_bytes"] >= 0  # headline net resident
+    assert blob["gross_bytes"] > blob["baseline_bytes"] > 0  # gross/baseline carried for context
+    assert "allocations" not in blob  # rss blobs omit the memray-only fields
+
+
+def test_benchmark_memory_mode_rss_flag_sets_session_default(pytester):
+    """--benchmark-memory-mode=rss makes the --benchmark-memory auto-pass record rss."""
+    data = _run_plain(pytester, "--benchmark-memory", "--benchmark-memory-mode=rss")
+    for b in data["benchmarks"]:
+        assert b["extra_info"]["benchmem"]["mode"] == "rss"
+
+
 def test_benchmem_marker_is_registered(pytester):
     """The marker is declared, so --strict-markers doesn't reject it."""
     pytester.makepyfile(
