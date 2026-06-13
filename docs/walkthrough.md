@@ -118,6 +118,62 @@ print(f"unit: {unit}")
 df
 ```
 
+## A second metric: `rss` — resident high-water
+
+`heap` (the default above) is memray's **allocator demand** — byte-exact, Python-only.
+The other metric, `rss`, is the workload's peak **resident set** (`ru_maxrss`), measured by
+running it in a forked child: the uniform, language-agnostic *capacity* number, and a kernel
+high-water (not sampled), so it can't miss a spike the way a polling sampler does. It
+subtracts a forked no-op child's footprint, so you get the workload's **net** resident cost.
+Linux/macOS only.
+
+Pick it per test with `@pytest.mark.benchmem(mode="rss")`, or for a whole run with
+`--benchmark-memory-mode=rss` — the same suite, a different metric:
+
+```{code-cell} ipython3
+rss_run = _tmp / "rss.json"
+!pytest {suite} --benchmark-only --benchmark-memory-mode=rss --benchmark-json={rss_run} -q -p no:cacheprovider
+```
+
+The `rss` blob carries the gross resident peak, the baseline it subtracts, and the resulting
+net — in place of heap's allocation-count / total-bytes fields:
+
+```{code-cell} ipython3
+import json
+
+from pytest_benchmem import human_bytes
+
+for bench in json.loads(rss_run.read_text())["benchmarks"]:
+    blob = bench["extra_info"]["benchmem"]
+    print(
+        f"{bench['name']:<18} mode={blob['mode']}  "
+        f"gross={human_bytes(blob['peak_bytes'])}  net={human_bytes(blob['peak_net_bytes'])}  "
+        f"(baseline {human_bytes(blob['baseline_bytes'])})"
+    )
+```
+
+`heap` and `rss` are different quantities wearing the same byte unit (allocator bytes vs
+resident pages), so the readers **refuse to compare or co-plot across modes** rather than
+mislead — here the heap `baseline` against the `rss` run:
+
+```{code-cell} ipython3
+from pytest_benchmem import load_long_df
+
+try:
+    load_long_df([baseline, rss_run], metric="peak")
+except ValueError as exc:
+    print(f"refused: {exc}")
+```
+
+Within one mode it's the same tooling as everything below — here the resident-memory scaling
+curve for `sorted`:
+
+```{code-cell} ipython3
+from pytest_benchmem import plotting
+
+plotting.plot_scaling([rss_run], metric="peak")[0]
+```
+
 ## Quick one-off — `measure_peak`
 
 Outside pytest — in a REPL or notebook — `measure_peak` is the bare engine: hand
