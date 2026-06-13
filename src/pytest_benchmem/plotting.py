@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
-from peakbench.snapshot import Metric, load_long_df
+from pytest_benchmem.snapshot import Metric, load_long_df
 
 if TYPE_CHECKING:
     import numpy.typing as npt

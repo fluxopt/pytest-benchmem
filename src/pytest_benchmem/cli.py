@@ -1,4 +1,4 @@
-"""peakbench CLI — ``plot`` and ``compare`` over pytest-benchmark JSON runs.
+"""pytest-benchmem CLI — ``plot`` and ``compare`` over pytest-benchmark JSON runs.
 
 Both commands read the JSON pytest-benchmark writes (``.benchmarks/…``) and pick
 a ``--metric`` (``time`` from ``stats``, ``memory`` from ``extra_info.peak_mib``).
@@ -14,9 +14,9 @@ from typing import Annotated
 
 import typer
 
-from peakbench.snapshot import Metric, discover_runs
+from pytest_benchmem.snapshot import Metric, discover_runs
 
-app = typer.Typer(help="peakbench — plot and compare benchmark runs.", no_args_is_help=True)
+app = typer.Typer(help="pytest-benchmem — plot and compare benchmark runs.", no_args_is_help=True)
 
 MetricOpt = Annotated[Metric, typer.Option(help="Which metric to read: time | memory.")]
 
@@ -24,7 +24,7 @@ MetricOpt = Annotated[Metric, typer.Option(help="Which metric to read: time | me
 def _need_plotly() -> None:
     if importlib.util.find_spec("plotly") is None:
         typer.secho(
-            "plotting needs extras: pip install 'peakbench[plot]'",
+            "plotting needs extras: pip install 'pytest-benchmem[plot]'",
             fg=typer.colors.RED,
             err=True,
         )
@@ -56,7 +56,7 @@ def plot(
 
     chosen = view or ("scaling" if len(runs) == 1 else "scatter" if len(runs) == 2 else "sweep")
     _need_plotly()
-    from peakbench import plotting
+    from pytest_benchmem import plotting
 
     try:
         if chosen == "compare":
@@ -95,7 +95,7 @@ def compare(
         if not p.exists():
             typer.secho(f"missing: {p}", fg=typer.colors.RED, err=True)
             raise typer.Exit(code=2)
-    from peakbench.compare import compare_runs
+    from pytest_benchmem.compare import compare_runs
 
     try:
         compare_runs(a, b, metric=metric)

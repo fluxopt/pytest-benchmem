@@ -4,7 +4,7 @@ import platform
 
 import pytest
 
-from peakbench import measure_peak
+from pytest_benchmem import measure_peak
 
 pytest.importorskip("memray")
 pytestmark = pytest.mark.skipif(

@@ -1,6 +1,6 @@
-site_name: peakbench
+site_name: pytest-benchmem
 site_description: The memory companion to pytest-benchmark — a memray peak-memory pass on the same test.
-repo_url: https://github.com/fluxopt/peakbench
+repo_url: https://github.com/fluxopt/pytest-benchmem
 docs_dir: docs
 
 theme:

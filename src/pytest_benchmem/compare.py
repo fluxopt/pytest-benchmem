@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from typing import TextIO
 
-from peakbench.snapshot import Metric, load_long_df
+from pytest_benchmem.snapshot import Metric, load_long_df
 
 
 def compare_runs(

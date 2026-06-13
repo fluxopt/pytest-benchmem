@@ -2,7 +2,7 @@
 
 We run a tiny generated test suite with --benchmark-json and assert the produced
 pytest-benchmark file carries both timing stats and our extra_info.peak_mib, then
-that peakbench's readers lift both back out.
+that pytest-benchmem's readers lift both back out.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import platform
 
 import pytest
 
-from peakbench.snapshot import from_pytest_benchmark, memory_from_pytest_benchmark
+from pytest_benchmem.snapshot import from_pytest_benchmark, memory_from_pytest_benchmark
 
 pytest.importorskip("memray")
 pytest.importorskip("pytest_benchmark")
@@ -54,7 +54,7 @@ def test_fixture_records_timing_and_memory(pytester):
     # the timing-only test has no peak recorded
     assert "peak_mib" not in by_name["test_time_only"].get("extra_info", {})
 
-    # peakbench readers lift both back out of the one file
+    # pytest-benchmem readers lift both back out of the one file
     _l, time_samples, tunit = from_pytest_benchmark(out)
     _l, mem_samples, munit = memory_from_pytest_benchmark(out)
     assert tunit == "s" and munit == "MiB"

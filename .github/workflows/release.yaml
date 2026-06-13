@@ -47,7 +47,7 @@ jobs:
       attestations: write
     environment:
       name: pypi
-      url: https://pypi.org/project/peakbench
+      url: https://pypi.org/project/pytest-benchmem
     steps:
       - uses: actions/checkout@v6
         with:
