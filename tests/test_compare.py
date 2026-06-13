@@ -19,7 +19,7 @@ def _write(path, benchmarks):
     return path
 
 
-def _bm(name, *, t=0.0, peak=None, allocations=0):
+def _bm(name, *, t=0.0, peak=None, allocations=0, total_bytes=0):
     bm = {"fullname": name, "stats": {"min": t}}
     if peak is not None:
         bm["extra_info"] = {
@@ -27,6 +27,7 @@ def _bm(name, *, t=0.0, peak=None, allocations=0):
                 "peak_bytes": peak,
                 "peak_bytes_max": peak,
                 "allocations": allocations,
+                "total_bytes": total_bytes,
                 "repeats": 1,
             }
         }
@@ -52,7 +53,7 @@ def test_memory_metric_reads_blob(tmp_path):
     a = _write(tmp_path / "base.json", [_bm("test_x", peak=10 * 1024**2)])
     b = _write(tmp_path / "head.json", [_bm("test_x", peak=12 * 1024**2)])
     out = StringIO()
-    compare_runs(a, b, metric="memory", out=out)
+    compare_runs(a, b, metric="peak", out=out)
     text = out.getvalue()
     assert "(B)" in text  # bytes header
     assert "10 MiB" in text and "12 MiB" in text  # cells auto-scale to IEC
@@ -127,6 +128,15 @@ def test_find_regressions_allocations(tmp_path):
     b = _write(tmp_path / "head.json", [_bm("x", peak=10, allocations=130)])
     assert find_regressions(a, b, [parse_threshold("allocations:20%")])  # +30%
     assert not find_regressions(a, b, [parse_threshold("allocations:50%")])
+
+
+def test_find_regressions_allocated_total_bytes(tmp_path):
+    # peak flat, but total churn doubled — caught by the 'allocated' gate
+    a = _write(tmp_path / "base.json", [_bm("x", peak=10, total_bytes=1_000_000)])
+    b = _write(tmp_path / "head.json", [_bm("x", peak=10, total_bytes=2_000_000)])
+    assert find_regressions(a, b, [parse_threshold("allocated:50%")])
+    assert find_regressions(a, b, [parse_threshold("allocated:0.5MiB")])  # grew ~1 MiB
+    assert not find_regressions(a, b, [parse_threshold("peak:1%")])  # peak unchanged
 
 
 def test_find_regressions_ignores_improvements(tmp_path):

@@ -1,7 +1,8 @@
 """Interactive plotly views over pytest-benchmark runs — dims-driven.
 
-Each view reads one ``metric`` (``"time"`` or ``"memory"``) out of the
-pytest-benchmark JSON files and returns ``(figure, n_rendered)``:
+Each view reads one ``metric`` (``time`` / ``peak`` / ``allocated`` /
+``allocations``) out of the pytest-benchmark JSON files and returns
+``(figure, n_rendered)``:
 
 - :func:`plot_compare` (2 runs) — bar chart of per-id delta.
 - :func:`plot_scatter` (2+) — baseline cost vs ratio; top-right = the regressed one.

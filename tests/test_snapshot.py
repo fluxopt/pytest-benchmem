@@ -51,11 +51,12 @@ def test_metric_picks_the_stat(tmp_path):
     assert samples[0].value == 0.3
 
 
-def _blob(peak_bytes, *, allocations=0, repeats=1):
+def _blob(peak_bytes, *, allocations=0, total_bytes=0, repeats=1):
     return {
         "peak_bytes": peak_bytes,
         "peak_bytes_max": peak_bytes,
         "allocations": allocations,
+        "total_bytes": total_bytes,
         "repeats": repeats,
     }
 
@@ -109,10 +110,20 @@ def test_memory_reads_allocations_field(tmp_path):
 def test_load_samples_dispatches_on_metric(tmp_path):
     pb = _pb_file(
         tmp_path,
-        [{"fullname": "a", "stats": {"min": 0.1}, "extra_info": {"benchmem": _blob(5_000)}}],
+        [
+            {
+                "fullname": "a",
+                "stats": {"min": 0.1},
+                "extra_info": {"benchmem": _blob(5_000, allocations=7, total_bytes=20_000)},
+            }
+        ],
     )
     assert load_samples(pb, metric="time")[2] == "s"
-    assert load_samples(pb, metric="memory")[2] == "B"
+    assert load_samples(pb, metric="peak")[1][0].value == 5_000
+    assert load_samples(pb, metric="allocated")[1][0].value == 20_000
+    assert load_samples(pb, metric="allocations")[1][0].value == 7
+    assert load_samples(pb, metric="allocated")[2] == "B"
+    assert load_samples(pb, metric="allocations")[2] == ""
 
 
 def test_load_long_df_stacks_runs_with_dim_columns(tmp_path):

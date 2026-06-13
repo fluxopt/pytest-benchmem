@@ -23,9 +23,10 @@ from pytest_benchmem.snapshot import (
     memory_from_pytest_benchmark,
 )
 
-#: fail-on field → (reader metric, reader field/stat, display unit).
+#: fail-on field → (reader kind, reader field/stat, display unit).
 _FIELD = {
     "peak": ("memory", "peak_bytes", "B"),
+    "allocated": ("memory", "total_bytes", "B"),
     "allocations": ("memory", "allocations", ""),
     "time": ("time", "min", "s"),
 }
@@ -145,7 +146,7 @@ def _parse_abs(field: str, raw: str, expr: str) -> float:
         if suffix:
             raise ValueError(f"bad --fail-on {expr!r}: allocations is a count, drop {suffix!r}")
         return num
-    units = _BYTE_UNITS if field == "peak" else _TIME_UNITS
+    units = _BYTE_UNITS if field in ("peak", "allocated") else _TIME_UNITS
     if suffix not in units:
         known = ", ".join(k for k in units if k)
         raise ValueError(f"bad --fail-on {expr!r}: unknown unit {suffix!r} (use {known})")
@@ -188,7 +189,7 @@ def find_regressions(a: str | Path, b: str | Path, thresholds: list[Threshold]) 
 
 
 #: Memory-blob key per fail-on field — the fields ``--benchmark-memory-compare-fail`` gates on.
-_BLOB_FIELD = {"peak": "peak_bytes", "allocations": "allocations"}
+_BLOB_FIELD = {"peak": "peak_bytes", "allocated": "total_bytes", "allocations": "allocations"}
 
 
 def memory_regressions(
