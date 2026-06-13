@@ -277,6 +277,16 @@ def test_load_long_df_accepts_single_path(tmp_path):
     assert len(from_str) == len(from_path) == 1
 
 
+def test_load_long_df_labels_override_stem(tmp_path):
+    a, b = tmp_path / "run-a.json", tmp_path / "run-b.json"
+    for p in (a, b):
+        p.write_text(json.dumps({"benchmarks": [{"fullname": "x", "stats": {"min": 1.0}}]}))
+    df, _u = load_long_df([a, b], labels=["v1", "v2"])
+    assert set(df["snapshot"]) == {"v1", "v2"}  # not the run-a / run-b stems
+    with pytest.raises(ValueError, match="labels has 1 entries but there are 2"):
+        load_long_df([a, b], labels=["only-one"])
+
+
 def test_memory_mode_defaults_to_heap_for_older_blobs(tmp_path):
     # a blob predating the mode tag reads as the heap default.
     pb = _pb_file(
