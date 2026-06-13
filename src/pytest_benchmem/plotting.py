@@ -16,12 +16,13 @@ The sweep/scatter/compare views key on the opaque ``id``; only ``scaling`` reads
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
-from pytest_benchmem.snapshot import RESERVED_COLUMNS, Metric, load_long_df
+from pytest_benchmem.snapshot import RESERVED_COLUMNS, Metric, _as_paths, load_long_df
 
 if TYPE_CHECKING:
     import numpy.typing as npt
@@ -29,6 +30,9 @@ if TYPE_CHECKING:
     from plotly.graph_objects import Figure
 
 SortMode = Literal["absolute", "relative"]
+
+#: A plot input: one path or a sequence of them (str or Path).
+Snapshots = str | Path | Sequence[str | Path]
 
 
 def _value_label(unit: str) -> str:
@@ -96,7 +100,7 @@ def _dim_columns(df: pd.DataFrame) -> list[str]:
 
 
 def plot_compare(
-    snapshots: list[Path],
+    snapshots: Snapshots,
     *,
     metric: Metric = "time",
     sort: SortMode = "absolute",
@@ -113,6 +117,7 @@ def plot_compare(
 
     import plotly.express as px
 
+    snapshots = _as_paths(snapshots)
     df_long, unit = load_long_df(snapshots[:2], metric=metric)
     vlabel = _value_label(unit)
     labels = df_long["snapshot"].drop_duplicates().tolist()
@@ -172,7 +177,7 @@ def plot_compare(
 
 
 def plot_scatter(
-    snapshots: list[Path],
+    snapshots: Snapshots,
     *,
     metric: Metric = "time",
     facet: str | None = None,
@@ -186,6 +191,7 @@ def plot_scatter(
     """
     import plotly.express as px
 
+    snapshots = _as_paths(snapshots)
     if len(snapshots) < 2:
         raise ValueError("scatter needs at least 2 snapshots (baseline + 1)")
 
@@ -243,7 +249,7 @@ def plot_scatter(
 
 
 def plot_sweep(
-    snapshots: list[Path], *, metric: Metric = "time", clip: float | None = None
+    snapshots: Snapshots, *, metric: Metric = "time", clip: float | None = None
 ) -> tuple[Figure, int]:
     """Heatmap of per-id fold-change (log2 ratio) vs the first snapshot."""
     import plotly.express as px
@@ -311,7 +317,7 @@ def _infer_roles(
 
 
 def plot_scaling(
-    snapshots: list[Path],
+    snapshots: Snapshots,
     *,
     metric: Metric = "time",
     x: str | None = None,
@@ -327,6 +333,7 @@ def plot_scaling(
     """
     import plotly.express as px
 
+    snapshots = _as_paths(snapshots)
     df_long, unit = load_long_df(snapshots[:1], metric=metric)
     vlabel = _value_label(unit)
     x, color, facet = _infer_roles(df_long, x, color, facet)

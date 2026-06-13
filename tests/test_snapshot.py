@@ -179,6 +179,14 @@ def test_load_long_df_stacks_runs_with_dim_columns(tmp_path):
     assert {"snapshot", "id", "value", "n"} <= set(df.columns)
 
 
+def test_load_long_df_accepts_single_path(tmp_path):
+    # a bare str/Path is one file, not a sequence of characters
+    pb = _pb_file(tmp_path, [{"fullname": "x", "stats": {"min": 1.0}, "params": {"n": 10}}])
+    from_str, _ = load_long_df(str(pb))
+    from_path, _ = load_long_df(pb)
+    assert len(from_str) == len(from_path) == 1
+
+
 def test_memory_mode_defaults_to_heap_for_older_blobs(tmp_path):
     # a blob predating the mode tag reads as the heap default.
     pb = _pb_file(
