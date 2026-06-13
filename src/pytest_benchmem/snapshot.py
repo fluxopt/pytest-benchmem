@@ -5,8 +5,9 @@ pytest-benchmark writes under ``.benchmarks/<machine>/NNNN_*.json``; a single
 file carries *both* metrics for each benchmark id:
 
 - ``stats`` — timing (min/mean/median/…), in seconds.
-- ``extra_info.peak_mib`` — peak memory in MiB, written by the
-  ``benchmark_memory`` fixture.
+- ``extra_info.benchmem`` — the memory blob written by the ``benchmark_memory``
+  fixture: ``{peak_bytes, peak_bytes_max, allocations, repeats}``, in **bytes**
+  (the raw memray unit; the display layer auto-scales).
 
 So reads are *per metric*: :func:`from_pytest_benchmark` pulls timing,
 :func:`memory_from_pytest_benchmark` pulls memory, each yielding a list of
