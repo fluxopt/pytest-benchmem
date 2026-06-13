@@ -47,6 +47,28 @@ benchmarked code must be safe to re-run — a side-effectful call records its
 already-warmed state, not a cold one. Benchmark a pure call, or use the
 `benchmark_memory` `pedantic` form with a `setup` that rebuilds fresh state.
 
+## Metrics
+
+Every read / `plot` / `compare` picks one `--metric`. Which memory metrics are
+available depends on the measurement **mode** the run used (`heap`, the default,
+or `rss`) — they measure different things, so each carries different numbers:
+
+| metric | mode | what it is |
+|---|---|---|
+| `time` | — | wall-clock, from pytest-benchmark's `stats` |
+| `peak` | heap + rss | peak memory (min across repeats — the floor). `memory` is an alias |
+| `peak_max` | heap + rss | the *worst* peak across repeats — the noise envelope |
+| `allocated` | heap only | total bytes allocated (churn, incl. freed temporaries) |
+| `allocations` | heap only | total number of allocations |
+| `gross` | rss only | resident high-water incl. baseline — the capacity number |
+
+Asking for a metric the run's mode didn't measure (e.g. `gross` on a heap run) is
+a clear error, not an empty result:
+
+```bash
+benchmem plot run.json --metric gross    # rss-only; on a heap run, tells you so
+```
+
 ## Grouping axes (dims)
 
 Every plot and `compare` groups by **dims** — the axes a result varies over. Dims

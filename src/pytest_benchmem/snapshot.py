@@ -29,17 +29,38 @@ from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 #: A value of a dim axis — categorical (str) or numeric (int/float).
 DimValue = str | int | float
 
-#: Which metric to read out of a pytest-benchmark file — the memory ones mirror
-#: ``memray stats``: ``peak`` (peak memory), ``allocated`` (total memory
-#: allocated), ``allocations`` (total allocations). ``memory`` is an alias for
-#: ``peak``.
-Metric = Literal["time", "peak", "allocated", "allocations", "memory"]
+#: Which metric to read out of a pytest-benchmark file. Memory metrics split by mode
+#: (see :data:`_METRIC_MODES`): ``peak`` / ``peak_max`` (the min- and max-of-repeats
+#: peak) are shared; ``allocated`` (total bytes) and ``allocations`` (count) are
+#: heap-only churn; ``gross`` (resident high-water incl. baseline) is rss-only.
+#: ``memory`` is an alias for ``peak``.
+Metric = Literal["time", "peak", "peak_max", "allocated", "allocations", "gross", "memory"]
 
 #: User-facing metric aliases, normalized to a canonical name by :func:`_canonical_metric`.
 _METRIC_ALIAS = {"memory": "peak"}
 
 #: Memory metric → its blob field.
-_METRIC_FIELD = {"peak": "peak_bytes", "allocated": "total_bytes", "allocations": "allocations"}
+_METRIC_FIELD = {
+    "peak": "peak_bytes",
+    "peak_max": "peak_bytes_max",
+    "allocated": "total_bytes",
+    "allocations": "allocations",
+    "gross": "gross_bytes",
+}
+
+#: Which measurement modes carry each memory metric. ``peak``/``peak_max`` are in every
+#: blob; the churn metrics are heap-only; ``gross`` is rss-only. Asking for a metric the
+#: blob's mode doesn't carry is an error, not a silent skip (see the reader).
+_METRIC_MODES = {
+    "peak": {"heap", "rss"},
+    "peak_max": {"heap", "rss"},
+    "allocated": {"heap"},
+    "allocations": {"heap"},
+    "gross": {"rss"},
+}
+
+#: Reverse of :data:`_METRIC_FIELD` (blob fields are unique), for mode-validating a read.
+_FIELD_METRIC = {field: metric for metric, field in _METRIC_FIELD.items()}
 
 #: Key under which ``benchmark_memory`` stores its memory blob in ``extra_info``.
 BENCHMEM_KEY = "benchmem"
@@ -69,7 +90,13 @@ RESERVED_COLUMNS = ("snapshot", "id", "value", MODE_KEY)
 NODE_DIM_PREFIX = "node."
 
 #: Display unit per memory blob field (count fields have no unit).
-_FIELD_UNIT = {"peak_bytes": "B", "peak_bytes_max": "B", "total_bytes": "B", "allocations": ""}
+_FIELD_UNIT = {
+    "peak_bytes": "B",
+    "peak_bytes_max": "B",
+    "total_bytes": "B",
+    "gross_bytes": "B",
+    "allocations": "",
+}
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -191,6 +218,11 @@ def from_pytest_benchmark(
     return p.stem, samples, "s"
 
 
+def _metrics_for(mode: str) -> list[str]:
+    """Memory metrics a blob measured in ``mode`` carries (for actionable errors)."""
+    return [m for m, modes in _METRIC_MODES.items() if mode in modes]
+
+
 def memory_from_pytest_benchmark(
     path: str | Path, *, field: str = "peak_bytes"
 ) -> tuple[str, list[Sample], str]:
@@ -200,19 +232,33 @@ def memory_from_pytest_benchmark(
     ``extra_info["benchmem"]``, keyed by the same benchmark id pytest-benchmark
     uses. ``field`` picks which blob number to read (``peak_bytes`` → unit ``B``,
     ``allocations`` → count). Benchmarks lacking the blob (timing-only tests) are
-    skipped. Dims come from parametrize ``params`` and ``extra_info``, plus the
-    structural ``node.*`` dims (see :func:`_node_dims`).
+    skipped. A blob measured in a ``mode`` that doesn't carry ``field`` (e.g. the
+    rss-only ``gross`` on a heap run) raises, rather than silently dropping the row.
+    Dims come from parametrize ``params`` and ``extra_info``, plus the structural
+    ``node.*`` dims (see :func:`_node_dims`).
     """
     p, benchmarks = _read_benchmarks(path)
     unit = _FIELD_UNIT.get(field, "")
+    metric = _FIELD_METRIC.get(field, field)
+    valid_modes = _METRIC_MODES.get(metric, {"heap", "rss"})
     samples = []
     for bm in benchmarks:
         blob = _benchmem(bm)
-        if blob is None or blob.get(field) is None:
-            continue
+        if blob is None:
+            continue  # timing-only benchmark
+        mode = str(blob.get(MODE_KEY, DEFAULT_MODE))
+        if mode not in valid_modes:
+            want = " or ".join(sorted(valid_modes))
+            raise ValueError(
+                f"metric {metric!r} is {'/'.join(sorted(valid_modes))}-only, but "
+                f"{bm['fullname']!r} was measured in {mode!r} mode. Pick a {mode} metric "
+                f"({', '.join(_metrics_for(mode))}), or re-measure in {want} mode."
+            )
+        if blob.get(field) is None:
+            continue  # right mode but the number is absent (e.g. a pre-migration blob)
         # mode rides along as a reserved provenance dim so readers/plots can refuse to
         # mix incomparable metrics; blobs predating it (pre-rss) read as the heap default.
-        dims = {**_all_dims(bm), MODE_KEY: str(blob.get(MODE_KEY, DEFAULT_MODE))}
+        dims = {**_all_dims(bm), MODE_KEY: mode}
         samples.append(Sample(id=bm["fullname"], value=float(blob[field]), dims=dims))
     return p.stem, samples, unit
 
