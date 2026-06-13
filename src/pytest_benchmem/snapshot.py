@@ -61,6 +61,13 @@ DEFAULT_MODE = "heap"
 #: views exclude these when inferring dim roles.
 RESERVED_COLUMNS = ("snapshot", "id", "value", MODE_KEY)
 
+#: Namespace for structural dims derived from the pytest node id and benchmark group
+#: (``node.module`` / ``node.func`` / ``node.class`` / ``node.group``). Reserved on two
+#: counts: it can't collide with user params (Python identifiers, no dot) or extra_info,
+#: and plot views never *auto*-pick a ``node.`` dim — but you can name one explicitly
+#: (``facet="node.func"``).
+NODE_DIM_PREFIX = "node."
+
 #: Display unit per memory blob field (count fields have no unit).
 _FIELD_UNIT = {"peak_bytes": "B", "peak_bytes_max": "B", "total_bytes": "B", "allocations": ""}
 
@@ -124,6 +131,39 @@ def _dims(bm: Mapping[str, Any]) -> dict[str, DimValue]:
     return dims
 
 
+def _node_dims(bm: Mapping[str, Any]) -> dict[str, DimValue]:
+    """Structural dims from the pytest node id and benchmark ``group``, namespaced
+    under ``node.`` (see :data:`NODE_DIM_PREFIX`).
+
+    Reads the *stable* node-id grammar ``module.py::Class::func[params]`` — the
+    ``::`` structure only, never the ``[...]`` params payload (that's :func:`_dims`'
+    job, and would be fragile). Whatever can't be determined is simply omitted
+    (e.g. a doctest or a ``::``-less id yields no module/func).
+    """
+    out: dict[str, DimValue] = {}
+    group = bm.get("group")
+    if isinstance(group, str) and group:
+        out[f"{NODE_DIM_PREFIX}group"] = group
+    fullname = bm.get("fullname")
+    if not isinstance(fullname, str) or "::" not in fullname:
+        return out
+    module, _, rest = fullname.partition("::")
+    if module:
+        out[f"{NODE_DIM_PREFIX}module"] = module
+    segments = rest.split("::")  # [Class, ..., name]
+    func = segments[-1].split("[", 1)[0]  # drop the params suffix
+    if func:
+        out[f"{NODE_DIM_PREFIX}func"] = func
+    if len(segments) > 1:
+        out[f"{NODE_DIM_PREFIX}class"] = segments[-2]  # innermost class qualifier
+    return out
+
+
+def _all_dims(bm: Mapping[str, Any]) -> dict[str, DimValue]:
+    """Node dims plus param/extra_info dims; the latter win on the (improbable) clash."""
+    return {**_node_dims(bm), **_dims(bm)}
+
+
 def _benchmem(bm: Mapping[str, Any]) -> Mapping[str, Any] | None:
     """The memory blob for one benchmark, or ``None`` if it's timing-only."""
     extra = bm.get("extra_info")
@@ -140,11 +180,13 @@ def from_pytest_benchmark(
     """Read timing out of a pytest-benchmark file → ``(label, samples, "s")``.
 
     ``metric`` picks the stat (``min`` / ``median`` / …). Dims come from each
-    benchmark's parametrize ``params`` and ``extra_info``.
+    benchmark's parametrize ``params`` and ``extra_info``, plus the structural
+    ``node.*`` dims (see :func:`_node_dims`).
     """
     p, benchmarks = _read_benchmarks(path)
     samples = [
-        Sample(id=bm["fullname"], value=bm["stats"][metric], dims=_dims(bm)) for bm in benchmarks
+        Sample(id=bm["fullname"], value=bm["stats"][metric], dims=_all_dims(bm))
+        for bm in benchmarks
     ]
     return p.stem, samples, "s"
 
@@ -158,7 +200,8 @@ def memory_from_pytest_benchmark(
     ``extra_info["benchmem"]``, keyed by the same benchmark id pytest-benchmark
     uses. ``field`` picks which blob number to read (``peak_bytes`` → unit ``B``,
     ``allocations`` → count). Benchmarks lacking the blob (timing-only tests) are
-    skipped. Dims come from parametrize ``params`` and ``extra_info``.
+    skipped. Dims come from parametrize ``params`` and ``extra_info``, plus the
+    structural ``node.*`` dims (see :func:`_node_dims`).
     """
     p, benchmarks = _read_benchmarks(path)
     unit = _FIELD_UNIT.get(field, "")
@@ -169,7 +212,7 @@ def memory_from_pytest_benchmark(
             continue
         # mode rides along as a reserved provenance dim so readers/plots can refuse to
         # mix incomparable metrics; blobs predating it (pre-rss) read as the heap default.
-        dims = {**_dims(bm), MODE_KEY: str(blob.get(MODE_KEY, DEFAULT_MODE))}
+        dims = {**_all_dims(bm), MODE_KEY: str(blob.get(MODE_KEY, DEFAULT_MODE))}
         samples.append(Sample(id=bm["fullname"], value=float(blob[field]), dims=dims))
     return p.stem, samples, unit
 

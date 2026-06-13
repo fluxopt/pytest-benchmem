@@ -10,6 +10,7 @@ pytest.importorskip("pandas")
 pytest.importorskip("plotly")
 
 from pytest_benchmem import plotting
+from pytest_benchmem.snapshot import load_long_df
 
 
 def _run(path, rows, *, memory=False):
@@ -35,6 +36,17 @@ def _run(path, rows, *, memory=False):
 
 ROWS_A = [(10, 1.0), (100, 2.0), (1000, 4.0)]
 ROWS_B = [(10, 1.1), (100, 1.8), (1000, 5.0)]
+
+
+def _run_two_funcs(path):
+    """A run with two operations (``::``-qualified funcs) over a shared numeric dim n."""
+    benchmarks = [
+        {"fullname": f"bench/test_ops.py::{func}[n={n}]", "stats": {"min": v}, "params": {"n": n}}
+        for func in ("build", "solve")
+        for n, v in [(10, 1.0), (100, 2.0)]
+    ]
+    path.write_text(json.dumps({"benchmarks": benchmarks}))
+    return path
 
 
 def test_scaling_one_run(tmp_path):
@@ -78,6 +90,20 @@ def test_metric_memory_unit_in_title(tmp_path):
     a = _run(tmp_path / "a.json", ROWS_A, memory=True)
     fig, _n = plotting.plot_scaling([a], metric="peak")
     assert "peak" in fig.layout.title.text.lower()  # vlabel for MiB is "peak"
+
+
+def test_node_dims_carried_but_not_auto_inferred(tmp_path):
+    df, _u = load_long_df(_run_two_funcs(tmp_path / "a.json"))
+    assert "node.func" in plotting._carry_dims(df)  # available for explicit use
+    assert "node.func" not in plotting._dim_columns(df)  # never auto-picked
+    assert "n" in plotting._dim_columns(df)  # the real param still auto-inferable
+
+
+def test_plot_scaling_explicit_node_facet(tmp_path):
+    p = _run_two_funcs(tmp_path / "a.json")
+    fig, n = plotting.plot_scaling(p, facet="node.func")  # node.func selectable by name
+    assert n == 4
+    assert fig.layout.title.text
 
 
 def test_allocated_metric_labels_allocated(tmp_path):

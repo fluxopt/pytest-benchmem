@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 
 from pytest_benchmem.snapshot import (
+    NODE_DIM_PREFIX,
     RESERVED_COLUMNS,
     Metric,
     _as_paths,
@@ -96,9 +97,19 @@ def _axis_kwargs(unit: str) -> dict[str, object]:
     return {"ticksuffix": f" {unit}"}
 
 
-def _dim_columns(df: pd.DataFrame) -> list[str]:
-    """The dim columns (everything but the fixed/reserved snapshot/id/value/mode)."""
+def _carry_dims(df: pd.DataFrame) -> list[str]:
+    """Every analysis dim in the frame (params/extra_info + ``node.*``), minus fixed axes.
+
+    Used to *preserve* dims through a pivot so any is still selectable by name.
+    """
     return [c for c in df.columns if c not in RESERVED_COLUMNS]
+
+
+def _dim_columns(df: pd.DataFrame) -> list[str]:
+    """Auto-inferable dims: :func:`_carry_dims` minus the ``node.*`` structural dims —
+    those are selectable by name (``facet="node.func"``) but never auto-picked.
+    """
+    return [c for c in _carry_dims(df) if not c.startswith(NODE_DIM_PREFIX)]
 
 
 def plot_compare(
@@ -125,7 +136,7 @@ def plot_compare(
     labels = df_long["snapshot"].drop_duplicates().tolist()
     a_label, b_label = labels[0], labels[1]
 
-    dims = _dim_columns(df_long)
+    dims = _carry_dims(df_long)  # carry node.* too, so an explicit node facet survives
     wide = (
         df_long.pivot(index=["id", *dims], columns="snapshot", values="value")
         .reset_index()

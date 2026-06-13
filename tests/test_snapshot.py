@@ -5,6 +5,7 @@ import json
 import pytest
 
 from pytest_benchmem.snapshot import (
+    _node_dims,
     from_pytest_benchmark,
     human_bytes,
     load_long_df,
@@ -95,6 +96,50 @@ def test_dims_drops_unserializable(tmp_path):
     )
     _l, samples, _u = from_pytest_benchmark(pb)
     assert samples[0].dims == {"n": 10, "op": "sort"}
+
+
+def test_node_dims_parses_module_func_class_group():
+    assert _node_dims({"fullname": "pkg/test_m.py::TestC::test_run[a-n=10]", "group": "solve"}) == {
+        "node.group": "solve",
+        "node.module": "pkg/test_m.py",
+        "node.func": "test_run",
+        "node.class": "TestC",
+    }
+
+
+def test_node_dims_omits_what_it_cannot_determine():
+    # plain function (no class), no group, params payload never parsed
+    assert _node_dims({"fullname": "pkg/test_m.py::test_op[basic-n=10]"}) == {
+        "node.module": "pkg/test_m.py",
+        "node.func": "test_op",
+    }
+    # no "::" (doctest / odd id) -> fabricate nothing
+    assert _node_dims({"fullname": "test_op[n=10]"}) == {}
+
+
+def test_readers_add_node_dims_beside_params(tmp_path):
+    pb = _pb_file(
+        tmp_path,
+        [{"fullname": "pkg/test_m.py::test_op[n=10]", "stats": {"min": 0.1}, "params": {"n": 10}}],
+    )
+    _l, samples, _u = from_pytest_benchmark(pb)
+    assert samples[0].dims == {"n": 10, "node.module": "pkg/test_m.py", "node.func": "test_op"}
+
+
+def test_user_dim_wins_over_node_dim(tmp_path):
+    # the node. namespace makes a clash near-impossible; if one happens, the user wins
+    pb = _pb_file(
+        tmp_path,
+        [
+            {
+                "fullname": "pkg/test_m.py::test_op",
+                "stats": {"min": 0.1},
+                "extra_info": {"node.func": "custom"},
+            }
+        ],
+    )
+    _l, samples, _u = from_pytest_benchmark(pb)
+    assert samples[0].dims["node.func"] == "custom"
 
 
 def test_dims_drops_non_scalar_values(tmp_path):
