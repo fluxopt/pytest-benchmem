@@ -95,30 +95,28 @@ def _read_benchmarks(path: str | Path) -> tuple[Path, list[dict[str, Any]]]:
     return p, data["benchmarks"]
 
 
+def _is_dim_value(v: Any) -> bool:
+    """A scalar usable as a dim axis — excludes pytest-benchmark's unserializable marker."""
+    return isinstance(v, (str, int, float)) and not (
+        isinstance(v, str) and v.startswith(_UNSERIALIZABLE_PREFIX)
+    )
+
+
 def _dims(bm: Mapping[str, Any]) -> dict[str, DimValue]:
     """Analysis dims for one benchmark — its parametrize ``params`` plus any
     scalar ``extra_info`` (minus the reserved ``benchmem`` blob). No id parsing.
 
-    Only scalar values (``DimValue``) survive: non-scalars (lists/dicts) and a
-    param pytest-benchmark couldn't serialize (``"UNSERIALIZABLE[<repr>]"``) are
-    dropped — neither is a usable axis. If a dropped value was the only thing
-    distinguishing two benchmarks they collapse as dims, but stay distinct as
-    samples (the ``fullname`` id still differs); mirror a clean scalar into
-    ``extra_info`` to keep it as an axis.
+    Only scalar values (``DimValue``) survive: non-scalars (lists/dicts, which are
+    unhashable and break pandas groupby) and a param pytest-benchmark couldn't
+    serialize (``"UNSERIALIZABLE[<repr>]"``) are dropped — neither is a usable
+    axis. If a dropped value was the only thing distinguishing two benchmarks they
+    collapse as dims, but stay distinct as samples (the ``fullname`` id still
+    differs); mirror a clean scalar into ``extra_info`` to keep it as an axis.
     """
-    def usable(k: str, v: Any) -> bool:
-        # A usable axis is a scalar (matching ``DimValue``). Drop: the benchmem
-        # blob; non-scalars like lists/dicts (unhashable — they'd break pandas
-        # groupby when faceting/scaling); and the scalar-but-garbage string
-        # pytest-benchmark emits for a param it couldn't serialize.
-        if k == BENCHMEM_KEY or not isinstance(v, (str, int, float)):
-            return False
-        return not (isinstance(v, str) and v.startswith(_UNSERIALIZABLE_PREFIX))
-
     dims: dict[str, DimValue] = {}
     for source in (bm.get("params"), bm.get("extra_info")):
         if isinstance(source, Mapping):
-            dims.update({k: v for k, v in source.items() if usable(k, v)})
+            dims.update({k: v for k, v in source.items() if k != BENCHMEM_KEY and _is_dim_value(v)})
     return dims
 
 
