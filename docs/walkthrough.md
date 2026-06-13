@@ -55,8 +55,9 @@ print(f"tempdir: {_tmp}")
 `benchmark_memory` depends on pytest-benchmark's `benchmark` fixture, so timing
 rides pytest-benchmark exactly as usual. On top, it runs the action once more
 under `memray.Tracker` — a **separate, untimed pass**, so the allocator hooks
-never touch the timing — and stashes the peak (MiB) in the benchmark's
-`extra_info`. One node id, one JSON entry, both metrics. Parametrize `params`
+never touch the timing — and stashes the memory blob (`extra_info.benchmem`:
+peak in bytes, the spread across repeats, and the allocation count) in the
+benchmark. One node id, one JSON entry, both metrics. Parametrize `params`
 become the analysis `dims` for the plots, for free.
 
 Here's a tiny suite — `sorted` over a range of input sizes:
@@ -78,7 +79,7 @@ print(suite.read_text())
 
 A normal pytest invocation. `--benchmark-json` writes the same file
 pytest-benchmark always writes; the only difference is each entry now also
-carries `extra_info.peak_mib`.
+carries `extra_info.benchmem`.
 
 ```{code-cell} ipython3
 baseline = _tmp / "baseline.json"
@@ -88,8 +89,8 @@ baseline = _tmp / "baseline.json"
 ## Read both metrics back
 
 pytest-benchmem reads that one file *per metric*: `from_pytest_benchmark` pulls timing
-(seconds, from `stats`), `memory_from_pytest_benchmark` pulls peak memory (MiB,
-from `extra_info`). Dims default to the parametrize `params`, so each sample
+(seconds, from `stats`), `memory_from_pytest_benchmark` pulls peak memory (bytes,
+from `extra_info.benchmem`). Dims default to the parametrize `params`, so each sample
 knows its `n` without anyone parsing the id.
 
 ```{code-cell} ipython3
@@ -120,8 +121,9 @@ df
 ## Quick one-off — `measure_peak`
 
 Outside pytest — in a REPL or notebook — `measure_peak` is the bare engine: hand
-it a zero-arg callable, get the peak MiB. (`repeats > 1` takes the min, since
-peak memory is noisy.)
+it a zero-arg callable, get the peak in bytes. (`repeats > 1` takes the min, since
+peak memory is noisy; `measure_memory` returns the full result — peak, spread,
+allocation count.)
 
 ```{code-cell} ipython3
 from pytest_benchmem import measure_peak
