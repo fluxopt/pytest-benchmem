@@ -16,22 +16,10 @@ jobs:
       - uses: dependabot/fetch-metadata@v2
         id: metadata
 
-      - name: Generate app token
-        if: steps.metadata.outputs.update-type == 'version-update:semver-patch'
-        id: app-token
-        uses: actions/create-github-app-token@v3
-        with:
-          app-id: ${{ secrets.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
-
-      - name: Approve PR
-        if: steps.metadata.outputs.update-type == 'version-update:semver-patch'
-        run: gh pr review "$PR" --approve
-        env:
-          PR: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-
-      - name: Enable auto-merge
+      # No GitHub App / secrets: just enable auto-merge with the default token.
+      # The PR merges once required checks pass (no separate approval step,
+      # which the default GITHUB_TOKEN can't give a bot PR anyway).
+      - name: Enable auto-merge for patch updates
         if: steps.metadata.outputs.update-type == 'version-update:semver-patch'
         run: gh pr merge "$PR" --auto --squash
         env:
