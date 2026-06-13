@@ -67,14 +67,15 @@ def test_rss_mode_measures_net_above_baseline():
     res = measure_memory(lambda: _alloc_touch(size), mode="rss")
     assert res.mode == "rss"
     want = size * MIB
-    assert 0.8 * want <= res.peak_net_bytes <= 1.4 * want  # net ≈ what we allocated
-    assert res.peak_bytes > res.baseline_bytes > 0  # gross above the forked no-op floor
+    assert 0.8 * want <= res.peak_bytes <= 1.4 * want  # headline peak_bytes is NET ≈ allocated
+    assert res.gross_bytes > res.baseline_bytes > 0  # gross (capacity) above the no-op floor
+    assert res.peak_bytes <= res.gross_bytes  # net never exceeds gross
 
 
-def test_rss_blob_carries_baseline_net_not_churn():
+def test_rss_blob_carries_baseline_gross_not_churn():
     blob = measure_memory(lambda: _alloc_touch(40), mode="rss").as_dict()
     assert blob["mode"] == "rss"
-    expected = {"peak_bytes", "peak_bytes_max", "baseline_bytes", "peak_net_bytes", "repeats"}
+    expected = {"peak_bytes", "peak_bytes_max", "baseline_bytes", "gross_bytes", "repeats"}
     assert expected <= blob.keys()
     assert "allocations" not in blob and "total_bytes" not in blob  # heap-only fields absent
 

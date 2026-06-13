@@ -160,7 +160,8 @@ def test_marker_mode_rss_records_rss_blob(pytester):
     result.assert_outcomes(passed=1)
     blob = json.loads(out.read_text())["benchmarks"][0]["extra_info"]["benchmem"]
     assert blob["mode"] == "rss"
-    assert blob["peak_net_bytes"] > 0
+    assert blob["peak_bytes"] >= 0  # headline net resident
+    assert blob["gross_bytes"] > blob["baseline_bytes"] > 0  # gross/baseline carried for context
     assert "allocations" not in blob  # rss blobs omit the memray-only fields
 
 

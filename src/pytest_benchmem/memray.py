@@ -59,14 +59,15 @@ class MemoryResult(NamedTuple):
     #: Which metric produced this blob — ``"heap"`` (memray allocator demand) or ``"rss"``
     #: (kernel resident high-water). They are *incomparable* metrics (allocator bytes vs
     #: resident pages), so the readers refuse to co-plot them. Older blobs lacking it read
-    #: as ``"heap"``.
+    #: as ``"heap"``. NB :attr:`peak_bytes` is the mode's headline number: the allocator
+    #: peak for heap, the *net* resident peak (above baseline) for rss.
     mode: str = "heap"
-    #: rss-only: the forked no-op child's resident floor (bytes) subtracted to get
-    #: :attr:`peak_net_bytes`. ``0`` for heap. See :func:`_measure_rss`.
+    #: rss-only: the forked no-op child's resident floor (bytes), subtracted from the gross
+    #: high-water to give the net :attr:`peak_bytes`. ``0`` for heap. See :func:`_measure_rss`.
     baseline_bytes: int = 0
-    #: rss-only: peak resident bytes above the baseline — the workload's marginal cost.
-    #: ``0`` for heap.
-    peak_net_bytes: int = 0
+    #: rss-only: the gross resident high-water (bytes), baseline included — the capacity
+    #: number ("how much the process held"). ``0`` for heap.
+    gross_bytes: int = 0
 
     def as_dict(self) -> dict[str, Any]:
         """The JSON blob stored under pytest-benchmark ``extra_info["benchmem"]``.
@@ -85,7 +86,7 @@ class MemoryResult(NamedTuple):
             return {
                 **common,
                 "baseline_bytes": self.baseline_bytes,
-                "peak_net_bytes": self.peak_net_bytes,
+                "gross_bytes": self.gross_bytes,
             }
         return {**common, "allocations": self.allocations, "total_bytes": self.total_bytes}
 
@@ -255,26 +256,27 @@ def _noop_baseline(samples: int = 3) -> int:
 
 
 def _measure_rss(action: Action, repeats: int = 1) -> MemoryResult:
-    """RSS engine: fork per repeat, read each child's peak RSS, report min gross + net.
+    """RSS engine: fork per repeat, read each child's peak RSS, report the net high-water.
 
-    ``peak_bytes`` is the gross resident high-water (what the kernel provisions — the
-    capacity/OOM-relevant number); ``peak_net_bytes`` is gross minus the no-op child
-    :func:`_noop_baseline` (the workload's marginal cost). Min across repeats; the worst
-    gross is kept in ``peak_bytes_max`` so callers can see the spread.
+    The headline ``peak_bytes`` is **net** — the gross resident high-water minus the no-op
+    child :func:`_noop_baseline` (the workload's marginal resident cost, the comparable
+    number). The gross high-water (the capacity number, baseline included) is kept in
+    ``gross_bytes``. Min across repeats; ``peak_bytes_max`` is the worst net so callers see
+    the spread.
     """
     _require_rss()
     baseline = _noop_baseline()
     grosses = [_rss_child_gross(action) for _ in range(max(1, repeats))]
     gross = min(grosses)
     return MemoryResult(
-        peak_bytes=gross,
-        peak_bytes_max=max(grosses),
+        peak_bytes=max(0, gross - baseline),
+        peak_bytes_max=max(0, max(grosses) - baseline),
         allocations=0,
         total_bytes=0,
         repeats=len(grosses),
         mode="rss",
         baseline_bytes=baseline,
-        peak_net_bytes=max(0, gross - baseline),
+        gross_bytes=gross,
     )
 
 

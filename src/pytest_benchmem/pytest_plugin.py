@@ -90,7 +90,7 @@ def _record_memory(
             int(existing["repeats"]),
             str(existing.get("mode", "heap")),
             int(existing.get("baseline_bytes", 0)),
-            int(existing.get("peak_net_bytes", 0)),
+            int(existing.get("gross_bytes", 0)),
         )
     result = measure_memory(action, repeats=repeats, mode=mode)
     benchmark.extra_info[BENCHMEM_KEY] = result.as_dict()

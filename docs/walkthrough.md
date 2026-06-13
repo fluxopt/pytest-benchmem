@@ -118,25 +118,26 @@ print(f"unit: {unit}")
 df
 ```
 
-## A second metric: `rss` — resident high-water
+## Resident footprint: the `rss` mode (opt-in)
 
-`heap` (the default above) is memray's **allocator demand** — byte-exact, Python-only.
-The other metric, `rss`, is the workload's peak **resident set** (`ru_maxrss`), measured by
-running it in a forked child: the uniform, language-agnostic *capacity* number, and a kernel
-high-water (not sampled), so it can't miss a spike the way a polling sampler does. It
-subtracts a forked no-op child's footprint, so you get the workload's **net** resident cost.
-Linux/macOS only.
+Everything above used `heap` — memray's **allocator demand**, the default and the metric you
+want for "did my memory regress": byte-exact, near-deterministic, and it already sees native
+(numpy / C-extension) allocations, not just Python objects.
 
-Pick it per test with `@pytest.mark.benchmem(mode="rss")`, or for a whole run with
-`--benchmark-memory-mode=rss` — the same suite, a different metric:
+`rss` is an **opt-in, different question**: the workload's peak **resident set** (`ru_maxrss`),
+measured by running it in a forked child — what the OS actually had to hold, *including*
+allocator retention and fragmentation `heap` can't show. It's for **capacity** ("does this fit
+the box"), and it's a kernel high-water, so unlike a polling sampler it can't miss a spike.
+Linux/macOS only. Pick it per test with `@pytest.mark.benchmem(mode="rss")` or for a whole run
+with `--benchmark-memory-mode=rss`:
 
 ```{code-cell} ipython3
 rss_run = _tmp / "rss.json"
 !pytest {suite} --benchmark-only --benchmark-memory-mode=rss --benchmark-json={rss_run} -q -p no:cacheprovider
 ```
 
-The `rss` blob carries the gross resident peak, the baseline it subtracts, and the resulting
-net — in place of heap's allocation-count / total-bytes fields:
+The headline `rss` number (`peak_bytes`) is **net** — the gross resident high-water minus a
+forked no-op baseline — with the gross (capacity) figure kept alongside:
 
 ```{code-cell} ipython3
 import json
@@ -146,11 +147,16 @@ from pytest_benchmem import human_bytes
 for bench in json.loads(rss_run.read_text())["benchmarks"]:
     blob = bench["extra_info"]["benchmem"]
     print(
-        f"{bench['name']:<18} mode={blob['mode']}  "
-        f"gross={human_bytes(blob['peak_bytes'])}  net={human_bytes(blob['peak_net_bytes'])}  "
-        f"(baseline {human_bytes(blob['baseline_bytes'])})"
+        f"{bench['name']:<18} net={human_bytes(blob['peak_bytes'])}  "
+        f"gross={human_bytes(blob['gross_bytes'])}  (baseline {human_bytes(blob['baseline_bytes'])})"
     )
 ```
+
+> ⚠️ **Read these as a demo of the mechanism, not a sensible measurement.** This `sorted`
+> suite tops out around a few MiB — far below where `rss` is meaningful. At this scale the
+> net is dominated by interpreter/allocator overhead faulted into the fresh child, not your
+> data, and it dwarfs the `heap` peak for the *same* test. That's expected: `rss` earns its
+> keep on **GiB-scale** workloads where the baseline is noise. For a megabyte sort, use `heap`.
 
 `heap` and `rss` are different quantities wearing the same byte unit (allocator bytes vs
 resident pages), so the readers **refuse to compare or co-plot across modes** rather than
@@ -163,15 +169,6 @@ try:
     load_long_df([baseline, rss_run], metric="peak")
 except ValueError as exc:
     print(f"refused: {exc}")
-```
-
-Within one mode it's the same tooling as everything below — here the resident-memory scaling
-curve for `sorted`:
-
-```{code-cell} ipython3
-from pytest_benchmem import plotting
-
-plotting.plot_scaling([rss_run], metric="peak")[0]
 ```
 
 ## Quick one-off — `measure_peak`

@@ -69,18 +69,24 @@ timing, lazy imports, page cache — so min-of-N is the cleanest floor).
 > or use the `benchmark_memory` fixture's `pedantic` form with a `setup` that
 > rebuilds fresh state before each measured call.
 
-### Two memory metrics: `heap` (default) and `rss`
+### `heap` (default) — and `rss` for resident-footprint questions
 
-- **`heap`** — memray allocator demand, in-process. Byte-exact, Python-only; the
-  right tool for "where does my allocation peak".
-- **`rss`** — the workload's peak **resident memory** (`ru_maxrss`), measured in a
-  forked child. Page-granular and includes the runtime baseline (which is subtracted
-  out via a no-op child, so you get the workload's *net* cost), but it's the uniform
-  capacity number — and a kernel high-water, so unlike a polling sampler it can't miss
-  a spike. Linux/macOS only.
+**`heap` is the metric you want for almost everything.** memray allocator demand,
+in-process, byte-exact, near-deterministic, and it sees native (numpy / C-extension)
+allocations too — not just Python objects. It's what "did my function's memory regress"
+should gate on.
+
+**`rss` (opt-in) answers a different, narrower question:** the workload's peak
+**resident memory** (`ru_maxrss`), measured in a forked child — what the OS actually had
+to hold, *including* allocator retention and fragmentation `heap` can't show. Use it for
+**capacity** ("does this fit the CI box"); it's a kernel high-water, so unlike a polling
+sampler it can't miss a spike. Caveats worth knowing: it's page-granular, and the reported
+peak is **net** of a forked no-op baseline — so on small (≲100 MiB) workloads the number is
+dominated by interpreter/allocator overhead, not your data. `rss` earns its keep at GiB
+scale, not on a megabyte sort. Linux/macOS only.
 
 ```bash
-pytest --benchmark-only --benchmark-memory --benchmark-memory-mode=rss   # whole suite, rss
+pytest --benchmark-only --benchmark-memory --benchmark-memory-mode=rss
 ```
 
 ```python
@@ -89,8 +95,8 @@ def test_build(benchmark_memory):
     benchmark_memory(build_model, 1_000_000)
 ```
 
-The two are different quantities (allocator bytes vs resident pages), so the readers
-**refuse to compare or co-plot across modes**. If a benchmarked action dies under
+`heap` and `rss` are different quantities (allocator bytes vs resident pages), so the
+readers **refuse to compare or co-plot across modes**. If a benchmarked action dies under
 `rss` measurement (e.g. runs the box out of memory), the test simply fails.
 
 ## Reading it back
