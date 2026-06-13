@@ -18,7 +18,15 @@ def _run(path, rows, *, memory=False):
     for n, v in rows:
         bm = {"fullname": f"test_op[n={n}]", "stats": {"min": v}, "params": {"n": n}}
         if memory:
-            bm["extra_info"] = {"peak_mib": v}
+            peak = int(v * 1024**2)
+            bm["extra_info"] = {
+                "benchmem": {
+                    "peak_bytes": peak,
+                    "peak_bytes_max": peak,
+                    "allocations": 0,
+                    "repeats": 1,
+                }
+            }
         benchmarks.append(bm)
     path.write_text(json.dumps({"benchmarks": benchmarks}))
     return path
