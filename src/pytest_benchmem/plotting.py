@@ -42,6 +42,11 @@ SortMode = Literal["absolute", "relative"]
 Snapshots = str | Path | Sequence[str | Path]
 
 
+def _labels_head(labels: Sequence[str] | None, n: int) -> list[str] | None:
+    """The first ``n`` labels, aligned to a ``snapshots[:n]`` slice (or ``None``)."""
+    return None if labels is None else list(labels)[:n]
+
+
 def _diverging_kwargs(midpoint: float = 0.0) -> dict[str, object]:
     """green→white→red continuous colour scale centred on ``midpoint``."""
     return {
@@ -119,19 +124,21 @@ def plot_compare(
     sort: SortMode = "absolute",
     facet: str | None = None,
     clip: float | None = None,
+    labels: Sequence[str] | None = None,
 ) -> tuple[Figure, int]:
     """Bar chart of per-id delta, sorted by the chosen Δ (biggest regressions on top).
 
     ``sort`` picks the bar dimension: ``absolute`` plots ``b - a`` in the native
     unit, ``relative`` plots percent change. ``facet`` splits into subplots by any
-    dim. ``clip`` clamps the colour scale (default symmetric p95).
+    dim. ``clip`` clamps the colour scale (default symmetric p95). ``labels`` names
+    the two series (defaults to the file stems).
     """
     import sys
 
     import plotly.express as px
 
     snapshots = _as_paths(snapshots)
-    df_long, unit = load_long_df(snapshots[:2], metric=metric)
+    df_long, unit = load_long_df(snapshots[:2], metric=metric, labels=_labels_head(labels, 2))
     vlabel = _canonical_metric(metric)
     labels = df_long["snapshot"].drop_duplicates().tolist()
     a_label, b_label = labels[0], labels[1]
@@ -195,12 +202,14 @@ def plot_scatter(
     metric: Metric = "time",
     facet: str | None = None,
     clip: float | None = None,
+    labels: Sequence[str] | None = None,
 ) -> tuple[Figure, int]:
     """Baseline cost (log-x) vs candidate/baseline ratio (log-y).
 
     Top-right = slow *and* slower (the regressed corner). The first snapshot is
     the baseline; with 3+, the rest animate. Colour encodes absolute Δ; ``clip``
-    clamps it (default p95). ``facet`` splits by any dim.
+    clamps it (default p95). ``facet`` splits by any dim. ``labels`` names the
+    snapshots (defaults to the file stems).
     """
     import plotly.express as px
 
@@ -208,7 +217,7 @@ def plot_scatter(
     if len(snapshots) < 2:
         raise ValueError("scatter needs at least 2 snapshots (baseline + 1)")
 
-    df_long, unit = load_long_df(snapshots, metric=metric)
+    df_long, unit = load_long_df(snapshots, metric=metric, labels=labels)
     vlabel = _canonical_metric(metric)
     labels = df_long["snapshot"].drop_duplicates().tolist()
     baseline_label = labels[0]
@@ -262,12 +271,19 @@ def plot_scatter(
 
 
 def plot_sweep(
-    snapshots: Snapshots, *, metric: Metric = "time", clip: float | None = None
+    snapshots: Snapshots,
+    *,
+    metric: Metric = "time",
+    clip: float | None = None,
+    labels: Sequence[str] | None = None,
 ) -> tuple[Figure, int]:
-    """Heatmap of per-id fold-change (log2 ratio) vs the first snapshot."""
+    """Heatmap of per-id fold-change (log2 ratio) vs the first snapshot.
+
+    ``labels`` names the version columns (defaults to the file stems).
+    """
     import plotly.express as px
 
-    df_long, unit = load_long_df(snapshots, metric=metric)
+    df_long, unit = load_long_df(snapshots, metric=metric, labels=labels)
     vlabel = _canonical_metric(metric)
     versions = df_long["snapshot"].drop_duplicates().tolist()
     baseline = versions[0]
@@ -337,17 +353,21 @@ def plot_scaling(
     color: str | None = None,
     facet: str | None = None,
     log: bool | Literal["auto"] = "auto",
+    labels: Sequence[str] | None = None,
 ) -> tuple[Figure, int]:
     """Cost vs a numeric dim, coloured/faceted by other dims.
 
     ``x``/``color``/``facet`` default to inference from the dims (the lone numeric
     dim → x); pass them to override. ``log="auto"`` log-scales when x is numeric
-    and strictly positive.
+    and strictly positive. ``labels`` names the snapshot in the title (defaults to
+    the file stem).
     """
     import plotly.express as px
 
     snapshots = _as_paths(snapshots)
-    df_long, unit = load_long_df(snapshots[:1], metric=metric)
+    head = _labels_head(labels, 1)
+    snap_label = head[0] if head else snapshots[0].stem
+    df_long, unit = load_long_df(snapshots[:1], metric=metric, labels=head)
     vlabel = _canonical_metric(metric)
     x, color, facet = _infer_roles(df_long, x, color, facet)
     df = df_long.dropna(subset=[x]).sort_values([c for c in (facet, color, x) if c])
@@ -366,7 +386,7 @@ def plot_scaling(
         log_y=use_log,
         markers=True,
         labels={"value": f"{vlabel} ({unit})", x: x},
-        title=f"Scaling: {vlabel} ({unit}) vs {x} ({snapshots[0].stem})",
+        title=f"Scaling: {vlabel} ({unit}) vs {x} ({snap_label})",
     )
     n_facets = df[facet].nunique() if facet else 1
     fig.update_layout(height=max(400, ((n_facets + 2) // 3) * 350))

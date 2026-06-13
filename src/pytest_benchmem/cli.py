@@ -51,6 +51,12 @@ def plot(
     facet: Annotated[str | None, typer.Option(help="Dim to facet by.")] = None,
     x: Annotated[str | None, typer.Option(help="scaling: dim for the x-axis.")] = None,
     clip: Annotated[float | None, typer.Option(help="Clamp the colour scale.")] = None,
+    label: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--label", "-l", help="Series label per run, in order (repeat). Default: stem."
+        ),
+    ] = None,
     output: Annotated[Path | None, typer.Option("--output", "-o", help="HTML out.")] = None,
     open_browser: Annotated[bool, typer.Option("--open/--no-open")] = False,
 ) -> None:
@@ -67,15 +73,20 @@ def plot(
     _need_plotly()
     from pytest_benchmem import plotting
 
+    labels = label or None
     try:
         if chosen == "compare":
-            fig, n = plotting.plot_compare(runs, metric=metric, facet=facet, clip=clip)
+            fig, n = plotting.plot_compare(
+                runs, metric=metric, facet=facet, clip=clip, labels=labels
+            )
         elif chosen == "scatter":
-            fig, n = plotting.plot_scatter(runs, metric=metric, facet=facet, clip=clip)
+            fig, n = plotting.plot_scatter(
+                runs, metric=metric, facet=facet, clip=clip, labels=labels
+            )
         elif chosen == "sweep":
-            fig, n = plotting.plot_sweep(runs, metric=metric, clip=clip)
+            fig, n = plotting.plot_sweep(runs, metric=metric, clip=clip, labels=labels)
         elif chosen == "scaling":
-            fig, n = plotting.plot_scaling(runs, metric=metric, x=x, facet=facet)
+            fig, n = plotting.plot_scaling(runs, metric=metric, x=x, facet=facet, labels=labels)
         else:
             typer.secho(f"unknown view {chosen!r}", fg=typer.colors.RED, err=True)
             raise typer.Exit(code=2)

@@ -118,6 +118,34 @@ def test_plot_view_defaults_by_run_count(tmp_path, monkeypatch, n_runs, expected
     assert calls == [expected]
 
 
+def test_plot_label_option_threads_through(tmp_path, monkeypatch):
+    captured = {}
+
+    def _stub(*a, **k):
+        captured.update(k)
+        return _FakeFig(), 3
+
+    monkeypatch.setattr(plotting, "plot_sweep", _stub)
+    runs = [_run(tmp_path, f"r{i}.json", [_bm("x")]) for i in range(3)]
+    result = runner.invoke(
+        app,
+        [
+            "plot",
+            *map(str, runs),
+            "-l",
+            "0.6",
+            "-l",
+            "0.7",
+            "-l",
+            "0.8",
+            "-o",
+            str(tmp_path / "o.html"),
+        ],
+    )
+    assert result.exit_code == 0, _text(result)
+    assert captured["labels"] == ["0.6", "0.7", "0.8"]
+
+
 def test_plot_unknown_view_exits_2(tmp_path):
     r = _run(tmp_path, "r.json", [_bm("x")])
     result = runner.invoke(app, ["plot", str(r), "--view", "bogus", "-o", str(tmp_path / "o.html")])
