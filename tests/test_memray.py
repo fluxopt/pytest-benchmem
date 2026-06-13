@@ -48,6 +48,18 @@ def test_total_bytes_mirrors_memray_stats():
     assert res.as_dict()["total_bytes"] == res.total_bytes
 
 
+def test_mode_defaults_to_heap_in_result_and_blob():
+    res = measure_memory(lambda: [bytearray(1024) for _ in range(50)])
+    assert res.mode == "heap"
+    assert res.as_dict()["mode"] == "heap"
+
+
+def test_memory_result_mode_is_overridable():
+    # the field exists with a heap default but can be set (the rss engine will set it).
+    assert MemoryResult(1, 1, 0, 0, 1).mode == "heap"
+    assert MemoryResult(1, 1, 0, 0, 1, mode="rss").as_dict()["mode"] == "rss"
+
+
 def test_compute_statistics_missing_raises_actionably(monkeypatch):
     import sys
     import types
