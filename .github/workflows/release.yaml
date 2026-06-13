@@ -3,6 +3,11 @@ name: Release
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)publish to PyPI, e.g. v0.0.1"
+        required: true
 
 permissions:
   contents: write
@@ -11,14 +16,15 @@ permissions:
 jobs:
   release-please:
     name: Release Please
+    if: github.event_name == 'push'
     runs-on: ubuntu-24.04
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
-      # Default GITHUB_TOKEN — no GitHub App / secrets needed. Publishing is a
-      # downstream job in this same run (gated on release_created), so there's
-      # no "GITHUB_TOKEN won't trigger another workflow" problem to work around.
+      # Default GITHUB_TOKEN — no GitHub App / secrets. Publishing is a
+      # downstream job in this same run, so the "GITHUB_TOKEN won't trigger
+      # another workflow" limitation never applies.
       - uses: googleapis/release-please-action@v5
         id: release
         with:
@@ -28,7 +34,11 @@ jobs:
   publish:
     name: Build & publish to PyPI
     needs: release-please
-    if: needs.release-please.outputs.release_created == 'true'
+    # Auto: when release-please cuts a release. Manual: workflow_dispatch with a
+    # tag (always() lets this run even though release-please is skipped on dispatch).
+    if: |
+      always() &&
+      (needs.release-please.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -41,7 +51,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ needs.release-please.outputs.tag_name }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || needs.release-please.outputs.tag_name }}
           fetch-depth: 0
 
       - uses: astral-sh/setup-uv@v7
@@ -55,6 +65,6 @@ jobs:
       - name: Build
         run: uv build
 
-      # OIDC trusted publishing — no API token. Configure the publisher on PyPI
-      # against this workflow file (release.yaml) and the 'pypi' environment.
+      # OIDC trusted publishing — no API token. The PyPI publisher must point at
+      # this workflow file (release.yaml) and the 'pypi' environment.
       - uses: pypa/gh-action-pypi-publish@release/v1
