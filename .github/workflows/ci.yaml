@@ -17,9 +17,12 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
-      - uses: astral-sh/ruff-action@v3
-      - run: ruff check --output-format=github
-      - run: ruff format --diff
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --group dev
+      - run: uv run ruff check --output-format=github
+      - run: uv run ruff format --diff
 
   typecheck:
     name: Type check
@@ -31,16 +34,20 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --group dev
-      - run: uv run mypy src/pytest_benchmem
+      - run: uv run mypy src/pytest_benchmem tests
 
   test:
-    name: Test (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-24.04
+    name: Test (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-24.04]
         python-version: ["3.11", "3.12", "3.13"]
+        include:
+          - os: macos-latest
+            python-version: "3.13"
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v7

@@ -10,7 +10,7 @@ repos:
       - id: debug-statements
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.9
+    rev: v0.15.16
     hooks:
       - id: ruff
         args: [--fix]
@@ -20,8 +20,8 @@ repos:
     hooks:
       - id: mypy
         name: mypy
-        entry: uv run mypy src/pytest_benchmem
+        entry: uv run mypy src/pytest_benchmem tests
         language: system
         pass_filenames: false
-        files: ^src/
+        files: ^(src|tests)/
         types: [python]
