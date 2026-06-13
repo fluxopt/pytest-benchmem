@@ -1,5 +1,5 @@
 site_name: peakbench
-site_description: Generic time + peak-memory benchmarking around a Case.
+site_description: The memory companion to pytest-benchmark — a memray peak-memory pass on the same test.
 repo_url: https://github.com/fluxopt/peakbench
 docs_dir: docs
 

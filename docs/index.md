@@ -1,51 +1,51 @@
 # peakbench
 
-A small, generic toolkit for **time and precise peak-memory** benchmarking,
-built around one primitive — the `Case`.
+**The memory companion to [pytest-benchmark](https://pytest-benchmark.readthedocs.io).**
+It times your code; peakbench adds a memray **peak-memory** pass to the *same
+test, in the same run* — one node id, one JSON file, both metrics. Plus dims-aware
+plots and cross-version sweeps it has no answer for.
 
 Its reason to exist is the gap nothing else fills cleanly: **memray-precision
-memory benchmarking** of your own code. pytest-benchmark times but can't measure
-memory; ASV's `peakmem` is coarse RSS sampling; CodSpeed covers CI. peakbench is
-the thin memray layer plus `Case` glue, with cross-version sweeps and plotly
-views bundled in.
+memory benchmarking** of your own code, right where you already benchmark. ASV's
+`peakmem` is coarse RSS sampling; CodSpeed covers CI timing. peakbench is the thin
+memray layer on top of pytest-benchmark.
 
 ## Install
 
 ```bash
-uv add peakbench              # core (stdlib only)
-uv add "peakbench[all]"       # + memray, plotly/pandas/numpy, typer CLI
+uv add peakbench            # the benchmark_memory fixture + memray engine
+uv add "peakbench[plot]"    # + the plot/compare CLI (pandas, plotly, typer)
 ```
 
-## The primitive
+pytest-benchmark and memray are core deps; memray is Linux/macOS only.
 
-Everything consumes one thing — a `Case`: an `id`, structured `dims`, and a
-context manager that does untimed setup, yields the measured action, and tears
-down.
+## The fixture
+
+Write a normal pytest-benchmark test; swap `benchmark` for `benchmark_memory`:
 
 ```python
-from contextlib import contextmanager
-from peakbench import Case, measure
+import pytest
 
 
-@contextmanager
-def to_lp_case(model, n):
-    m = model.build(n)  # setup — not measured
-    yield lambda: m.to_file("/tmp/m.lp")  # the measured action
-
-
-cases = [
-    Case(id=f"to_lp[n={n}]", dims={"op": "to_lp", "n": n}, run=lambda n=n: to_lp_case(model, n))
-    for n in (10, 100, 1000)
-]
-
-samples = measure(cases)  # list[Sample(id, value, dims)], peak MiB via memray
+@pytest.mark.parametrize("n", [10_000, 100_000, 1_000_000])
+def test_sort(benchmark_memory, n):
+    data = list(range(n, 0, -1))
+    benchmark_memory(sorted, data)
 ```
+
+```bash
+pytest --benchmark-only --benchmark-json=run.json
+```
+
+One run, one file: each benchmark id gets `stats` (timing, from pytest-benchmark)
+*and* `extra_info.peak_mib` (peak memory, from peakbench). The two passes never
+overlap, so memray's hooks cost the timing nothing; parametrize `params` become
+the dims the plots scale by.
 
 ## Next
 
-→ The **[Walkthrough](walkthrough.ipynb)** runs the library and its CLI
-end-to-end: measure memory, time ad-hoc callables, write snapshots, then
-`compare` / `plot` them.
+→ The **[Walkthrough](walkthrough.ipynb)** runs it end-to-end: write a suite,
+execute it, read both metrics back, then `compare` / `plot` them — per metric.
 
 See the [README on GitHub](https://github.com/fluxopt/peakbench) for where
 peakbench sits relative to CodSpeed / ASV / pytest-benchmark.

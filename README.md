@@ -4,84 +4,97 @@
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-A small, generic toolkit for **time and precise peak-memory** benchmarking,
-built around one primitive — the `Case`.
+**The memory companion to [pytest-benchmark].** It times your code; peakbench adds
+a memray **peak-memory** pass to the *same test, in the same run* — one node id,
+one JSON file, both metrics. Plus dims-aware plots and cross-version sweeps it has
+no answer for.
 
 Its reason to exist is the gap nothing else fills cleanly: **memray-precision
-memory benchmarking** of your own code. pytest-benchmark times but can't measure
-memory; ASV's `peakmem` is coarse RSS sampling that misses numpy/C-allocation
-detail; CodSpeed covers CI. peakbench is the thin memray layer + a `Case` glue,
-with cross-version sweeps and plotly views bundled for convenience.
+memory benchmarking** of your own code, right where you already benchmark. ASV's
+`peakmem` is coarse RSS sampling that misses numpy/C-allocation detail; CodSpeed
+covers CI timing. peakbench is the thin memray layer on top of pytest-benchmark.
 
 > **Not** a CI dashboard (use [CodSpeed]) and **not** a rigorous perf-history
-> system (use [ASV]). If your core need is *precise local memory* numbers over a
-> set of your own benchmarks — and timing/sweeps/plots in the same vocabulary —
-> that's peakbench.
+> system (use [ASV]). If your core need is *precise local memory* numbers over
+> the benchmarks you already write — and timing/sweeps/plots in the same
+> vocabulary — that's peakbench.
 
 ## Where it sits
 
 | Need | Reach for | peakbench |
 |---|---|---|
 | CI regression, per-PR dashboard | **CodSpeed** | — (don't rebuild it) |
-| Local timing + A/B compare | **pytest-benchmark** | reads its JSON |
+| Local timing + A/B compare | **pytest-benchmark** | rides it (timing is its job) |
 | Rigorous perf history across commits | **ASV** | — (heavier, RSS memory) |
 | **Precise local peak memory (numpy/C allocs)** | **memray** | ⭐ the core |
-| One `Case` → time *or* memory, sweep, plot | — | ⭐ the glue |
+| Memory *in your pytest-benchmark tests* | — | ⭐ the `benchmark_memory` fixture |
+| Same runs across installed versions | — | ⭐ `sweep` |
 
-## The primitive
+## The fixture
 
-Everything consumes one thing — a `Case`: an `id`, structured `dims` for
-analysis, and a context manager that does untimed setup, yields the measured
-action, and tears down.
+Write a normal pytest-benchmark test; swap `benchmark` for `benchmark_memory`:
 
 ```python
-from contextlib import contextmanager
-from peakbench import Case, measure
+import pytest
 
 
-@contextmanager
-def to_lp_case(model, n):
-  m = model.build(n)  # setup — not measured
-  yield lambda: m.to_file("/tmp/m.lp")  # the measured action
-
-
-cases = [
-  Case(id=f"to_lp[n={n}]", dims={"op": "to_lp", "n": n},
-       run=lambda n=n: to_lp_case(model, n))
-  for n in (10, 100, 1000)
-]
-
-peaks = measure(cases)  # {id: peak_MiB}, via memray
+@pytest.mark.parametrize("n", [10_000, 100_000, 1_000_000])
+def test_sort(benchmark_memory, n):
+    data = list(range(n, 0, -1))
+    benchmark_memory(sorted, data)
 ```
 
-How cases are *generated* is yours — peakbench imposes only `Case`. A registry of
-subjects × operations × sizes is a convenience you build on top, not something
-peakbench dictates.
+```bash
+pytest --benchmark-only --benchmark-json=run.json
+```
 
-## What's in the box
+One run, one `run.json`, for each benchmark id:
 
-- **`measure` / `measure_peak`** — peak RSS via `memray.Tracker`, with model
-  build *outside* the tracked region (min-of-N for noise).
-- **`bench`** — ad-hoc `time()` / `memory()` of any callable → a result you can
-  drop into a snapshot.
-- **`snapshot`** — read pytest-benchmark timing JSON *and* memory JSON into one
-  tidy frame (auto-detected).
-- **`plot`** — sweep heatmap (log₂ fold-change), scatter, compare-bars, scaling
-  — over either metric.
-- **`sweep`** — run your benchmarks across installed versions in fresh `uv`
-  venvs (the install spec is injected, so it's not tied to any one package).
+- `stats: {min, mean, median, …}` — **timing**, from pytest-benchmark.
+- `extra_info: {"peak_mib": 3.81}` — **peak memory**, from peakbench.
+
+The two never overlap: pytest-benchmark times the action untracked, then memray
+measures peak on a *separate, untimed* call — so the allocator hooks cost the
+timing nothing. The parametrize `params` (`{"n": …}`) become the analysis dims
+the plots scale by. Memory is opt-in per test — plain `benchmark` tests are
+untouched.
+
+## Reading it back
+
+Timing rides pytest-benchmark's own tooling (`pytest-benchmark compare`,
+`--benchmark-histogram`) — peakbench doesn't reimplement it. For the memory side,
+and for dims-aware views over either metric:
+
+```python
+from peakbench import from_pytest_benchmark, memory_from_pytest_benchmark
+
+_, timing, _ = from_pytest_benchmark("run.json")        # seconds, from stats
+_, memory, _ = memory_from_pytest_benchmark("run.json")  # MiB, from extra_info
+```
+
+```bash
+peakbench compare base.json head.json --metric memory   # per-id delta table
+peakbench plot base.json head.json --metric memory       # interactive plotly view
+```
+
+Outside pytest, `measure_peak(lambda: build_model(1000))` is the bare memray
+engine — a one-liner peak number for a REPL or notebook.
 
 ## Install
 
 ```bash
-uv add peakbench              # core (stdlib only)
-uv add "peakbench[all]"       # + memray, plotly/pandas/numpy, typer CLI
+uv add peakbench            # the benchmark_memory fixture + memray engine
+uv add "peakbench[plot]"    # + the plot/compare CLI (pandas, plotly, typer)
 ```
+
+pytest-benchmark and memray are core deps; memray is Linux/macOS only, so Windows
+installs cleanly with timing-only (the memory pass raises a clear error there).
 
 ## Status
 
 Early. Extracted from the linopy internal benchmark suite, where it's the local
 memory-profiling layer. API may move before 1.0.
 
+[pytest-benchmark]: https://pytest-benchmark.readthedocs.io
 [CodSpeed]: https://codspeed.io
 [ASV]: https://asv.readthedocs.io
