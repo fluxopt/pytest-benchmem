@@ -31,7 +31,7 @@ SortMode = Literal["absolute", "relative"]
 
 
 def _value_label(unit: str) -> str:
-    return {"s": "time", "MiB": "peak"}.get(unit, "value")
+    return {"s": "time", "B": "peak"}.get(unit, "value")
 
 
 def _diverging_kwargs(midpoint: float = 0.0) -> dict[str, object]:
@@ -84,8 +84,8 @@ def _fold_ticks(bound: float) -> tuple[list[float], list[str]]:
 
 
 def _axis_kwargs(unit: str) -> dict[str, object]:
-    if unit == "s":
-        return {"tickformat": ".2s", "ticksuffix": "s"}
+    if unit in ("s", "B"):  # SI-scale time and bytes (1.2M, 3.4k…)
+        return {"tickformat": ".2s", "ticksuffix": unit}
     return {"ticksuffix": f" {unit}"}
 
 
@@ -141,7 +141,7 @@ def plot_compare(
     df = df.sort_values(x_col).reset_index(drop=True)
 
     x_label = f"{vlabel} delta ({unit})" if sort == "absolute" else f"{vlabel} delta %"
-    text_fmt = (".2s" if unit == "s" else ".2f") if sort == "absolute" else ".1f"
+    text_fmt = (".2s" if unit in ("s", "B") else ".2f") if sort == "absolute" else ".1f"
     direction = "slower" if unit == "s" else "more memory"
     title = f"{vlabel} delta ({sort}): {a_label} → {b_label} (positive = {direction})"
 

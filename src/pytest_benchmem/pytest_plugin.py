@@ -2,7 +2,7 @@
 
 pytest-benchmark times your code but can't measure memory. This plugin adds a
 memray peak-memory pass *to the same test, in the same run*, stored in
-pytest-benchmark's own JSON (``extra_info.peak_mib``) so timing and memory share
+pytest-benchmark's own JSON (``extra_info.benchmem``) so timing and memory share
 one node id. Two ways in:
 
 - The ``benchmark_memory`` fixture — explicit, per-test::
@@ -32,44 +32,64 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from pytest_benchmem.memray import measure_peak
+from pytest_benchmem.memray import MemoryResult, measure_memory
+from pytest_benchmem.snapshot import BENCHMEM_KEY
 
 if TYPE_CHECKING:
     from pytest_benchmark.fixture import BenchmarkFixture
 
-#: Key under which the peak (MiB) is written into pytest-benchmark ``extra_info``.
-PEAK_KEY = "peak_mib"
+#: Name of the per-test marker: ``@pytest.mark.benchmem(repeats=N)``.
+MARKER = "benchmem"
 
 
-def _record_peak(
+def _repeats_from_node(node: Any, default: int = 1) -> int:
+    """Read ``repeats`` off a test's ``@pytest.mark.benchmem`` marker, if present."""
+    marker = node.get_closest_marker(MARKER) if node is not None else None
+    if marker is not None and "repeats" in marker.kwargs:
+        return max(1, int(marker.kwargs["repeats"]))
+    return default
+
+
+def _record_memory(
     benchmark: BenchmarkFixture, action: Callable[[], Any], *, repeats: int = 1
-) -> float:
-    """Memory-profile ``action`` into ``benchmark.extra_info[PEAK_KEY]``, once.
+) -> MemoryResult:
+    """Memory-profile ``action`` into ``benchmark.extra_info["benchmem"]``, once.
 
-    Idempotent: if a peak is already recorded for this benchmark (e.g. the
+    Idempotent: if a blob is already recorded for this benchmark (e.g. the
     ``--benchmark-memory`` patch and the explicit fixture both fire), reuse it
     rather than measuring twice.
     """
-    existing = benchmark.extra_info.get(PEAK_KEY)
-    if existing is not None:
-        return float(existing)
-    peak = measure_peak(action, repeats=repeats)
-    benchmark.extra_info[PEAK_KEY] = peak
-    return peak
+    existing = benchmark.extra_info.get(BENCHMEM_KEY)
+    if isinstance(existing, Mapping):
+        return MemoryResult(
+            int(existing["peak_bytes"]),
+            int(existing["peak_bytes_max"]),
+            int(existing["allocations"]),
+            int(existing["repeats"]),
+        )
+    result = measure_memory(action, repeats=repeats)
+    benchmark.extra_info[BENCHMEM_KEY] = result.as_dict()
+    return result
 
 
 class MemoryBenchmark:
     """Callable wrapper that times via pytest-benchmark, then memory-profiles.
 
     Mirrors the ``benchmark`` fixture's surface (``__call__`` and ``pedantic``)
-    so it's a drop-in for tests that want memory too. After a call, the peak is
-    on :attr:`peak_mib` and in the benchmark's ``extra_info``.
+    so it's a drop-in for tests that want memory too. After a call, the measured
+    memory is on :attr:`result` (and :attr:`peak_bytes`) and in the benchmark's
+    ``extra_info["benchmem"]``.
     """
 
     def __init__(self, benchmark: BenchmarkFixture, *, repeats: int = 1) -> None:
         self._benchmark = benchmark
         self._repeats = repeats
-        self.peak_mib: float | None = None
+        self.result: MemoryResult | None = None
+
+    @property
+    def peak_bytes(self) -> int | None:
+        """Peak memory (bytes) from the last call, or ``None`` before any call."""
+        return None if self.result is None else self.result.peak_bytes
 
     @property
     def extra_info(self) -> dict[str, Any]:
@@ -77,14 +97,14 @@ class MemoryBenchmark:
 
         Set scalars here to attach analysis dims — ``benchmark_memory.extra_info["op"]
         = "sort"`` — and pytest-benchmem's readers pick them up as dims alongside the
-        parametrize params. The peak is stored here too, under ``peak_mib``.
+        parametrize params. The memory blob is stored here too, under ``benchmem``.
         """
         return self._benchmark.extra_info
 
     def __call__(self, function_to_benchmark: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """Time ``function_to_benchmark(*args, **kwargs)``, then record its peak memory."""
         result = self._benchmark(function_to_benchmark, *args, **kwargs)
-        self.peak_mib = _record_peak(
+        self.result = _record_memory(
             self._benchmark, lambda: function_to_benchmark(*args, **kwargs), repeats=self._repeats
         )
         return result
@@ -115,7 +135,7 @@ class MemoryBenchmark:
             warmup_rounds=warmup_rounds,
             iterations=iterations,
         )
-        self.peak_mib = _record_peak(
+        self.result = _record_memory(
             self._benchmark, _pedantic_action(target, args, kwargs, setup), repeats=self._repeats
         )
         return result
@@ -141,19 +161,22 @@ def _pedantic_action(
 
 
 @pytest.fixture
-def benchmark_memory(benchmark: BenchmarkFixture) -> MemoryBenchmark:
+def benchmark_memory(
+    benchmark: BenchmarkFixture, request: pytest.FixtureRequest
+) -> MemoryBenchmark:
     """Time *and* peak-memory-profile a callable in one pytest-benchmark test.
 
     Depends on the ``benchmark`` fixture, so timing rides pytest-benchmark fully;
-    the memray memory pass is added on top and stored in the same entry. For an
-    existing suite, prefer the ``--benchmark-memory`` flag over rewriting tests.
+    the memray memory pass is added on top and stored in the same entry. The
+    ``@pytest.mark.benchmem(repeats=N)`` marker sets min-of-N passes for this test.
+    For an existing suite, prefer the ``--benchmark-memory`` flag over rewriting tests.
     """
-    return MemoryBenchmark(benchmark)
+    return MemoryBenchmark(benchmark, repeats=_repeats_from_node(request.node))
 
 
 # --- --benchmark-memory: augment the stock `benchmark` fixture --------------------
 
-_PATCHED: tuple[Any, Any] | None = None
+_PATCHED: tuple[Any, Any, Any] | None = None
 
 
 #: pedantic kwargs the patch passes through — guard against a version that drops one.
@@ -191,14 +214,22 @@ def _install_auto_memory() -> None:
             f"https://github.com/fluxopt/pytest-benchmem/issues"
         )
 
+    orig_init = BenchmarkFixture.__init__
     orig_call = BenchmarkFixture.__call__
     orig_pedantic = BenchmarkFixture.pedantic
+
+    def init(self: BenchmarkFixture, node: Any, *a: Any, **k: Any) -> None:
+        orig_init(self, node, *a, **k)  # type: ignore[no-untyped-call]
+        setattr(self, "_benchmem_node", node)  # noqa: B010 — stash for the marker read
+
+    def _repeats(self: BenchmarkFixture) -> int:
+        return _repeats_from_node(getattr(self, "_benchmem_node", None))
 
     def call(
         self: BenchmarkFixture, function_to_benchmark: Callable[..., Any], *a: Any, **k: Any
     ) -> Any:
         result = orig_call(self, function_to_benchmark, *a, **k)  # type: ignore[no-untyped-call]
-        _record_peak(self, lambda: function_to_benchmark(*a, **k))
+        _record_memory(self, lambda: function_to_benchmark(*a, **k), repeats=_repeats(self))
         return result
 
     def pedantic(
@@ -222,12 +253,13 @@ def _install_auto_memory() -> None:
             warmup_rounds=warmup_rounds,
             iterations=iterations,
         )
-        _record_peak(self, _pedantic_action(target, args, kwargs, setup))
+        _record_memory(self, _pedantic_action(target, args, kwargs, setup), repeats=_repeats(self))
         return result
 
+    BenchmarkFixture.__init__ = init  # type: ignore[method-assign]
     BenchmarkFixture.__call__ = call  # type: ignore[method-assign]
     BenchmarkFixture.pedantic = pedantic  # type: ignore[method-assign,assignment]
-    _PATCHED = (orig_call, orig_pedantic)
+    _PATCHED = (orig_init, orig_call, orig_pedantic)
 
 
 def _remove_auto_memory() -> None:
@@ -236,7 +268,7 @@ def _remove_auto_memory() -> None:
         return
     from pytest_benchmark.fixture import BenchmarkFixture
 
-    BenchmarkFixture.__call__, BenchmarkFixture.pedantic = _PATCHED  # type: ignore[method-assign]
+    BenchmarkFixture.__init__, BenchmarkFixture.__call__, BenchmarkFixture.pedantic = _PATCHED  # type: ignore[method-assign]
     _PATCHED = None
 
 
@@ -253,7 +285,12 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    """Patch the stock ``benchmark`` fixture when ``--benchmark-memory`` is set."""
+    """Register the ``benchmem`` marker; patch ``benchmark`` if ``--benchmark-memory`` is set."""
+    config.addinivalue_line(
+        "markers",
+        "benchmem(repeats=N): pytest-benchmem peak-memory options — "
+        "repeats sets the number of memray passes (the reported peak is the min).",
+    )
     if config.getoption("--benchmark-memory"):
         _install_auto_memory()
 

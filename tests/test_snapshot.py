@@ -6,10 +6,26 @@ import pytest
 
 from pytest_benchmem.snapshot import (
     from_pytest_benchmark,
+    human_bytes,
     load_long_df,
     load_samples,
     memory_from_pytest_benchmark,
 )
+
+
+@pytest.mark.parametrize(
+    "n, expected",
+    [
+        (0, "0 B"),
+        (512, "512 B"),
+        (1024, "1 KiB"),
+        (1536, "1.5 KiB"),
+        (1024**2, "1 MiB"),
+        (int(2.5 * 1024**3), "2.5 GiB"),
+    ],
+)
+def test_human_bytes_scales(n, expected):
+    assert human_bytes(n) == expected
 
 
 def _pb_file(tmp_path, benchmarks):
@@ -35,6 +51,15 @@ def test_metric_picks_the_stat(tmp_path):
     assert samples[0].value == 0.3
 
 
+def _blob(peak_bytes, *, allocations=0, repeats=1):
+    return {
+        "peak_bytes": peak_bytes,
+        "peak_bytes_max": peak_bytes,
+        "allocations": allocations,
+        "repeats": repeats,
+    }
+
+
 def test_dims_from_params_and_extra_info(tmp_path):
     pb = _pb_file(
         tmp_path,
@@ -43,7 +68,7 @@ def test_dims_from_params_and_extra_info(tmp_path):
                 "fullname": "t[n=10]",
                 "stats": {"min": 0.1},
                 "params": {"n": 10},
-                "extra_info": {"op": "sort", "peak_mib": 5.0},  # peak_mib excluded from dims
+                "extra_info": {"op": "sort", "benchmem": _blob(5_000_000)},  # blob excluded
             }
         ],
     )
@@ -51,26 +76,43 @@ def test_dims_from_params_and_extra_info(tmp_path):
     assert samples[0].dims == {"n": 10, "op": "sort"}
 
 
-def test_memory_from_pytest_benchmark_reads_extra_info(tmp_path):
+def test_memory_from_pytest_benchmark_reads_blob(tmp_path):
     pb = _pb_file(
         tmp_path,
         [
-            {"fullname": "a", "stats": {"min": 0.1}, "extra_info": {"peak_mib": 18.8}},
+            {"fullname": "a", "stats": {"min": 0.1}, "extra_info": {"benchmem": _blob(19_700_000)}},
             {"fullname": "b", "stats": {"min": 0.2}},  # timing-only — skipped
-            {"fullname": "c", "stats": {"min": 0.3}, "extra_info": {"peak_mib": None}},  # skipped
+            {"fullname": "c", "stats": {"min": 0.3}, "extra_info": {"benchmem": None}},  # skipped
         ],
     )
     _l, samples, unit = memory_from_pytest_benchmark(pb)
-    assert unit == "MiB"
-    assert [(s.id, s.value) for s in samples] == [("a", 18.8)]
+    assert unit == "B"
+    assert [(s.id, s.value) for s in samples] == [("a", 19_700_000.0)]
+
+
+def test_memory_reads_allocations_field(tmp_path):
+    pb = _pb_file(
+        tmp_path,
+        [
+            {
+                "fullname": "a",
+                "stats": {"min": 0.1},
+                "extra_info": {"benchmem": _blob(99, allocations=42)},
+            }
+        ],
+    )
+    _l, samples, unit = memory_from_pytest_benchmark(pb, field="allocations")
+    assert unit == ""
+    assert samples[0].value == 42.0
 
 
 def test_load_samples_dispatches_on_metric(tmp_path):
     pb = _pb_file(
-        tmp_path, [{"fullname": "a", "stats": {"min": 0.1}, "extra_info": {"peak_mib": 5.0}}]
+        tmp_path,
+        [{"fullname": "a", "stats": {"min": 0.1}, "extra_info": {"benchmem": _blob(5_000)}}],
     )
     assert load_samples(pb, metric="time")[2] == "s"
-    assert load_samples(pb, metric="memory")[2] == "MiB"
+    assert load_samples(pb, metric="memory")[2] == "B"
 
 
 def test_load_long_df_stacks_runs_with_dim_columns(tmp_path):

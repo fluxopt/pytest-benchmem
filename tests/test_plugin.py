@@ -1,8 +1,8 @@
 """Exercises the benchmark_memory fixture end-to-end through a nested pytest run.
 
 We run a tiny generated test suite with --benchmark-json and assert the produced
-pytest-benchmark file carries both timing stats and our extra_info.peak_mib, then
-that pytest-benchmem's readers lift both back out.
+pytest-benchmark file carries both timing stats and our extra_info.benchmem blob,
+then that pytest-benchmem's readers lift both back out.
 """
 
 from __future__ import annotations
@@ -47,26 +47,28 @@ def test_fixture_records_timing_and_memory(pytester):
     out, data = _run_suite(pytester)
     by_name = {b["name"]: b for b in data["benchmarks"]}
 
-    # memory tests carry both stats (timing) and extra_info.peak_mib
+    # memory tests carry both stats (timing) and the extra_info.benchmem blob
     assert by_name["test_alloc"]["stats"]["min"] > 0
-    assert by_name["test_alloc"]["extra_info"]["peak_mib"] > 0
-    assert by_name["test_pedantic"]["extra_info"]["peak_mib"] > 0
-    # the timing-only test has no peak recorded
-    assert "peak_mib" not in by_name["test_time_only"].get("extra_info", {})
+    alloc_blob = by_name["test_alloc"]["extra_info"]["benchmem"]
+    assert alloc_blob["peak_bytes"] > 0
+    assert alloc_blob["allocations"] > 0
+    assert by_name["test_pedantic"]["extra_info"]["benchmem"]["peak_bytes"] > 0
+    # the timing-only test has no memory recorded
+    assert "benchmem" not in by_name["test_time_only"].get("extra_info", {})
 
     # pytest-benchmem readers lift both back out of the one file
     _l, time_samples, tunit = from_pytest_benchmark(out)
     _l, mem_samples, munit = memory_from_pytest_benchmark(out)
-    assert tunit == "s" and munit == "MiB"
+    assert tunit == "s" and munit == "B"
     assert len(time_samples) == 3  # all three timed
     assert {s.id.split("::")[-1] for s in mem_samples} == {"test_alloc", "test_pedantic"}
 
 
 def test_fixture_is_opt_in_per_test(pytester):
-    """Without --benchmark-memory, a plain `benchmark` test records no peak."""
+    """Without --benchmark-memory, a plain `benchmark` test records no memory."""
     _out, data = _run_suite(pytester)
     time_only = next(b for b in data["benchmarks"] if b["name"] == "test_time_only")
-    assert time_only.get("extra_info", {}).get("peak_mib") is None
+    assert time_only.get("extra_info", {}).get("benchmem") is None
 
 
 # A suite using only the stock `benchmark` fixture — no benchmark_memory anywhere.
@@ -91,16 +93,61 @@ def _run_plain(pytester, *extra):
 
 
 def test_benchmark_memory_flag_augments_plain_benchmark(pytester):
-    """--benchmark-memory records peak for stock benchmark() calls, no test changes."""
+    """--benchmark-memory records memory for stock benchmark() calls, no test changes."""
     data = _run_plain(pytester, "--benchmark-memory")
     by_name = {b["name"]: b for b in data["benchmarks"]}
     assert by_name["test_plain"]["stats"]["min"] > 0  # timing still works
-    assert by_name["test_plain"]["extra_info"]["peak_mib"] > 0  # memory now recorded
-    assert by_name["test_plain_pedantic"]["extra_info"]["peak_mib"] > 0
+    assert by_name["test_plain"]["extra_info"]["benchmem"]["peak_bytes"] > 0  # memory now recorded
+    assert by_name["test_plain_pedantic"]["extra_info"]["benchmem"]["peak_bytes"] > 0
 
 
 def test_no_flag_leaves_plain_benchmark_memory_free(pytester):
     """Without the flag, the same plain suite records no memory (and isn't patched)."""
     data = _run_plain(pytester)  # no --benchmark-memory
     for b in data["benchmarks"]:
-        assert b.get("extra_info", {}).get("peak_mib") is None
+        assert b.get("extra_info", {}).get("benchmem") is None
+
+
+# A suite exercising the @pytest.mark.benchmem(repeats=N) marker on both paths.
+MARKER_SUITE = """
+import pytest
+
+@pytest.mark.benchmem(repeats=3)
+def test_marked_fixture(benchmark_memory):
+    benchmark_memory(lambda: [0] * 200_000)
+
+@pytest.mark.benchmem(repeats=4)
+def test_marked_plain(benchmark):
+    benchmark(lambda: [0] * 200_000)
+"""
+
+
+def test_benchmem_marker_sets_repeats(pytester):
+    """The marker drives repeats for the fixture and the --benchmark-memory patch alike."""
+    pytester.makepyfile(MARKER_SUITE)
+    out = pytester.path / "bench.json"
+    result = pytester.runpytest_subprocess(
+        "--benchmark-only",
+        "--benchmark-memory",
+        f"--benchmark-json={out}",
+        "-p",
+        "no:cacheprovider",
+    )
+    result.assert_outcomes(passed=2)
+    by_name = {b["name"]: b for b in json.loads(out.read_text())["benchmarks"]}
+    assert by_name["test_marked_fixture"]["extra_info"]["benchmem"]["repeats"] == 3
+    assert by_name["test_marked_plain"]["extra_info"]["benchmem"]["repeats"] == 4
+
+
+def test_benchmem_marker_is_registered(pytester):
+    """The marker is declared, so --strict-markers doesn't reject it."""
+    pytester.makepyfile(
+        "import pytest\n"
+        "@pytest.mark.benchmem(repeats=2)\n"
+        "def test_x(benchmark_memory):\n"
+        "    benchmark_memory(lambda: [0] * 1000)\n"
+    )
+    result = pytester.runpytest_subprocess(
+        "--benchmark-only", "--strict-markers", "-p", "no:cacheprovider"
+    )
+    result.assert_outcomes(passed=1)

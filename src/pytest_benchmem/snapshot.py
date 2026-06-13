@@ -30,11 +30,25 @@ DimValue = str | int | float
 #: Which metric to read out of a pytest-benchmark file.
 Metric = Literal["time", "memory"]
 
-#: Default key under which ``benchmark_memory`` stores the peak (MiB).
-PEAK_KEY = "peak_mib"
+#: Key under which ``benchmark_memory`` stores its memory blob in ``extra_info``.
+BENCHMEM_KEY = "benchmem"
+
+#: Display unit per memory blob field (count fields have no unit).
+_FIELD_UNIT = {"peak_bytes": "B", "peak_bytes_max": "B", "allocations": ""}
 
 if TYPE_CHECKING:
     import pandas as pd
+
+
+def human_bytes(n: float) -> str:
+    """Auto-scale a byte count to a short IEC string: ``932 B``, ``4.1 MiB``, ``2.3 GiB``."""
+    step = 1024.0
+    value = float(n)
+    for suffix in ("B", "KiB", "MiB", "GiB", "TiB"):
+        if abs(value) < step or suffix == "TiB":
+            return f"{value:.0f} {suffix}" if suffix == "B" else f"{value:.3g} {suffix}"
+        value /= step
+    return f"{value:.3g} TiB"  # unreachable; keeps type-checkers happy
 
 
 class Sample(NamedTuple):
@@ -59,7 +73,7 @@ def _read_benchmarks(path: str | Path) -> tuple[Path, list[dict[str, Any]]]:
 
 def _dims(bm: Mapping[str, Any]) -> dict[str, DimValue]:
     """Analysis dims for one benchmark — its parametrize ``params`` plus any
-    scalar ``extra_info`` (minus the reserved ``peak_mib``). No id parsing.
+    scalar ``extra_info`` (minus the reserved ``benchmem`` blob). No id parsing.
     """
     dims: dict[str, DimValue] = {}
     params = bm.get("params")
@@ -67,8 +81,18 @@ def _dims(bm: Mapping[str, Any]) -> dict[str, DimValue]:
         dims.update(params)
     extra = bm.get("extra_info")
     if isinstance(extra, Mapping):
-        dims.update({k: v for k, v in extra.items() if k != PEAK_KEY})
+        dims.update({k: v for k, v in extra.items() if k != BENCHMEM_KEY})
     return dims
+
+
+def _benchmem(bm: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    """The memory blob for one benchmark, or ``None`` if it's timing-only."""
+    extra = bm.get("extra_info")
+    if isinstance(extra, Mapping):
+        blob = extra.get(BENCHMEM_KEY)
+        if isinstance(blob, Mapping):
+            return blob
+    return None
 
 
 def from_pytest_benchmark(
@@ -87,22 +111,25 @@ def from_pytest_benchmark(
 
 
 def memory_from_pytest_benchmark(
-    path: str | Path, *, key: str = PEAK_KEY
+    path: str | Path, *, field: str = "peak_bytes"
 ) -> tuple[str, list[Sample], str]:
-    """Read peak memory out of a pytest-benchmark file → ``(label, samples, "MiB")``.
+    """Read memory out of a pytest-benchmark file → ``(label, samples, unit)``.
 
-    The ``benchmark_memory`` fixture stores each run's peak under
-    ``extra_info[key]``, keyed by the same benchmark id pytest-benchmark uses.
-    Benchmarks lacking the key (timing-only tests) are skipped. Dims come from
-    parametrize ``params`` and ``extra_info``.
+    The ``benchmark_memory`` fixture stores each run's memory blob under
+    ``extra_info["benchmem"]``, keyed by the same benchmark id pytest-benchmark
+    uses. ``field`` picks which blob number to read (``peak_bytes`` → unit ``B``,
+    ``allocations`` → count). Benchmarks lacking the blob (timing-only tests) are
+    skipped. Dims come from parametrize ``params`` and ``extra_info``.
     """
     p, benchmarks = _read_benchmarks(path)
-    samples = [
-        Sample(id=bm["fullname"], value=float(bm["extra_info"][key]), dims=_dims(bm))
-        for bm in benchmarks
-        if isinstance(bm.get("extra_info"), Mapping) and bm["extra_info"].get(key) is not None
-    ]
-    return p.stem, samples, "MiB"
+    unit = _FIELD_UNIT.get(field, "")
+    samples = []
+    for bm in benchmarks:
+        blob = _benchmem(bm)
+        if blob is None or blob.get(field) is None:
+            continue
+        samples.append(Sample(id=bm["fullname"], value=float(blob[field]), dims=_dims(bm)))
+    return p.stem, samples, unit
 
 
 def load_samples(
