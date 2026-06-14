@@ -48,6 +48,11 @@ class Venv:
     cwd: Path | None
     failed_at: str | None  # "venv" | "install" | "isolation" | None
 
+    @classmethod
+    def failure(cls, version: str, stage: str) -> Venv:
+        """A provisioning failure at ``stage`` — no python/env/cwd, just the reason."""
+        return cls(version, None, None, None, stage)
+
 
 def provision(
     versions: Sequence[str],
@@ -75,7 +80,7 @@ def provision(
             venv = Path(tmp) / "venv"
             r = subprocess.run(["uv", "venv", "--python", sys.executable, str(venv)], check=False)
             if r.returncode != 0:
-                yield Venv(version, None, None, None, "venv")
+                yield Venv.failure(version, "venv")
                 continue
 
             vpy = _venv_python(venv)
@@ -91,7 +96,7 @@ def provision(
                 spec,
             ]
             if subprocess.run(install, check=False).returncode != 0:
-                yield Venv(version, None, None, None, "install")
+                yield Venv.failure(version, "install")
                 continue
 
             cwd = Path(tmp) / "iso"
@@ -121,7 +126,7 @@ def provision(
                     check=False,
                 )
                 if pre.returncode != 0:
-                    yield Venv(version, None, None, None, "isolation")
+                    yield Venv.failure(version, "isolation")
                     continue
 
             yield Venv(version, vpy, env, cwd, None)

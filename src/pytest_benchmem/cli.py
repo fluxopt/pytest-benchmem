@@ -11,6 +11,8 @@ own job; these commands are the memory-aware, dims-aware views on top.
 from __future__ import annotations
 
 import importlib.util
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Annotated
 
@@ -29,14 +31,35 @@ MetricOpt = Annotated[
 ]
 
 
+def _fail(msg: str, code: int = 1) -> typer.Exit:
+    """Print ``msg`` in red to stderr; return a :class:`typer.Exit` for the caller to raise."""
+    typer.secho(msg, fg=typer.colors.RED, err=True)
+    return typer.Exit(code=code)
+
+
+def _require_runs_exist(runs: list[Path], *, suggest: bool) -> None:
+    """Exit(2) if any run file is missing — ``suggest`` also lists the discoverable runs."""
+    missing = [p for p in runs if not p.exists()]
+    if not missing:
+        return
+    typer.secho(f"missing: {[str(p) for p in missing]}", fg=typer.colors.RED, err=True)
+    if suggest and (found := discover_runs()):
+        typer.echo("available:\n  " + "\n  ".join(str(p) for p in found), err=True)
+    raise typer.Exit(code=2)
+
+
+@contextmanager
+def _exit_on_value_error(code: int = 1) -> Iterator[None]:
+    """Turn a ``ValueError`` from the wrapped block into a red message + ``Exit(code)``."""
+    try:
+        yield
+    except ValueError as exc:
+        raise _fail(str(exc), code) from exc
+
+
 def _need_plotly() -> None:
     if importlib.util.find_spec("plotly") is None:
-        typer.secho(
-            "plotting needs extras: pip install 'pytest-benchmem[plot]'",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
+        raise _fail("plotting needs extras: pip install 'pytest-benchmem[plot]'", 2)
 
 
 @app.command()
@@ -60,20 +83,14 @@ def plot(
     open_browser: Annotated[bool, typer.Option("--open/--no-open")] = False,
 ) -> None:
     """Render an interactive plotly view from one or more pytest-benchmark runs."""
-    missing = [p for p in runs if not p.exists()]
-    if missing:
-        typer.secho(f"missing: {[str(p) for p in missing]}", fg=typer.colors.RED, err=True)
-        found = discover_runs()
-        if found:
-            typer.echo("available:\n  " + "\n  ".join(str(p) for p in found), err=True)
-        raise typer.Exit(code=2)
+    _require_runs_exist(runs, suggest=True)
 
     chosen = view or ("scaling" if len(runs) == 1 else "scatter" if len(runs) == 2 else "sweep")
     _need_plotly()
     from pytest_benchmem import plotting
 
     labels = label or None
-    try:
+    with _exit_on_value_error():
         if chosen == "compare":
             fig, n = plotting.plot_compare(
                 runs, metric=metric, facet=facet, clip=clip, labels=labels
@@ -87,11 +104,7 @@ def plot(
         elif chosen == "scaling":
             fig, n = plotting.plot_scaling(runs, metric=metric, x=x, facet=facet, labels=labels)
         else:
-            typer.secho(f"unknown view {chosen!r}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=2)
-    except ValueError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=1) from exc
+            raise _fail(f"unknown view {chosen!r}", 2)
 
     output = output or Path(".benchmarks") / "plots" / f"{chosen}-{metric}.html"
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -137,27 +150,17 @@ def compare(
 ) -> None:
     """Print a per-id comparison table across two or more runs (and optionally gate CI)."""
     if len(runs) < 2:  # noqa: PLR2004 — a comparison needs two sides
-        typer.secho("compare needs at least two runs", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2)
-    missing = [p for p in runs if not p.exists()]
-    if missing:
-        typer.secho(f"missing: {[str(p) for p in missing]}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2)
+        raise _fail("compare needs at least two runs", 2)
+    _require_runs_exist(runs, suggest=False)
     from pytest_benchmem.compare import compare_runs, find_regressions, parse_threshold
 
-    try:
+    with _exit_on_value_error():
         compare_runs(runs, metric=metric, stat=stat, sort=sort, csv=csv)
-    except ValueError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=1) from exc
 
     if not fail_on:
         return
-    try:
+    with _exit_on_value_error(code=2):
         thresholds = [parse_threshold(expr) for expr in fail_on]
-    except ValueError as exc:
-        typer.secho(str(exc), fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2) from exc
 
     # Gate the first run (base) against the last (head) — oldest vs newest in a sweep.
     regressions = find_regressions(runs[0], runs[-1], thresholds)
