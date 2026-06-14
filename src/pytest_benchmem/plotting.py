@@ -141,6 +141,11 @@ def plot_compare(
     df_long, unit = load_long_df(snapshots[:2], metric=metric, labels=_labels_head(labels, 2))
     vlabel = _canonical_metric(metric)
     labels = df_long["snapshot"].drop_duplicates().tolist()
+    if len(labels) < 2:
+        raise ValueError(
+            f"compare needs two distinct snapshots; both resolve to {labels[0]!r} "
+            f"(the same file given twice?). Pass two different files, or labels=."
+        )
     a_label, b_label = labels[0], labels[1]
 
     dims = _carry_dims(df_long)  # carry node.* too, so an explicit node facet survives

@@ -64,6 +64,12 @@ def test_compare_two_runs_counts_common_ids(tmp_path):
     assert fig.layout.title.text
 
 
+def test_compare_same_file_twice_errors_cleanly(tmp_path):
+    a = _run(tmp_path / "a.json", ROWS_A)
+    with pytest.raises(ValueError, match="two distinct snapshots"):
+        plotting.plot_compare([a, a])
+
+
 def test_compare_labels_override_stem(tmp_path):
     a = _run(tmp_path / "aaa.json", ROWS_A)
     b = _run(tmp_path / "bbb.json", ROWS_B)

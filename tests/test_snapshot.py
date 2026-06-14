@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -285,6 +286,17 @@ def test_load_long_df_labels_override_stem(tmp_path):
     assert set(df["snapshot"]) == {"v1", "v2"}  # not the run-a / run-b stems
     with pytest.raises(ValueError, match="labels has 1 entries but there are 2"):
         load_long_df([a, b], labels=["only-one"])
+
+
+def test_default_labels_disambiguate_colliding_stems():
+    from pytest_benchmem.snapshot import _default_labels
+
+    # distinct stems pass through; a shared stem is disambiguated by parent dir
+    assert _default_labels([Path("a/v1.json"), Path("b/v2.json")]) == ["v1", "v2"]
+    assert _default_labels([Path("v1/bench.json"), Path("v2/bench.json")]) == [
+        "v1/bench",
+        "v2/bench",
+    ]
 
 
 def test_memory_mode_defaults_to_heap_for_older_blobs(tmp_path):

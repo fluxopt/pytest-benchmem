@@ -38,6 +38,25 @@ def _line(text, needle):
     return next(line for line in text.splitlines() if needle in line)
 
 
+def test_same_file_twice_errors_cleanly(tmp_path):
+    # identical labels used to crash with IndexError on labels[0], labels[1] (#62)
+    a = _write(tmp_path / "run.json", [_bm("test_x", t=1.0)])
+    with pytest.raises(ValueError, match="two distinct runs"):
+        compare_runs(a, a, out=StringIO())
+
+
+def test_distinct_files_same_stem_disambiguate(tmp_path):
+    # two real runs that happen to share a stem (v1/bench.json vs v2/bench.json)
+    # is a legit comparison and must not collapse to one series.
+    (tmp_path / "v1").mkdir()
+    (tmp_path / "v2").mkdir()
+    a = _write(tmp_path / "v1" / "bench.json", [_bm("test_x", t=1.0)])
+    b = _write(tmp_path / "v2" / "bench.json", [_bm("test_x", t=2.0)])
+    out = StringIO()
+    compare_runs(a, b, out=out)
+    assert "v1/bench" in out.getvalue() and "v2/bench" in out.getvalue()
+
+
 def test_percent_change_time(tmp_path):
     a = _write(tmp_path / "base.json", [_bm("test_x", t=1.0), _bm("test_y", t=2.0)])
     b = _write(tmp_path / "head.json", [_bm("test_x", t=1.5), _bm("test_y", t=1.0)])

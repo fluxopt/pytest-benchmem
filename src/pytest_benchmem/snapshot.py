@@ -294,6 +294,16 @@ def _as_paths(runs: str | Path | Sequence[str | Path]) -> list[Path]:
     return [Path(r) for r in runs]
 
 
+def _default_labels(paths: list[Path]) -> list[str]:
+    """Snapshot labels from file stems, disambiguated by parent dir where distinct
+    files share a stem (e.g. ``v1/bench.json`` vs ``v2/bench.json`` → ``v1/bench`` /
+    ``v2/bench``), so colliding stems don't silently merge into one series.
+    """
+    stems = [p.stem for p in paths]
+    clashing = {s for s in stems if stems.count(s) > 1}
+    return [f"{p.parent.name}/{p.stem}" if p.stem in clashing else p.stem for p in paths]
+
+
 def load_long_df(
     runs: str | Path | Sequence[str | Path],
     *,
@@ -315,12 +325,12 @@ def load_long_df(
     paths = _as_paths(runs)
     if labels is not None and len(labels) != len(paths):
         raise ValueError(f"labels has {len(labels)} entries but there are {len(paths)} snapshot(s)")
+    label_list = list(labels) if labels is not None else _default_labels(paths)
 
     rows: list[dict[str, object]] = []
     unit = ""
-    for i, path in enumerate(paths):
-        stem_label, samples, unit = load_samples(path, metric=metric, stat=stat)
-        label = labels[i] if labels is not None else stem_label
+    for label, path in zip(label_list, paths, strict=True):
+        _stem, samples, unit = load_samples(path, metric=metric, stat=stat)
         for s in samples:
             rows.append({"snapshot": label, "id": s.id, "value": s.value, **s.dims})
     df = pd.DataFrame(rows)
