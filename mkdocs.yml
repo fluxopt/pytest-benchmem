@@ -18,21 +18,31 @@ theme:
 
 nav:
   - Home: index.md
-  - Walkthrough: walkthrough.ipynb
+  - Getting started: getting-started.ipynb
+  - Metrics: metrics.ipynb
+  - Grouping by dims: dims.ipynb
+  - Compare & plot: compare-plot.ipynb
+  - Cross-version sweeps: sweeps.md
+  - Reference: reference.md
 
 plugins:
   - search
   - mkdocs-jupyter:
       execute: true
-      include: ["walkthrough.ipynb"]
+      include: ["*.ipynb"]
       include_source: true
 
-# walkthrough.md is the jupytext source. Run `jupytext --to ipynb
-# docs/walkthrough.md` before building (the docs workflow does this in CI);
-# mkdocs-jupyter then executes the generated .ipynb. Exclude the raw .md so it
-# isn't also served as its own page.
+# The four notebook pages have jupytext .md sources (getting-started.md, metrics.md,
+# dims.md, compare-plot.md). Run `jupytext --to ipynb docs/getting-started.md …`
+# before building (the docs workflow does this in CI); mkdocs-jupyter then executes
+# the generated .ipynb. Exclude the raw notebook sources so they aren't also served
+# as their own pages — index.md, sweeps.md, and reference.md are plain markdown and
+# stay served.
 exclude_docs: |
-  walkthrough.md
+  getting-started.md
+  metrics.md
+  dims.md
+  compare-plot.md
 
 markdown_extensions:
   - admonition

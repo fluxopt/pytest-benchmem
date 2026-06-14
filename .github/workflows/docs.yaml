@@ -22,7 +22,7 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-      # Build the notebook from its jupytext source, then build+execute the site.
+      # Build the notebooks from their jupytext sources, then build+execute the site.
       - run: uv sync --group docs
-      - run: uv run jupytext --to ipynb docs/walkthrough.md
+      - run: uv run jupytext --to ipynb docs/getting-started.md docs/metrics.md docs/dims.md docs/compare-plot.md
       - run: uv run mkdocs gh-deploy --force

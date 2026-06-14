@@ -8,6 +8,9 @@
 adds a memray **peak-memory** pass to the *same test, in the same run* — one node
 id, one JSON file, both metrics. Plus dims-aware plots and cross-version sweeps.
 
+📖 **[Full documentation](https://fluxopt.github.io/pytest-benchmem/)** — getting
+started, metrics, dims, compare & plot, sweeps, and the reference.
+
 ## Quickstart
 
 Write a normal pytest-benchmark test; swap `benchmark` for `benchmark_memory`:
@@ -40,7 +43,7 @@ memray measures peak on a *separate, untimed* call — so the allocator hooks co
 the timing nothing. The parametrize `params` become the analysis dims the plots
 scale by; for an axis `params` can't carry (a per-operation `phase`, or a clean
 label for an object you parametrize over), set a scalar on `extra_info` — see
-[Grouping axes](https://fluxopt.github.io/pytest-benchmem/#grouping-axes-dims).
+[Grouping by dims](https://fluxopt.github.io/pytest-benchmem/dims/).
 
 ## Already have a pytest-benchmark suite?
 
