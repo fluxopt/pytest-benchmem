@@ -131,7 +131,7 @@ def compare_runs(
     from rich.table import Table
     from rich.text import Text
 
-    from pytest_benchmem.combined import _byte_unit
+    from pytest_benchmem.tables import _byte_unit
 
     if sort not in _SORTS:
         raise ValueError(f"unknown --sort {sort!r}; use one of {', '.join(_SORTS)}")
@@ -305,6 +305,16 @@ def memory_regressions(
     Only ``peak`` / ``allocations`` are supported — timing is pytest-benchmark's
     own ``--benchmark-compare-fail``. Raises on an out-of-scope field.
     """
+    from pytest_benchmem.memray import MemoryResult
+
+    def headline(blobs: dict[str, dict[str, Any]], attr: str) -> dict[str, float]:
+        # the blob is the per-repeat series; the gate reads its derived headline scalar
+        return {
+            i: float(getattr(MemoryResult.from_blob(b), attr))
+            for i, b in blobs.items()
+            if "peak_bytes" in b
+        }
+
     regressions: list[Regression] = []
     for th in thresholds:
         if th.field not in _BLOB_FIELD:
@@ -314,7 +324,7 @@ def memory_regressions(
                 f"(timing is pytest-benchmark's own --benchmark-compare-fail)"
             )
         key = _BLOB_FIELD[th.field]
-        base = {i: float(b[key]) for i, b in base_blobs.items() if key in b}
-        head = {i: float(h[key]) for i, h in head_blobs.items() if key in h}
-        regressions.extend(_regressions_for(base, head, th))
+        regressions.extend(
+            _regressions_for(headline(base_blobs, key), headline(head_blobs, key), th)
+        )
     return regressions

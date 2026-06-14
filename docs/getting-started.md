@@ -100,14 +100,12 @@ import json
 
 from rich.console import Console
 
-from pytest_benchmem.memray import headline
 from pytest_benchmem.snapshot import BENCHMEM_KEY
 from pytest_benchmem.tables import build_run_table
 
-# the blob is per-repeat series; `headline` derives the scalars the table shows
 benchmarks = json.loads(baseline.read_text())["benchmarks"]
 blobs = {
-    b["fullname"]: headline(b["extra_info"][BENCHMEM_KEY])
+    b["fullname"]: b["extra_info"][BENCHMEM_KEY]
     for b in benchmarks
     if BENCHMEM_KEY in b.get("extra_info", {})
 }

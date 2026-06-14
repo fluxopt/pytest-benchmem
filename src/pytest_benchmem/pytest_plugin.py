@@ -33,7 +33,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from rich.console import Console
 
-from pytest_benchmem.memray import MemoryResult, headline, measure_memory
+from pytest_benchmem.memray import MemoryResult, measure_memory
 from pytest_benchmem.snapshot import BENCHMEM_KEY
 
 if TYPE_CHECKING:
@@ -339,18 +339,13 @@ def _compare_requested(config: pytest.Config) -> tuple[object, list[str]]:
 
 
 def _memory_blobs(benchmarks: Any) -> dict[str, dict[str, Any]]:
-    """``{fullname: headline-scalars}`` for the benchmarks that recorded memory.
-
-    Derives the denormalized headline (peak / max / allocations / total_bytes) from
-    each blob's per-repeat series, so the display tables and the regression gate read
-    plain scalars.
-    """
+    """``{fullname: benchmem-blob}`` (the per-repeat series) for benchmarks with memory."""
     blobs: dict[str, dict[str, Any]] = {}
     for bm in benchmarks:
         extra = getattr(bm, "extra_info", None)
         blob = extra.get(BENCHMEM_KEY) if isinstance(extra, Mapping) else None
         if isinstance(blob, Mapping):
-            blobs[bm.fullname] = headline(blob)
+            blobs[bm.fullname] = dict(blob)
     return blobs
 
 
@@ -368,7 +363,7 @@ def _load_baseline(storage: Any, compare: object) -> tuple[str | None, dict[str,
     for bench in data.get("benchmarks", []):
         blob = bench.get("extra_info", {}).get(BENCHMEM_KEY)
         if isinstance(blob, Mapping):
-            blobs[bench["fullname"]] = headline(blob)
+            blobs[bench["fullname"]] = dict(blob)
     return str(path), blobs
 
 

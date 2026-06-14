@@ -1,16 +1,7 @@
 from __future__ import annotations
 
-from pytest_benchmem.combined import (
-    _best_worst,
-    _blob_of,
-    _byte_unit,
-    _mem_cell,
-    _mem_columns,
-    _MemCol,
-    _peak_delta_cells,
-    _rank_style,
-    _rel,
-)
+from pytest_benchmem.combined import _best_worst, _peak_delta_cells, _rank_style, _rel, _result_of
+from pytest_benchmem.memray import Measurement, MemoryResult
 
 
 def _bench(**stats):
@@ -19,31 +10,11 @@ def _bench(**stats):
 
 def test_best_worst_directions():
     benches = [
-        _bench(
-            min=1.0,
-            max=5.0,
-            mean=2.0,
-            median=2.0,
-            iqr=0.5,
-            stddev=0.1,
-            ops=10.0,
-            outliers="0;0",
-            rounds=3,
-            iterations=1,
-        ),
-        _bench(
-            min=3.0,
-            max=9.0,
-            mean=4.0,
-            median=4.0,
-            iqr=1.5,
-            stddev=0.3,
-            ops=4.0,
-            outliers="1;2",
-            rounds=7,
-            iterations=1,
-        ),
-    ]
+        _bench(min=1.0, max=5.0, mean=2.0, median=2.0, iqr=0.5, stddev=0.1, ops=10.0,
+               outliers="0;0", rounds=3, iterations=1),
+        _bench(min=3.0, max=9.0, mean=4.0, median=4.0, iqr=1.5, stddev=0.3, ops=4.0,
+               outliers="1;2", rounds=7, iterations=1),
+    ]  # fmt: skip
     best, worst = _best_worst(benches)
     assert best["min"] == 1.0 and worst["min"] == 3.0  # time: smaller is better
     assert best["ops"] == 10.0 and worst["ops"] == 4.0  # ops: bigger is better
@@ -65,48 +36,19 @@ def test_rel_matches_pytest_benchmark_annotation():
     assert _rel(10.0, 5.0, solo=True) == ""  # dropped for a solo group
 
 
-def test_byte_unit_picks_from_largest():
-    assert _byte_unit(0) == ("B", 1.0)
-    assert _byte_unit(2048)[0] == "KiB"
-    assert _byte_unit(5 * 1024**2)[0] == "MiB"
-
-
-def test_mem_columns_hoist_unit_and_rank():
-    blobs = {
-        "a": {"peak_bytes": 1024, "peak_bytes_max": 1024, "total_bytes": 2048, "allocations": 5},
-        "b": {"peak_bytes": 8192, "peak_bytes_max": 8192, "total_bytes": 4096, "allocations": 50},
-    }
-    cols = _mem_columns(blobs)
-    assert [c.header for c in cols] == ["peak (KiB)", "allocated (KiB)", "allocs"]  # no idle max
-    assert cols[0].best == 1024 and cols[0].worst == 8192  # smaller is best
-
-
-def test_mem_columns_includes_max_on_spread():
-    blob = {"peak_bytes": 1024, "peak_bytes_max": 4096, "total_bytes": 0, "allocations": 0}
-    assert any(c.header.startswith("max") for c in _mem_columns({"a": blob}))
-
-
-def test_mem_cell_annotation_and_zero_floor():
-    ranked = _MemCol("peak (KiB)", "peak_bytes", 1024.0, best=1024.0, worst=8192.0)
-    assert "(8.00)" in _mem_cell(ranked, {"peak_bytes": 8192}, solo=False).plain
-    zero_floor = _MemCol("peak (KiB)", "peak_bytes", 1024.0, best=0.0, worst=8192.0)
-    assert "(" not in _mem_cell(zero_floor, {"peak_bytes": 8192}, solo=False).plain  # ratio dropped
-    assert _mem_cell(ranked, None, solo=False).plain == "—"  # timing-only row
+def test_result_of_reconstructs_or_none():
+    blob = {"peak_bytes": [10, 20], "allocations": [1, 1], "total_bytes": [5, 5]}
+    res = _result_of({"extra_info": {"benchmem": blob}})
+    assert res is not None and res.peak_bytes == 10 and res.peak_bytes_max == 20
+    assert _result_of({"extra_info": {}}) is None  # timing-only
+    assert _result_of({}) is None  # no extra_info at all
+    assert _result_of({"extra_info": {"benchmem": "nope"}}) is None  # malformed
 
 
 def test_peak_delta_cells_fold_baseline():
-    peak = _MemCol("peak (KiB)", "peak_bytes", 1024.0, best=1024.0, worst=8192.0)
-    base, delta = _peak_delta_cells(peak, {"peak_bytes": 4096}, {"peak_bytes": 8192})
-    assert base.plain == "4.00" and delta.plain == "+100.0%"  # baseline in peak's unit; grew
-    base_new, delta_new = _peak_delta_cells(peak, None, {"peak_bytes": 8192})
-    assert base_new.plain == "—" and delta_new.plain == "—"  # id absent from baseline
-
-
-def test_blob_of_derives_headline():
-    blob = {"peak_bytes": [10, 20], "allocations": [1, 1], "total_bytes": [5, 5]}
-    hl = _blob_of({"extra_info": {"benchmem": blob}})
-    assert hl is not None
-    assert hl["peak_bytes"] == 10 and hl["peak_bytes_max"] == 20  # headline derived from series
-    assert _blob_of({"extra_info": {}}) is None  # timing-only
-    assert _blob_of({}) is None  # no extra_info key at all
-    assert _blob_of({"extra_info": {"benchmem": "nope"}}) is None  # malformed
+    base = MemoryResult((Measurement(4096, 1, 1),))
+    res = MemoryResult((Measurement(8192, 1, 1),))
+    cells = _peak_delta_cells(base, res, 1024.0)  # KiB factor
+    assert cells[0].plain == "4.00" and cells[1].plain == "+100.0%"  # baseline in peak's unit; grew
+    absent = _peak_delta_cells(None, res, 1024.0)
+    assert absent[0].plain == "—" and absent[1].plain == "—"  # id not in baseline

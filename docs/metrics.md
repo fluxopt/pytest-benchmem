@@ -44,6 +44,11 @@ benchmem compare v1.json v2.json --metric allocated --stat mean
 `allocated`, or `allocations`. Peak is the noisy one (GC timing, page cache); `stddev`
 tells you how much. Without `--stat` you get the headline value.
 
+The **terminal table** spreads it automatically: with `repeats > 1`, a metric that
+*varies* across the passes expands into `min` / `mean` / `max` columns (`peak·min`,
+`peak·mean`, `peak·max`), while a constant one (a deterministic allocation count) stays
+a single column — so you see the spread only where there is one.
+
 ## Setup
 
 ```{code-cell} ipython3

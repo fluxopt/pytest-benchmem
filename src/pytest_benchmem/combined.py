@@ -20,12 +20,14 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from math import isinf
 from operator import itemgetter
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any
 
 from pytest_benchmem.snapshot import BENCHMEM_KEY
 
 if TYPE_CHECKING:
     from rich.text import Text
+
+    from pytest_benchmem.memray import MemoryResult
 
 #: Render width. pytest-benchmark's table writes very wide lines and lets the terminal
 #: wrap; rich would instead crop cells to the console width, so we hand it a generous
@@ -135,111 +137,36 @@ def _timing_cell(
     return _cell(str(bench[prop]))  # outliers / rounds / iterations — plain counts
 
 
-def _blob_of(bench: Any) -> Mapping[str, Any] | None:
-    """The memory headline scalars for a benchmark, or ``None`` for a timing-only test.
+def _result_of(bench: Any) -> MemoryResult | None:
+    """The :class:`MemoryResult` for a benchmark, or ``None`` for a timing-only test.
 
     ``bs.groups`` holds pytest-benchmark's *flat dicts* (``bench.as_dict(flat=True)``),
-    so reads go through ``[...]``. The stored blob is per-repeat series; we derive the
-    headline (peak / max / allocations / total_bytes) the columns read.
+    so reads go through ``[...]``. The stored blob is the per-repeat series.
     """
-    from pytest_benchmem.memray import headline
+    from pytest_benchmem.memray import MemoryResult
 
     try:
         extra = bench["extra_info"]
     except (KeyError, TypeError):
         return None
     blob = extra.get(BENCHMEM_KEY) if isinstance(extra, Mapping) else None
-    return headline(blob) if isinstance(blob, Mapping) else None
-
-
-_BYTE_STEPS = (("KiB", 1024.0), ("MiB", 1024.0**2), ("GiB", 1024.0**3), ("TiB", 1024.0**4))
-
-
-def _byte_unit(max_bytes: float) -> tuple[str, float]:
-    """Unit ``(name, divisor)`` to render a byte column, chosen from its largest value."""
-    name, factor = "B", 1.0
-    for step_name, step_factor in _BYTE_STEPS:
-        if max_bytes >= step_factor:
-            name, factor = step_name, step_factor
-    return name, factor
-
-
-class _MemCol(NamedTuple):
-    """A memory column: header (unit hoisted in), blob field, and the group best/worst.
-
-    Smaller is better for every memory metric, so ``best`` is the column min, ``worst``
-    its max — mirroring how a timing column colours and annotates against its best.
-    """
-
-    header: str
-    field: str
-    factor: float | None  # byte divisor, or None for a plain count
-    best: float
-    worst: float
-
-    def scaled(self, value: float) -> str:
-        """``value`` as a bare number in this column's unit (counts get a thousands sep)."""
-        if self.factor is None:
-            return f"{int(value):,}"
-        return f"{value:,.0f}" if self.factor == 1.0 else f"{value / self.factor:,.2f}"
-
-
-def _mem_columns(blobs: Mapping[str, Mapping[str, Any]]) -> list[_MemCol]:
-    """Memory columns for a group — units hoisted into headers, with per-column best/worst.
-
-    ``max`` (worst peak across repeats) appears only when some test used ``repeats > 1``;
-    ``allocs`` is a count (no unit). Each byte column picks one unit from its own largest
-    value, so cells are bare numbers like the timing side rather than per-cell ``KiB``/``MiB``.
-    """
-    if not blobs:
-        return []
-    byte_fields = [("peak", "peak_bytes"), ("allocated", "total_bytes")]
-    if any(b.get("peak_bytes_max") != b.get("peak_bytes") for b in blobs.values()):
-        byte_fields.insert(1, ("max", "peak_bytes_max"))
-
-    cols: list[_MemCol] = []
-    for label, field in byte_fields:
-        values = [float(b[field]) for b in blobs.values() if b.get(field) is not None]
-        if not values:
-            continue
-        unit, factor = _byte_unit(max(values))
-        cols.append(_MemCol(f"{label} ({unit})", field, factor, min(values), max(values)))
-    allocs = [float(b["allocations"]) for b in blobs.values() if b.get("allocations") is not None]
-    if allocs:
-        cols.append(_MemCol("allocs", "allocations", None, min(allocs), max(allocs)))
-    return cols
-
-
-def _mem_cell(col: _MemCol, blob: Mapping[str, Any] | None, *, solo: bool) -> Text:
-    """One memory cell — scaled, ``(1.0)``-annotated, and ranked, exactly like a timing cell.
-
-    The ``(ratio)`` is dropped when the column's best is zero: a ratio to a zero floor
-    is undefined (every other row would read ``(inf)``), so the bare value is clearer.
-    """
-    if blob is None or blob.get(col.field) is None:
-        return _cell("—")
-    value = float(blob[col.field])
-    text = col.scaled(value)
-    if col.best > 0:
-        text += _rel(value, col.best, solo=solo)
-    return _cell(text, style=_rank_style(value, col.best, col.worst, solo=solo))
+    return MemoryResult.from_blob(blob) if isinstance(blob, Mapping) else None
 
 
 def _peak_delta_cells(
-    peak_col: _MemCol, base_blob: Mapping[str, Any] | None, cur_blob: Mapping[str, Any] | None
+    base: MemoryResult | None, res: MemoryResult | None, factor: float
 ) -> list[Text]:
-    """``[baseline-peak, Δ%]`` for the compare fold — baseline in the peak column's unit.
+    """``[baseline-peak, Δ%]`` for the compare fold — baseline peak bare in ``factor``.
 
     A missing baseline or current peak yields ``—``; growth is tinted red, a shrink green.
     """
-    base = base_blob.get("peak_bytes") if base_blob else None
-    cur = cur_blob.get("peak_bytes") if cur_blob else None
-    if base is None or cur is None:
+    if base is None or res is None:
         return [_cell("—"), _cell("—")]
-    bp, cp = float(base), float(cur)
+    bp, cp = float(base.peak_bytes), float(res.peak_bytes)
     delta = f"{(cp - bp) / bp * 100:+.1f}%" if bp > 0 else "—"
-    style = "red" if cp > bp else "green" if cp < bp else None
-    return [_cell(peak_col.scaled(bp)), _cell(delta, style=style)]
+    style = "red" if cp > bp else "green" if cp < bp else ""
+    base_str = f"{bp:,.0f}" if factor == 1.0 else f"{bp / factor:,.2f}"
+    return [_cell(base_str), _cell(delta, style=style)]
 
 
 def render_combined_tables(
@@ -268,7 +195,15 @@ def render_combined_tables(
     from rich.console import Console
     from rich.table import Table
 
+    from pytest_benchmem.memray import MemoryResult
+    from pytest_benchmem.tables import _byte_unit, mem_columns
+
     console = Console(width=_WIDE)
+    base_results = (
+        {i: MemoryResult.from_blob(b) for i, b in baseline.items()}
+        if baseline is not None
+        else None
+    )
     for group, benchmarks in groups:
         benchmarks = sorted(benchmarks, key=itemgetter(sort))
         solo = len(benchmarks) == 1
@@ -280,10 +215,14 @@ def render_combined_tables(
             unit="operations", benchmarks=benchmarks, best=best, worst=worst, sort=sort
         )
 
-        group_blobs = {b["fullname"]: blob for b in benchmarks if (blob := _blob_of(b)) is not None}
-        mem_cols = _mem_columns(group_blobs)
-        peak_col = next((c for c in mem_cols if c.field == "peak_bytes"), None)
-        comparing = baseline is not None and peak_col is not None
+        results = {b["fullname"]: r for b in benchmarks if (r := _result_of(b)) is not None}
+        mem_cols = mem_columns(list(results.values()))
+        comparing = base_results is not None and bool(mem_cols)
+        peak_factor = 1.0
+        if comparing and base_results is not None:
+            peaks = [r.peak_bytes for r in results.values()]
+            peaks += [r.peak_bytes for r in base_results.values()]
+            base_unit, peak_factor = _byte_unit(max(peaks)) if peaks else ("B", 1.0)
 
         title = f"benchmark{'' if group is None else f' {group!r}'}: {len(benchmarks)} tests"
         # The memory columns come from a separate, untimed pass — say so, and divide them
@@ -310,8 +249,8 @@ def render_combined_tables(
             table.add_column(_DIVIDER, justify="center", style="dim")
         for col in mem_cols:
             table.add_column(col.header, justify="right")
-        if comparing and peak_col is not None:
-            table.add_column(peak_col.header.replace("peak", "base", 1), justify="right")
+        if comparing:
+            table.add_column(f"base ({base_unit})", justify="right")
             table.add_column("Δ peak", justify="right")
 
         for bench in benchmarks:
@@ -321,11 +260,12 @@ def render_combined_tables(
                 for p in columns
             ]
             if mem_cols:
-                blob = _blob_of(bench)
+                res = results.get(bench["fullname"])
                 cells.append(_cell(_DIVIDER, style="dim"))
-                cells += [_mem_cell(col, blob, solo=solo) for col in mem_cols]
-                if comparing and peak_col is not None:
-                    base_blob = baseline.get(bench["fullname"]) if baseline else None
-                    cells += _peak_delta_cells(peak_col, base_blob, blob)
+                cells += [_cell(col.cell(res)) if res else _cell("—") for col in mem_cols]
+                if comparing and base_results is not None:
+                    cells += _peak_delta_cells(
+                        base_results.get(bench["fullname"]), res, peak_factor
+                    )
             table.add_row(*cells)
         console.print(table)

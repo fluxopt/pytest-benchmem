@@ -40,7 +40,7 @@ def test_memory_blobs_picks_only_recorded():
     ]
     result = P._memory_blobs(benchmarks)
     assert set(result) == {"t::a"}  # only the recorded one
-    assert result["t::a"]["peak_bytes"] == 100  # headline scalar derived from the series
+    assert result["t::a"] == blob  # the raw per-repeat series, copied out
 
 
 def test_load_baseline_reads_latest_and_blobs():
@@ -56,7 +56,7 @@ def test_load_baseline_reads_latest_and_blobs():
 
     label, blobs = P._load_baseline(_Storage(), True)
     assert label == "0002_new.json"  # the most recent wins
-    assert blobs["t::a"]["peak_bytes"] == 42  # headline derived from the series
+    assert blobs["t::a"] == blob  # the raw per-repeat series
 
 
 def test_load_baseline_empty_storage():
