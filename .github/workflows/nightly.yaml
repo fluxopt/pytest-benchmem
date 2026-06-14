@@ -1,0 +1,40 @@
+name: Deps range (scheduled)
+
+# Verifies our declared dependency range still works, at both ends — neither is a
+# per-PR concern (one is time-triggered, the other rarely regresses), so they run
+# weekly instead of on every push:
+#   - floor:  the lowest versions our pyproject allows (pytest>=7, pytest-benchmark>=4,
+#             memray>=1.11) — proves the declared support range is real.
+#   - latest: the newest *allowed* versions, ignoring the lock — catches an upstream
+#             release that breaks our coupling to their internals (memray._memray
+#             .compute_statistics, pytest-benchmark's pedantic signature) before a
+#             user does. (Upper bounds: memray<2, pytest-benchmark<6.)
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+  workflow_dispatch:
+
+jobs:
+  deps:
+    name: Test (${{ matrix.label }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: floor deps
+            python: "3.11"
+            resolution: "--resolution lowest-direct"
+          - label: latest allowed deps
+            python: "3.13"
+            resolution: "--upgrade"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - run: uv sync --group dev ${{ matrix.resolution }}
+      - run: uv run pytest -q
