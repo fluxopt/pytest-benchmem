@@ -295,20 +295,32 @@ def _as_paths(runs: str | Path | Sequence[str | Path]) -> list[Path]:
 
 
 def load_long_df(
-    runs: str | Path | Sequence[str | Path], *, metric: Metric = "time", stat: str = "min"
+    runs: str | Path | Sequence[str | Path],
+    *,
+    metric: Metric = "time",
+    stat: str = "min",
+    labels: Sequence[str] | None = None,
 ) -> tuple[pd.DataFrame, str]:
     """Stack pytest-benchmark files (one path or a sequence) into one long frame → ``(df, unit)``.
 
     One row per ``(run, id)`` for the chosen ``metric``. Columns: ``snapshot``
-    (the file stem / version label), ``id``, ``value``, then one column per dim
-    key seen (missing dims are ``NaN``). Every plot view pivots this frame.
+    (the series/version label), ``id``, ``value``, then one column per dim key seen
+    (missing dims are ``NaN``). Every plot view pivots this frame.
+
+    ``labels`` overrides the ``snapshot`` label per run (one per path, same order),
+    decoupling the display name from the filename; defaults to each file's stem.
     """
     import pandas as pd
 
+    paths = _as_paths(runs)
+    if labels is not None and len(labels) != len(paths):
+        raise ValueError(f"labels has {len(labels)} entries but there are {len(paths)} snapshot(s)")
+
     rows: list[dict[str, object]] = []
     unit = ""
-    for path in _as_paths(runs):
-        label, samples, unit = load_samples(path, metric=metric, stat=stat)
+    for i, path in enumerate(paths):
+        stem_label, samples, unit = load_samples(path, metric=metric, stat=stat)
+        label = labels[i] if labels is not None else stem_label
         for s in samples:
             rows.append({"snapshot": label, "id": s.id, "value": s.value, **s.dims})
     df = pd.DataFrame(rows)

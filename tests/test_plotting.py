@@ -64,6 +64,19 @@ def test_compare_two_runs_counts_common_ids(tmp_path):
     assert fig.layout.title.text
 
 
+def test_compare_labels_override_stem(tmp_path):
+    a = _run(tmp_path / "aaa.json", ROWS_A)
+    b = _run(tmp_path / "bbb.json", ROWS_B)
+    fig, _n = plotting.plot_compare([a, b], labels=["base", "head"])
+    assert "base → head" in fig.layout.title.text  # not "aaa → bbb"
+
+
+def test_sweep_labels_override_stem(tmp_path):
+    runs = [_run(tmp_path / f"{i}.json", ROWS_A) for i in range(3)]
+    fig, _n = plotting.plot_sweep(runs, labels=["0.6.7", "0.7.0", "0.8.0"])
+    assert "0.6.7" in fig.layout.title.text  # baseline = first label, not "0"
+
+
 def test_scatter_two_runs(tmp_path):
     a = _run(tmp_path / "a.json", ROWS_A)
     b = _run(tmp_path / "b.json", ROWS_B)
