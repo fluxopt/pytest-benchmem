@@ -59,10 +59,43 @@ jobs:
       - run: uv sync --group dev
       - run: uv run pytest -q
 
+  smoke-install:
+    name: Smoke (built wheel)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Build the wheel
+        run: uv build --wheel
+      - name: Install the built wheel into a clean env and use it
+        run: |
+          set -euxo pipefail
+          WHEEL="$(ls dist/*.whl)"
+          uv venv /tmp/smoke
+          # Only the built artifact (+ the plot extra for the CLI). Its declared
+          # deps must suffice on their own — no dev group to mask a missing one.
+          uv pip install --python /tmp/smoke/bin/python "pytest-benchmem[plot] @ file://$PWD/$WHEEL"
+          # 1) the pytest11 plugin records memory, from the installed wheel
+          printf 'def test_alloc(benchmark_memory):\n    benchmark_memory(lambda: [0] * 500_000)\n' > /tmp/smoke_suite.py
+          /tmp/smoke/bin/python -m pytest /tmp/smoke_suite.py \
+            --benchmark-only --benchmark-json=/tmp/bench.json -p no:cacheprovider
+          # 2) the console script is on PATH and reads what the plugin produced
+          /tmp/smoke/bin/benchmem --help
+          cp /tmp/bench.json /tmp/bench2.json
+          /tmp/smoke/bin/benchmem compare /tmp/bench.json /tmp/bench2.json --metric peak
+          # 3) py.typed is packaged, so downstream type-checkers see our types
+          /tmp/smoke/bin/python -c "from importlib.resources import files; assert files('pytest_benchmem').joinpath('py.typed').is_file()"
+
   ci-passed:
     name: CI passed
     if: always()
-    needs: [lint, typecheck, test]
+    needs: [lint, typecheck, test, smoke-install]
     runs-on: ubuntu-24.04
     steps:
       - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')

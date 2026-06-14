@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 import platform
 
 import pytest
 
 from pytest_benchmem import measure_memory, measure_peak
 from pytest_benchmem.memray import MemoryResult
+from pytest_benchmem.snapshot import memory_from_pytest_benchmark
 
 pytest.importorskip("memray")
 pytestmark = pytest.mark.skipif(
@@ -58,6 +60,33 @@ def test_memory_result_mode_is_overridable():
     # the field exists with a heap default but can be set (the rss engine will set it).
     assert MemoryResult(1, 1, 0, 0, 1).mode == "heap"
     assert MemoryResult(1, 1, 0, 0, 1, mode="rss").as_dict()["mode"] == "rss"
+
+
+def test_blob_roundtrips_engine_to_reader(tmp_path):
+    """Producer↔consumer contract in one place: the engine's ``as_dict()`` carries
+    exactly the documented keys, and a reader lifts a metric back out of a real blob
+    (the synthetic-JSON unit tests only assume this shape; here it's pinned)."""
+    blob = measure_memory(lambda: [bytearray(1024) for _ in range(200)]).as_dict()
+    assert set(blob) == {
+        "peak_bytes",
+        "peak_bytes_max",
+        "allocations",
+        "total_bytes",
+        "repeats",
+        "mode",
+    }
+    pb = tmp_path / "bench.json"
+    pb.write_text(
+        json.dumps(
+            {
+                "benchmarks": [
+                    {"fullname": "t", "stats": {"min": 0.1}, "extra_info": {"benchmem": blob}}
+                ]
+            }
+        )
+    )
+    _l, samples, unit = memory_from_pytest_benchmark(pb, field="peak_bytes")
+    assert (samples[0].value, unit) == (float(blob["peak_bytes"]), "B")
 
 
 def test_compute_statistics_missing_raises_actionably(monkeypatch):

@@ -13,10 +13,6 @@ kernelspec:
 
 # Getting started
 
-> ⚠️ **The `.md` is the source.** It renders as docs *and* converts to a runnable
-> notebook (`jupytext --to ipynb docs/getting-started.md`). The `.ipynb` is
-> gitignored — edit the `.md`, re-convert.
-
 pytest-benchmem is the **memory companion to pytest-benchmark**: you write ordinary
 pytest-benchmark tests, swap the `benchmark` fixture for `benchmark_memory`, and get
 a memray **peak-memory** number recorded right next to the timing — same test, same
@@ -74,7 +70,7 @@ print(suite.read_text())
 > after pytest-benchmark has already called your function many times for timing — so
 > a side-effectful call (mutates a fixture, fills a cache, drains an iterator)
 > records its already-warmed state, not a cold one, silently. Benchmark a pure call,
-> or use the [`pedantic` form](reference.md#the-benchmark_memory-fixture) with a
+> or use the [`pedantic` form](reference.ipynb#the-benchmark_memory-fixture) with a
 > `setup` that rebuilds fresh state each round.
 
 ## Run it — one command, both metrics
@@ -85,7 +81,7 @@ always writes; the only difference is each entry now also carries
 
 ```{code-cell} ipython3
 baseline = _tmp / "baseline.json"
-!pytest {suite} --benchmark-only --benchmark-json={baseline} -q -p no:cacheprovider
+!pytest {suite} --benchmark-only --benchmark-json={baseline} --benchmark-columns=min,median -q -p no:cacheprovider
 ```
 
 Alongside pytest-benchmark's own timing table, pytest-benchmem prints a **memory
@@ -163,4 +159,4 @@ human_bytes(measure_peak(lambda: [0] * 5_000_000))
   every run records, and when to reach for each.
 - **[Grouping by dims](dims.ipynb)** — give every plot the right axes.
 - **[Compare & plot](compare-plot.ipynb)** — diff two runs, render the views.
-- **[Reference](reference.md)** — every flag, the marker, the CLI, the public API.
+- **[Reference](reference.ipynb)** — every flag, the marker, the CLI, the public API.

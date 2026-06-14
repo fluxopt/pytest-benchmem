@@ -47,8 +47,23 @@ only — timing works everywhere.
   view; gate CI on a regression.
 - **[Cross-version sweeps](sweeps.md)** — run the same suite across installed versions
   of a package.
-- **[Reference](reference.md)** — every flag, the marker, the fixture, the CLI, and
+- **[Reference](reference.ipynb)** — every flag, the marker, the fixture, the CLI, and
   the public API.
+
+## Where it sits
+
+Not a CI dashboard (use **CodSpeed**) and not a rigorous perf-history system (use
+**ASV**). If your core need is *precise local memory* over the benchmarks you already
+write — timing, sweeps, and plots in one vocabulary — that's pytest-benchmem.
+
+| Need | Reach for | pytest-benchmem |
+|---|---|---|
+| CI regression, per-PR dashboard | **CodSpeed** | — (don't rebuild it) |
+| Local timing + A/B compare | **pytest-benchmark** | rides it (timing is its job) |
+| Rigorous perf history across commits | **ASV** | — (heavier, RSS memory) |
+| **Precise local peak memory (numpy/C allocs)** | **memray** | ⭐ the core |
+| Memory *in your pytest-benchmark tests* | — | ⭐ fixture **or** `--benchmark-memory` |
+| Same runs across installed versions | — | ⭐ `sweep` |
 
 ## Status
 
