@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TextIO
@@ -70,8 +70,44 @@ def _scaled_cell_fmt(unit: str, factor: float, *, is_bytes: bool) -> Any:
     return fmt
 
 
+#: Valid ``--sort`` keys for the comparison table.
+_SORTS = ("name", "value", "change")
+
+
+def _ordered_ids(
+    at: Callable[[str, str], float | None], ids: list[str], labels: list[str], sort: str
+) -> list[str]:
+    """Row order for the comparison table per ``sort`` (see :func:`compare_runs`)."""
+    if sort == "name":
+        return sorted(ids)
+    last = labels[-1]
+    if sort == "value":
+        # largest in the last run first; ids missing there sink to the bottom
+        return sorted(ids, key=lambda i: (at(i, last) is None, -(at(i, last) or 0.0)))
+    first = labels[0]  # sort == "change"
+
+    def growth(test_id: str) -> float:
+        a, b = at(test_id, first), at(test_id, last)
+        return (b - a) / a if a and b and a > 0 else float("-inf")
+
+    return sorted(ids, key=lambda i: -growth(i))
+
+
+def _write_csv(wide: Any, labels: list[str], path: Path) -> None:
+    """Write the raw (unscaled) comparison to ``path`` — one row per id, a column per run."""
+    export = wide.copy()
+    if len(labels) == 2:  # noqa: PLR2004 — a two-run compare gets a change column
+        export["change_pct"] = (export[labels[1]] - export[labels[0]]) / export[labels[0]] * 100
+    export.to_csv(path)
+
+
 def compare_runs(
-    runs: Sequence[str | Path], *, metric: Metric = "time", out: TextIO | None = None
+    runs: Sequence[str | Path],
+    *,
+    metric: Metric = "time",
+    sort: str = "name",
+    csv: Path | None = None,
+    out: TextIO | None = None,
 ) -> None:
     """Print a per-id table comparing two or more pytest-benchmark runs for ``metric``.
 
@@ -80,6 +116,10 @@ def compare_runs(
     order given (oldest → newest — a cross-version sweep is just N runs), and per id
     the lightest/fastest value is tinted green, the heaviest red. With exactly two
     runs a percent ``change`` column is added. Ids missing from a run show ``—``.
+
+    ``sort`` orders the rows: ``name`` (by id), ``value`` (largest in the last run
+    first), or ``change`` (biggest regression first). ``csv`` also writes the raw
+    (unscaled) comparison to that path for machine consumption.
     """
     from rich import box
     from rich.console import Console
@@ -88,6 +128,8 @@ def compare_runs(
 
     from pytest_benchmem.combined import _byte_unit
 
+    if sort not in _SORTS:
+        raise ValueError(f"unknown --sort {sort!r}; use one of {', '.join(_SORTS)}")
     df, unit = load_long_df([Path(r) for r in runs], metric=metric)
     labels = df["snapshot"].drop_duplicates().tolist()
     if len(labels) < 2:  # noqa: PLR2004 — a comparison needs two sides
@@ -107,6 +149,9 @@ def compare_runs(
         v = wide.at[test_id, label]
         return None if v != v else float(v)  # NaN → None  # noqa: PLR0124
 
+    if csv is not None:
+        _write_csv(wide[labels], labels, csv)
+
     table = Table(title=f"{metric} ({unit_name or 'count'})", box=box.SIMPLE, title_justify="left")
     table.add_column("id", justify="left", no_wrap=True)
     for label in labels:
@@ -114,7 +159,7 @@ def compare_runs(
     if len(labels) == 2:  # noqa: PLR2004 — a two-run compare gets a delta column
         table.add_column("change", justify="right")
 
-    for test_id in sorted(wide.index):
+    for test_id in _ordered_ids(at, list(wide.index), labels, sort):
         vals = [at(test_id, label) for label in labels]
         present = [v for v in vals if v is not None]
         best, worst = (min(present), max(present)) if len(present) > 1 else (None, None)

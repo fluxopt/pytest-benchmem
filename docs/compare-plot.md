@@ -72,6 +72,13 @@ in only one run show `—`.
 > `pytest-benchmark compare`, `--benchmark-histogram`. pytest-benchmem doesn't
 > reimplement those; it adds the memory-aware, dims-aware views.
 
+Order the rows with `--sort` (`name` | `value` — largest in the last run first — |
+`change`), and write the raw numbers for another tool with `--csv out.csv`:
+
+```bash
+benchmem compare {baseline} {candidate} --metric peak --sort value --csv peak.csv
+```
+
 **Gate on a regression** with `--fail-on` — it exits non-zero past a threshold.
 Here baseline and candidate are the same code, so nothing trips it (exit `0`); on a
 real regression the offending ids print and the command exits `1`:

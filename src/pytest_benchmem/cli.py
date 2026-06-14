@@ -109,6 +109,14 @@ def compare(
         typer.Argument(help="Two or more pytest-benchmark runs, oldest → newest (a sweep is N)."),
     ],
     metric: MetricOpt = "time",
+    sort: Annotated[
+        str,
+        typer.Option(help="Row order: name (id) | value (largest in the last run) | change."),
+    ] = "name",
+    csv: Annotated[
+        Path | None,
+        typer.Option(help="Also write the raw (unscaled) comparison to this CSV file."),
+    ] = None,
     fail_on: Annotated[
         list[str] | None,
         typer.Option(
@@ -129,7 +137,7 @@ def compare(
     from pytest_benchmem.compare import compare_runs, find_regressions, parse_threshold
 
     try:
-        compare_runs(runs, metric=metric)
+        compare_runs(runs, metric=metric, sort=sort, csv=csv)
     except ValueError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1) from exc

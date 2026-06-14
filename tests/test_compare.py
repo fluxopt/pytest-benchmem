@@ -90,6 +90,32 @@ def test_one_sided_ids_show_dash(tmp_path):
     assert _line(text, "only_b").count("—") == 2
 
 
+def test_csv_writes_raw_values_and_change(tmp_path):
+    a = _write(tmp_path / "a.json", [_bm("test_x", peak=10 * 1024**2)])
+    b = _write(tmp_path / "b.json", [_bm("test_x", peak=12 * 1024**2)])
+    csv = tmp_path / "out.csv"
+    compare_runs([a, b], metric="peak", csv=csv, out=StringIO())
+    text = csv.read_text()
+    assert "change_pct" in text  # two runs → a change column
+    assert "10485760" in text and "12582912" in text  # raw bytes, not unit-scaled
+
+
+def test_sort_value_orders_by_last_run(tmp_path):
+    a = _write(tmp_path / "a.json", [_bm("small", peak=1024), _bm("big", peak=10 * 1024**2)])
+    b = _write(tmp_path / "b.json", [_bm("small", peak=1024), _bm("big", peak=10 * 1024**2)])
+    body = StringIO()
+    compare_runs([a, b], metric="peak", sort="value", out=body)
+    text = body.getvalue()
+    assert text.index("big") < text.index("small")  # largest in the last run first
+
+
+def test_sort_rejects_unknown_key(tmp_path):
+    a = _write(tmp_path / "a.json", [_bm("x", peak=1)])
+    b = _write(tmp_path / "b.json", [_bm("x", peak=2)])
+    with pytest.raises(ValueError, match="unknown --sort"):
+        compare_runs([a, b], metric="peak", sort="bogus", out=StringIO())
+
+
 def test_zero_baseline_suppresses_percent(tmp_path):
     # change is guarded by `va > 0`, so a 0 baseline can't divide-by-zero
     a = _write(tmp_path / "base.json", [_bm("test_x", t=0.0)])
