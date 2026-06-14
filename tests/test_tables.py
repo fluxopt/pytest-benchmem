@@ -76,10 +76,10 @@ def test_max_column_shown_when_any_repeat_spreads():
     assert "max" in _render(build_run_table(blobs))
 
 
-def test_bytes_autoscale_and_allocs_grouped():
+def test_unit_hoisted_into_header_and_allocs_grouped():
     blobs = {"t::x": _blob(4 * 1024**2, allocations=1234567, total_bytes=2048)}
     text = _render(build_run_table(blobs))
-    assert "4 MiB" in text  # human_bytes auto-scale
+    assert "peak (MiB)" in text and "4.00" in text  # unit in header, bare cell
     assert "1,234,567" in text  # thousands-separated count
 
 
@@ -94,8 +94,8 @@ def test_baseline_folds_in_columns_and_change():
     head = {"t::x": _blob(12 * 1024**2)}
     text = _render(build_run_table(head, baseline=base, baseline_label="0007"))
     assert "vs 0007" in text  # heading names the baseline
-    assert "baseline" in text and "change" in text  # extra columns appear
-    assert "10 MiB" in text and "12 MiB" in text  # baseline + current peak
+    assert "base (MiB)" in text and "change" in text  # extra columns, unit hoisted
+    assert "10.00" in text and "12.00" in text  # baseline + current peak, in MiB
     assert "+20.0%" in text
 
 
