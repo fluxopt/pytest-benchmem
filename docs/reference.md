@@ -13,9 +13,6 @@ kernelspec:
 
 # Reference
 
-> ⚠️ The `.md` is the source; the `.ipynb` is generated (`jupytext --to ipynb
-> docs/reference.md`) and gitignored.
-
 Every flag, marker, fixture, CLI command, and public function. The `benchmem` CLI
 options are rendered **live from `--help`** below (typer is the source of truth, so
 they can't drift); everything `--help` can't express — the pytest flags, the marker,

@@ -13,9 +13,6 @@ kernelspec:
 
 # Grouping by dims
 
-> ⚠️ The `.md` is the source; the `.ipynb` is generated (`jupytext --to ipynb
-> docs/dims.md`) and gitignored.
-
 Every plot and `compare` groups results by **dims** — the axes a result varies over.
 Dims come from three places, with **no id parsing**:
 
