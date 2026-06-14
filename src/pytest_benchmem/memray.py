@@ -48,10 +48,6 @@ class MemoryResult(NamedTuple):
     allocations: int
     total_bytes: int
     repeats: int
-    #: Which metric produced this blob — ``"heap"`` (memray allocator demand) today;
-    #: ``"rss"`` (kernel resident high-water) is a separate, *incomparable* metric the
-    #: readers refuse to co-plot with ``heap``. Older blobs lacking it read as ``"heap"``.
-    mode: str = "heap"
 
     def as_dict(self) -> dict[str, Any]:
         """The JSON blob stored under pytest-benchmark ``extra_info["benchmem"]``."""
@@ -61,7 +57,6 @@ class MemoryResult(NamedTuple):
             "allocations": self.allocations,
             "total_bytes": self.total_bytes,
             "repeats": self.repeats,
-            "mode": self.mode,
         }
 
 

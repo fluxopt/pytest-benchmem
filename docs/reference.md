@@ -104,7 +104,6 @@ serialized `MemoryResult`):
 | `allocations` | total allocation count — the `allocations` metric |
 | `total_bytes` | total bytes allocated — the `allocated` metric (catches churn `peak` hides) |
 | `repeats` | number of passes |
-| `mode` | the metric family, `"heap"`; readers refuse to compare across modes |
 
 See [Metrics](metrics.ipynb) for when to reach for each.
 
@@ -161,7 +160,7 @@ measure_memory(action, repeats=1) -> MemoryResult
 
 `action` is a zero-arg callable. `measure_peak` returns the bare peak in bytes;
 `measure_memory` returns the full `MemoryResult` (`peak_bytes`, `peak_bytes_max`,
-`allocations`, `total_bytes`, `repeats`, `mode`).
+`allocations`, `total_bytes`, `repeats`).
 
 ### Readers & loader — `pytest_benchmem`
 

@@ -6,10 +6,8 @@ file carries *both* metrics for each benchmark id:
 
 - ``stats`` — timing (min/mean/median/…), in seconds.
 - ``extra_info.benchmem`` — the memory blob written by the ``benchmark_memory``
-  fixture: ``{peak_bytes, peak_bytes_max, allocations, total_bytes, repeats, mode}``;
+  fixture: ``{peak_bytes, peak_bytes_max, allocations, total_bytes, repeats}``;
   byte fields are in **bytes** (the raw memray unit; the display layer auto-scales).
-  ``mode`` names the metric that produced the blob (``heap`` today) so the readers
-  never compare incomparable metrics — see :func:`load_long_df`.
 
 So reads are *per metric*: :func:`from_pytest_benchmark` pulls timing,
 :func:`memory_from_pytest_benchmark` pulls memory, each yielding a list of
@@ -29,12 +27,11 @@ from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 #: A value of a dim axis — categorical (str) or numeric (int/float).
 DimValue = str | int | float
 
-#: Which metric to read out of a pytest-benchmark file. Memory metrics split by mode
-#: (see :data:`_METRIC_MODES`): ``peak`` / ``peak_max`` (the min- and max-of-repeats
-#: peak) are shared; ``allocated`` (total bytes) and ``allocations`` (count) are
-#: heap-only churn; ``gross`` (resident high-water incl. baseline) is rss-only.
-#: ``memory`` is an alias for ``peak``.
-Metric = Literal["time", "peak", "peak_max", "allocated", "allocations", "gross", "memory"]
+#: Which metric to read out of a pytest-benchmark file — the memory ones mirror
+#: ``memray stats``: ``peak`` / ``peak_max`` (the min- and max-of-repeats peak),
+#: ``allocated`` (total bytes allocated), ``allocations`` (count). ``memory`` is an
+#: alias for ``peak``.
+Metric = Literal["time", "peak", "peak_max", "allocated", "allocations", "memory"]
 
 #: User-facing metric aliases, normalized to a canonical name by :func:`_canonical_metric`.
 _METRIC_ALIAS = {"memory": "peak"}
@@ -45,22 +42,7 @@ _METRIC_FIELD = {
     "peak_max": "peak_bytes_max",
     "allocated": "total_bytes",
     "allocations": "allocations",
-    "gross": "gross_bytes",
 }
-
-#: Which measurement modes carry each memory metric. ``peak``/``peak_max`` are in every
-#: blob; the churn metrics are heap-only; ``gross`` is rss-only. Asking for a metric the
-#: blob's mode doesn't carry is an error, not a silent skip (see the reader).
-_METRIC_MODES = {
-    "peak": {"heap", "rss"},
-    "peak_max": {"heap", "rss"},
-    "allocated": {"heap"},
-    "allocations": {"heap"},
-    "gross": {"rss"},
-}
-
-#: Reverse of :data:`_METRIC_FIELD` (blob fields are unique), for mode-validating a read.
-_FIELD_METRIC = {field: metric for metric, field in _METRIC_FIELD.items()}
 
 #: Key under which ``benchmark_memory`` stores its memory blob in ``extra_info``.
 BENCHMEM_KEY = "benchmem"
@@ -73,14 +55,9 @@ BENCHMEM_KEY = "benchmem"
 #: pins it so a rename surfaces as a failure instead of silently-bad dims.
 _UNSERIALIZABLE_PREFIX = "UNSERIALIZABLE["
 
-#: Blob field naming the metric that produced it, and its default for older blobs.
-MODE_KEY = "mode"
-DEFAULT_MODE = "heap"
-
-#: Long-frame columns that are *not* analysis dims — fixed axes plus ``mode``, which
-#: is provenance (which metric produced the value), not something to plot over. Plot
-#: views exclude these when inferring dim roles.
-RESERVED_COLUMNS = ("snapshot", "id", "value", MODE_KEY)
+#: Long-frame columns that are *not* analysis dims — the fixed axes. Plot views
+#: exclude these when inferring dim roles.
+RESERVED_COLUMNS = ("snapshot", "id", "value")
 
 #: Namespace for structural dims derived from the pytest node id and benchmark group
 #: (``node.module`` / ``node.func`` / ``node.class`` / ``node.group``). Reserved on two
@@ -90,13 +67,7 @@ RESERVED_COLUMNS = ("snapshot", "id", "value", MODE_KEY)
 NODE_DIM_PREFIX = "node."
 
 #: Display unit per memory blob field (count fields have no unit).
-_FIELD_UNIT = {
-    "peak_bytes": "B",
-    "peak_bytes_max": "B",
-    "total_bytes": "B",
-    "gross_bytes": "B",
-    "allocations": "",
-}
+_FIELD_UNIT = {"peak_bytes": "B", "peak_bytes_max": "B", "total_bytes": "B", "allocations": ""}
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -218,11 +189,6 @@ def from_pytest_benchmark(
     return p.stem, samples, "s"
 
 
-def _metrics_for(mode: str) -> list[str]:
-    """Memory metrics a blob measured in ``mode`` carries (for actionable errors)."""
-    return [m for m, modes in _METRIC_MODES.items() if mode in modes]
-
-
 def memory_from_pytest_benchmark(
     path: str | Path, *, field: str = "peak_bytes"
 ) -> tuple[str, list[Sample], str]:
@@ -232,34 +198,17 @@ def memory_from_pytest_benchmark(
     ``extra_info["benchmem"]``, keyed by the same benchmark id pytest-benchmark
     uses. ``field`` picks which blob number to read (``peak_bytes`` → unit ``B``,
     ``allocations`` → count). Benchmarks lacking the blob (timing-only tests) are
-    skipped. A blob measured in a ``mode`` that doesn't carry ``field`` (e.g. the
-    rss-only ``gross`` on a heap run) raises, rather than silently dropping the row.
-    Dims come from parametrize ``params`` and ``extra_info``, plus the structural
-    ``node.*`` dims (see :func:`_node_dims`).
+    skipped. Dims come from parametrize ``params`` and ``extra_info``, plus the
+    structural ``node.*`` dims (see :func:`_node_dims`).
     """
     p, benchmarks = _read_benchmarks(path)
     unit = _FIELD_UNIT.get(field, "")
-    metric = _FIELD_METRIC.get(field, field)
-    valid_modes = _METRIC_MODES.get(metric, {"heap", "rss"})
     samples = []
     for bm in benchmarks:
         blob = _benchmem(bm)
-        if blob is None:
-            continue  # timing-only benchmark
-        mode = str(blob.get(MODE_KEY, DEFAULT_MODE))
-        if mode not in valid_modes:
-            want = " or ".join(sorted(valid_modes))
-            raise ValueError(
-                f"metric {metric!r} is {'/'.join(sorted(valid_modes))}-only, but "
-                f"{bm['fullname']!r} was measured in {mode!r} mode. Pick a {mode} metric "
-                f"({', '.join(_metrics_for(mode))}), or re-measure in {want} mode."
-            )
-        if blob.get(field) is None:
-            continue  # right mode but the number is absent (e.g. a pre-migration blob)
-        # mode rides along as a reserved provenance dim so readers/plots can refuse to
-        # mix incomparable metrics; blobs predating it (pre-rss) read as the heap default.
-        dims = {**_all_dims(bm), MODE_KEY: mode}
-        samples.append(Sample(id=bm["fullname"], value=float(blob[field]), dims=dims))
+        if blob is None or blob.get(field) is None:
+            continue
+        samples.append(Sample(id=bm["fullname"], value=float(blob[field]), dims=_all_dims(bm)))
     return p.stem, samples, unit
 
 
@@ -333,23 +282,4 @@ def load_long_df(
         _stem, samples, unit = load_samples(path, metric=metric, stat=stat)
         for s in samples:
             rows.append({"snapshot": label, "id": s.id, "value": s.value, **s.dims})
-    df = pd.DataFrame(rows)
-    _guard_single_mode(df)
-    return df, unit
-
-
-def _guard_single_mode(df: pd.DataFrame) -> None:
-    """Refuse a frame that mixes memory ``mode``s — they're incomparable metrics.
-
-    A ``heap`` peak (allocator bytes) and an ``rss`` peak (resident pages) wear the
-    same unit but mean different things; stacking them into one comparison/plot axis
-    is exactly the error :data:`MODE_KEY` exists to catch.
-    """
-    if MODE_KEY not in df.columns:
-        return
-    modes = sorted(df[MODE_KEY].dropna().unique())
-    if len(modes) > 1:
-        raise ValueError(
-            f"these runs mix memory modes {modes}, which are not comparable "
-            f"(e.g. heap allocator bytes vs rss resident pages). Read one mode at a time."
-        )
+    return pd.DataFrame(rows), unit

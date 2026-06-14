@@ -221,38 +221,21 @@ def test_load_samples_dispatches_on_metric(tmp_path):
     assert load_samples(pb, metric="allocations")[2] == ""
 
 
-def _mode_blob(mode, **fields):
-    return {"peak_bytes": 100, "peak_bytes_max": 150, "repeats": 1, "mode": mode, **fields}
-
-
-def _blob_file(path, blob):
-    bm = {"fullname": "a", "stats": {"min": 0.1}, "extra_info": {"benchmem": blob}}
-    path.write_text(json.dumps({"benchmarks": [bm]}))
-    return path
-
-
 def test_peak_max_metric_reads_worst_peak(tmp_path):
-    # peak_max is shared across modes; reads the max-of-repeats peak
-    for mode in ("heap", "rss"):
-        pb = _blob_file(tmp_path / f"{mode}.json", _mode_blob(mode))
-        _l, samples, unit = load_samples(pb, metric="peak_max")
-        assert (samples[0].value, unit) == (150.0, "B")
-
-
-def test_gross_metric_is_rss_only(tmp_path):
-    rss = _blob_file(tmp_path / "rss.json", _mode_blob("rss", gross_bytes=5_000))
-    assert load_samples(rss, metric="gross")[1][0].value == 5_000
-
-    heap = _blob_file(tmp_path / "heap.json", _mode_blob("heap"))
-    with pytest.raises(ValueError, match="'gross' is rss-only.*measured in 'heap'"):
-        load_samples(heap, metric="gross")
-
-
-def test_heap_only_metric_on_rss_run_errors_not_skips(tmp_path):
-    # the silent-skip fix: asking allocated on an rss run is an error, not an empty result
-    rss = _blob_file(tmp_path / "rss.json", _mode_blob("rss", gross_bytes=9))
-    with pytest.raises(ValueError, match="'allocated' is heap-only.*Pick a rss metric"):
-        load_samples(rss, metric="allocated")
+    pb = _pb_file(
+        tmp_path,
+        [
+            {
+                "fullname": "a",
+                "stats": {"min": 0.1},
+                "extra_info": {
+                    "benchmem": {"peak_bytes": 100, "peak_bytes_max": 150, "repeats": 1}
+                },
+            }
+        ],
+    )
+    _l, samples, unit = load_samples(pb, metric="peak_max")
+    assert (samples[0].value, unit) == (150.0, "B")
 
 
 def test_load_long_df_stacks_runs_with_dim_columns(tmp_path):
@@ -297,48 +280,6 @@ def test_default_labels_disambiguate_colliding_stems():
         "v1/bench",
         "v2/bench",
     ]
-
-
-def test_memory_mode_defaults_to_heap_for_older_blobs(tmp_path):
-    # a blob predating the mode tag reads as the heap default.
-    pb = _pb_file(
-        tmp_path,
-        [{"fullname": "a", "stats": {"min": 0.1}, "extra_info": {"benchmem": _blob(99)}}],
-    )
-    _l, samples, _u = memory_from_pytest_benchmark(pb)
-    assert samples[0].dims["mode"] == "heap"
-
-
-def test_memory_mode_read_from_blob(tmp_path):
-    blob = {**_blob(99), "mode": "rss"}
-    pb = _pb_file(
-        tmp_path,
-        [{"fullname": "a", "stats": {"min": 0.1}, "extra_info": {"benchmem": blob}}],
-    )
-    _l, samples, _u = memory_from_pytest_benchmark(pb)
-    assert samples[0].dims["mode"] == "rss"
-
-
-def _mode_file(tmp_path, name, mode):
-    extra = {"benchmem": {**_blob(99), "mode": mode}}
-    bm = {"fullname": "x", "stats": {"min": 0.1}, "extra_info": extra}
-    p = tmp_path / name
-    p.write_text(json.dumps({"benchmarks": [bm]}))
-    return p
-
-
-def test_load_long_df_refuses_mixed_modes(tmp_path):
-    heap = _mode_file(tmp_path, "heap.json", "heap")
-    rss = _mode_file(tmp_path, "rss.json", "rss")
-    with pytest.raises(ValueError, match="mix memory modes"):
-        load_long_df([heap, rss], metric="peak")
-
-
-def test_load_long_df_allows_single_mode(tmp_path):
-    files = [_mode_file(tmp_path, "a.json", "heap"), _mode_file(tmp_path, "b.json", "heap")]
-    df, unit = load_long_df(files, metric="peak")
-    assert unit == "B"
-    assert set(df["mode"]) == {"heap"}
 
 
 def test_not_a_pytest_benchmark_file_raises(tmp_path):

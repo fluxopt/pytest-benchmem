@@ -1,10 +1,9 @@
 """pytest-benchmem CLI — ``plot`` and ``compare`` over pytest-benchmark JSON runs.
 
 Both commands read the JSON pytest-benchmark writes (``.benchmarks/…``) and pick
-a ``--metric``: ``time`` from ``stats``; the rest from ``extra_info.benchmem``,
-split by measurement mode — ``peak``/``peak_max`` (shared), ``allocated``/
-``allocations`` (heap-only), ``gross`` (rss-only), and ``memory`` as an alias for
-``peak``. Timing comparison/histograms are pytest-benchmark's own job; these
+a ``--metric``: ``time`` from ``stats``; the rest from ``extra_info.benchmem`` —
+``peak``/``peak_max``, ``allocated``/``allocations``, and ``memory`` as an alias
+for ``peak``. Timing comparison/histograms are pytest-benchmark's own job; these
 commands are the memory-aware, dims-aware views on top.
 """
 
@@ -23,9 +22,8 @@ app = typer.Typer(help="pytest-benchmem — plot and compare benchmark runs.", n
 MetricOpt = Annotated[
     Metric,
     typer.Option(
-        help="Metric: time | peak | peak_max | allocated | allocations | gross | memory. "
-        "peak/peak_max work in any mode; allocated/allocations are heap-only; "
-        "gross is rss-only; memory is an alias of peak."
+        help="Metric: time | peak | peak_max | allocated | allocations | memory "
+        "(memory is an alias of peak; the memory ones mirror memray stats)."
     ),
 ]
 

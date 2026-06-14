@@ -67,7 +67,6 @@ def _record_memory(
             int(existing["allocations"]),
             int(existing.get("total_bytes", 0)),
             int(existing["repeats"]),
-            str(existing.get("mode", "heap")),
         )
     result = measure_memory(action, repeats=repeats)
     benchmark.extra_info[BENCHMEM_KEY] = result.as_dict()

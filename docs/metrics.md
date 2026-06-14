@@ -26,8 +26,7 @@ is the default, but `allocated` and `allocations` often catch what `peak` hides.
 `peak_max` (the worst peak across `repeats`) rides alongside as `peak_max`. All three
 are memray's **allocator demand** — what your code *requested*, in-process and
 byte-exact, so they see native (numpy / C-extension) allocations, not just Python
-objects. The blob also carries a `mode` tag (`"heap"`); the readers refuse to compare
-or co-plot blobs of different modes rather than mislead.
+objects.
 
 ## Setup
 
