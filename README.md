@@ -32,11 +32,11 @@ pytest --benchmark-only --benchmark-json=run.json
 One run, one `run.json`, for each benchmark id — both metrics, one node id:
 
 - `stats: {min, mean, median, …}` — **timing**, from pytest-benchmark.
-- `extra_info.benchmem: {peak_bytes, peak_bytes_max, allocations, total_bytes, repeats, mode}`
-  — **memory**, from pytest-benchmem. The `peak` / `allocated` / `allocations`
-  metrics mirror what `memray stats` reports (bytes stored raw, so the display
-  layer auto-scales). `mode` records which metric produced the blob (`heap` today);
-  the readers refuse to compare or co-plot different modes.
+- `extra_info.benchmem: {peak_bytes: [...], allocations: [...], total_bytes: [...]}`
+  — **memory**, from pytest-benchmem: three flat per-repeat series (one entry per memray
+  pass) that mirror what `memray stats` reports (bytes raw, so the display auto-scales).
+  The `peak` / `allocated` / `allocations` metrics derive their headline from these — and
+  `--stat` reports a distribution over them.
 
 The two passes never overlap: pytest-benchmark times the action untracked, then
 memray measures peak on a *separate, untimed* call — so the allocator hooks cost

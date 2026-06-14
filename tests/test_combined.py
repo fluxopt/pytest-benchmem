@@ -102,9 +102,11 @@ def test_peak_delta_cells_fold_baseline():
     assert base_new.plain == "—" and delta_new.plain == "—"  # id absent from baseline
 
 
-def test_blob_of_reads_flat_dict():
-    blob = {"peak_bytes": 10, "mode": "heap"}
-    assert _blob_of({"extra_info": {"benchmem": blob}}) == blob
+def test_blob_of_derives_headline():
+    blob = {"peak_bytes": [10, 20], "allocations": [1, 1], "total_bytes": [5, 5]}
+    hl = _blob_of({"extra_info": {"benchmem": blob}})
+    assert hl is not None
+    assert hl["peak_bytes"] == 10 and hl["peak_bytes_max"] == 20  # headline derived from series
     assert _blob_of({"extra_info": {}}) is None  # timing-only
     assert _blob_of({}) is None  # no extra_info key at all
     assert _blob_of({"extra_info": {"benchmem": "nope"}}) is None  # malformed

@@ -96,9 +96,9 @@ def test_fixture_records_timing_and_memory(pytester):
     # memory tests carry both stats (timing) and the extra_info.benchmem blob
     assert by_name["test_alloc"]["stats"]["min"] > 0
     alloc_blob = by_name["test_alloc"]["extra_info"]["benchmem"]
-    assert alloc_blob["peak_bytes"] > 0
-    assert alloc_blob["allocations"] > 0
-    assert by_name["test_pedantic"]["extra_info"]["benchmem"]["peak_bytes"] > 0
+    assert alloc_blob["peak_bytes"][0] > 0
+    assert alloc_blob["allocations"][0] > 0
+    assert by_name["test_pedantic"]["extra_info"]["benchmem"]["peak_bytes"][0] > 0
     # the timing-only test has no memory recorded
     assert "benchmem" not in by_name["test_time_only"].get("extra_info", {})
 
@@ -143,8 +143,10 @@ def test_benchmark_memory_flag_augments_plain_benchmark(pytester):
     data = _run_plain(pytester, "--benchmark-memory")
     by_name = {b["name"]: b for b in data["benchmarks"]}
     assert by_name["test_plain"]["stats"]["min"] > 0  # timing still works
-    assert by_name["test_plain"]["extra_info"]["benchmem"]["peak_bytes"] > 0  # memory now recorded
-    assert by_name["test_plain_pedantic"]["extra_info"]["benchmem"]["peak_bytes"] > 0
+    assert (
+        by_name["test_plain"]["extra_info"]["benchmem"]["peak_bytes"][0] > 0
+    )  # memory now recorded
+    assert by_name["test_plain_pedantic"]["extra_info"]["benchmem"]["peak_bytes"][0] > 0
 
 
 def test_no_flag_leaves_plain_benchmark_memory_free(pytester):
@@ -181,8 +183,8 @@ def test_benchmem_marker_sets_repeats(pytester):
     )
     result.assert_outcomes(passed=2)
     by_name = {b["name"]: b for b in json.loads(out.read_text())["benchmarks"]}
-    assert by_name["test_marked_fixture"]["extra_info"]["benchmem"]["repeats"] == 3
-    assert by_name["test_marked_plain"]["extra_info"]["benchmem"]["repeats"] == 4
+    assert len(by_name["test_marked_fixture"]["extra_info"]["benchmem"]["peak_bytes"]) == 3
+    assert len(by_name["test_marked_plain"]["extra_info"]["benchmem"]["peak_bytes"]) == 4
 
 
 def test_benchmem_marker_is_registered(pytester):

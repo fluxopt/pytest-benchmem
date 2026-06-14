@@ -54,12 +54,11 @@ def test_metric_picks_the_stat(tmp_path):
 
 
 def _blob(peak_bytes, *, allocations=0, total_bytes=0, repeats=1):
+    # the blob is a flat per-repeat series per field
     return {
-        "peak_bytes": peak_bytes,
-        "peak_bytes_max": peak_bytes,
-        "allocations": allocations,
-        "total_bytes": total_bytes,
-        "repeats": repeats,
+        "peak_bytes": [peak_bytes] * repeats,
+        "allocations": [allocations] * repeats,
+        "total_bytes": [total_bytes] * repeats,
     }
 
 
@@ -221,7 +220,8 @@ def test_load_samples_dispatches_on_metric(tmp_path):
     assert load_samples(pb, metric="allocations")[2] == ""
 
 
-def test_peak_max_metric_reads_worst_peak(tmp_path):
+def test_peak_stat_max_reads_worst_peak(tmp_path):
+    # the worst peak across repeats is now `peak --stat max` (peak_max metric removed)
     pb = _pb_file(
         tmp_path,
         [
@@ -229,12 +229,16 @@ def test_peak_max_metric_reads_worst_peak(tmp_path):
                 "fullname": "a",
                 "stats": {"min": 0.1},
                 "extra_info": {
-                    "benchmem": {"peak_bytes": 100, "peak_bytes_max": 150, "repeats": 1}
+                    "benchmem": {
+                        "peak_bytes": [100, 120, 150],
+                        "allocations": [1, 1, 1],
+                        "total_bytes": [1, 1, 1],
+                    }
                 },
             }
         ],
     )
-    _l, samples, unit = load_samples(pb, metric="peak_max")
+    _l, samples, unit = load_samples(pb, metric="peak", stat="max")
     assert (samples[0].value, unit) == (150.0, "B")
 
 

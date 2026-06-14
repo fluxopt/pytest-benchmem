@@ -94,18 +94,21 @@ benchmark_memory.pedantic(target, args=(), kwargs=None, setup=None,
 
 ## The `extra_info.benchmem` blob
 
-Each measured benchmark stores this dict under `extra_info["benchmem"]` (the
-serialized `MemoryResult`):
+Each measured benchmark stores this dict under `extra_info["benchmem"]` — three flat
+**per-repeat series**, one entry per memray pass. Everything else (the headline `peak` =
+min, the worst peak, the representative churn, any `--stat`) derives from these on read:
 
 | Key | What |
 |---|---|
-| `peak_bytes` | high-water of live bytes — the `peak` metric |
-| `peak_bytes_max` | worst peak across `repeats` — the `peak_max` metric |
-| `allocations` | total allocation count — the `allocations` metric |
-| `total_bytes` | total bytes allocated — the `allocated` metric (catches churn `peak` hides) |
-| `repeats` | number of passes |
+| `peak_bytes` | per-repeat high-water of live bytes — the `peak` metric (headline = min) |
+| `allocations` | per-repeat allocation count — the `allocations` metric |
+| `total_bytes` | per-repeat total bytes allocated — the `allocated` metric (churn `peak` hides) |
 
-See [Metrics](metrics.ipynb) for when to reach for each.
+```json
+{"peak_bytes": [800000, 805000], "allocations": [12, 12], "total_bytes": [800000, 805000]}
+```
+
+See [Metrics](metrics.ipynb) for when to reach for each, and `--stat` for distributions.
 
 ## CLI — `benchmem`
 
@@ -124,8 +127,9 @@ A per-id delta table (`b − a`) with percent change; ids in only one run show `
 !benchmem compare --help
 ```
 
-**`--metric`** is one of `time`, `peak`, `peak_max`, `allocated`, `allocations`, or
-`memory` (an alias for `peak`). **`--fail-on FIELD:THRESHOLD`** (repeatable) exits
+**`--metric`** is one of `time`, `peak`, `allocated`, `allocations`, or `memory` (an
+alias for `peak`); pair it with **`--stat`** (`min`/`max`/`mean`/`median`/`stddev`) for a
+distribution over the per-repeat series. **`--fail-on FIELD:THRESHOLD`** (repeatable) exits
 non-zero past a threshold; `FIELD` is `peak`, `allocated`, `allocations`, or `time`,
 and `THRESHOLD` is either a **percent** (`peak:10%`) or an **absolute**:
 

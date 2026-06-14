@@ -21,13 +21,7 @@ def _run(path, rows, *, memory=False):
         if memory:
             peak = int(v * 1024**2)
             bm["extra_info"] = {
-                "benchmem": {
-                    "peak_bytes": peak,
-                    "peak_bytes_max": peak,
-                    "allocations": 0,
-                    "total_bytes": peak,
-                    "repeats": 1,
-                }
+                "benchmem": {"peak_bytes": [peak], "allocations": [0], "total_bytes": [peak]}
             }
         benchmarks.append(bm)
     path.write_text(json.dumps({"benchmarks": benchmarks}))

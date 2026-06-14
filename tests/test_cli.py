@@ -36,12 +36,7 @@ def _bm(name, *, t=1.0, peak=None):
     bm = {"fullname": name, "stats": {"min": t}}
     if peak is not None:
         bm["extra_info"] = {
-            "benchmem": {
-                "peak_bytes": peak,
-                "peak_bytes_max": peak,
-                "allocations": 0,
-                "repeats": 1,
-            }
+            "benchmem": {"peak_bytes": [peak], "allocations": [0], "total_bytes": [peak]}
         }
     return bm
 

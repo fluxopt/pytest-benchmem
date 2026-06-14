@@ -32,17 +32,19 @@ def test_compare_explicit_ref_is_kept():
 
 
 def test_memory_blobs_picks_only_recorded():
-    blob = {"peak_bytes": 100, "peak_bytes_max": 100, "allocations": 1, "repeats": 1}
+    blob = {"peak_bytes": [100], "allocations": [1], "total_bytes": [100]}
     benchmarks = [
         SimpleNamespace(fullname="t::a", extra_info={"benchmem": blob}),
         SimpleNamespace(fullname="t::b", extra_info={}),  # timing only
         SimpleNamespace(fullname="t::c", extra_info={"benchmem": "nope"}),  # malformed
     ]
-    assert P._memory_blobs(benchmarks) == {"t::a": blob}
+    result = P._memory_blobs(benchmarks)
+    assert set(result) == {"t::a"}  # only the recorded one
+    assert result["t::a"]["peak_bytes"] == 100  # headline scalar derived from the series
 
 
 def test_load_baseline_reads_latest_and_blobs():
-    blob = {"peak_bytes": 42, "peak_bytes_max": 42, "allocations": 2, "repeats": 1}
+    blob = {"peak_bytes": [42], "allocations": [2], "total_bytes": [42]}
     runs = [
         ("0001_old.json", {"benchmarks": [{"fullname": "t::a", "extra_info": {"benchmem": blob}}]}),
         ("0002_new.json", {"benchmarks": [{"fullname": "t::a", "extra_info": {"benchmem": blob}}]}),
@@ -54,7 +56,7 @@ def test_load_baseline_reads_latest_and_blobs():
 
     label, blobs = P._load_baseline(_Storage(), True)
     assert label == "0002_new.json"  # the most recent wins
-    assert blobs == {"t::a": blob}
+    assert blobs["t::a"]["peak_bytes"] == 42  # headline derived from the series
 
 
 def test_load_baseline_empty_storage():
