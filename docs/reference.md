@@ -36,7 +36,7 @@ The plugin adds these to any pytest run (alongside pytest-benchmark's own flags)
 | Flag | Default | What |
 |---|---|---|
 | `--benchmark-memory` | off | record peak memory for **every** `benchmark()` call, no test changes. (The `benchmark_memory` fixture is always measured, with or without this flag.) |
-| `--benchmark-memory-compare[=REF]` | off | compare this run's peak memory against a prior saved run (latest, or a pytest-benchmark storage ref like `0001`); prints a per-id memory delta in the summary. |
+| `--benchmark-memory-compare[=REF]` | off | compare this run's peak memory against a prior saved run (latest, or a pytest-benchmark storage ref like `0001`); folds `base` + `Δ peak` columns into the combined table. |
 | `--benchmark-memory-compare-fail=FIELD:THRESHOLD` | — | fail the session on a memory regression (repeatable). Implies `--benchmark-memory-compare`. Fields: `peak`, `allocated`, `allocations`. |
 
 Memory rides `--benchmark-only` runs the same as timing. Timing regressions still use

@@ -243,7 +243,9 @@ def test_memory_compare_passes_within_threshold(pytester):
         "--benchmark-memory-compare-fail=peak:50%",
     )
     assert cand.ret == 0
-    cand.stdout.fnmatch_lines(["*Memory*vs*"])  # the combined table names the baseline
+    out = cand.stdout.str()
+    assert "Δ peak" in out and "base (" in out  # baseline folded into the combined table
+    assert "Min" in out  # one table — timing + memory + compare, all together
 
 
 def test_memory_compare_rejects_time_field(pytester):

@@ -104,27 +104,32 @@ def plot(
 
 @app.command()
 def compare(
-    a: Annotated[Path, typer.Argument(help="Baseline run.")],
-    b: Annotated[Path, typer.Argument(help="Candidate run.")],
+    runs: Annotated[
+        list[Path],
+        typer.Argument(help="Two or more pytest-benchmark runs, oldest → newest (a sweep is N)."),
+    ],
     metric: MetricOpt = "time",
     fail_on: Annotated[
         list[str] | None,
         typer.Option(
             "--fail-on",
-            help="Exit non-zero on a regression. FIELD:THRESHOLD, repeatable — "
-            "e.g. --fail-on peak:10% --fail-on allocations:5% --fail-on peak:5MiB.",
+            help="Exit non-zero on a regression of the first run vs the last. "
+            "FIELD:THRESHOLD, repeatable — e.g. --fail-on peak:10% --fail-on peak:5MiB.",
         ),
     ] = None,
 ) -> None:
-    """Print a per-id delta table for two pytest-benchmark runs (and optionally gate CI)."""
-    for p in (a, b):
-        if not p.exists():
-            typer.secho(f"missing: {p}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=2)
+    """Print a per-id comparison table across two or more runs (and optionally gate CI)."""
+    if len(runs) < 2:  # noqa: PLR2004 — a comparison needs two sides
+        typer.secho("compare needs at least two runs", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    missing = [p for p in runs if not p.exists()]
+    if missing:
+        typer.secho(f"missing: {[str(p) for p in missing]}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
     from pytest_benchmem.compare import compare_runs, find_regressions, parse_threshold
 
     try:
-        compare_runs(a, b, metric=metric)
+        compare_runs(runs, metric=metric)
     except ValueError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1) from exc
@@ -137,7 +142,8 @@ def compare(
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from exc
 
-    regressions = find_regressions(a, b, thresholds)
+    # Gate the first run (base) against the last (head) — oldest vs newest in a sweep.
+    regressions = find_regressions(runs[0], runs[-1], thresholds)
     if regressions:
         typer.secho(f"{len(regressions)} regression(s) over threshold:", fg=typer.colors.RED)
         for reg in regressions:

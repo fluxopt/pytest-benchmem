@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TextIO
@@ -35,6 +36,9 @@ _FIELD = {
 _BYTE_UNITS = {"": 1.0, "B": 1.0, "KiB": 1024.0, "MiB": 1024.0**2, "GiB": 1024.0**3}
 _TIME_UNITS = {"": 1.0, "s": 1.0, "ms": 1e-3, "us": 1e-6, "µs": 1e-6, "ns": 1e-9}
 
+#: Render width — generous so an N-run sweep table is never cropped (the terminal wraps).
+_COMPARE_WIDTH = 10_000
+
 
 def _fmt_value(field: str, value: float) -> str:
     """Format a value in its field's unit: ``4.1 MiB``, ``1.2e-05s``, ``40``."""
@@ -44,48 +48,86 @@ def _fmt_value(field: str, value: float) -> str:
     return f"{value:.4g}{unit}"
 
 
-def _cell(value: float | None, unit: str) -> str:
-    """One table cell — auto-scaled bytes, ``.4g`` otherwise, ``—`` for missing."""
-    if value is None:
-        return "—"
-    return human_bytes(value) if unit == "B" else f"{value:.4g}"
+def _rank_style(value: float | None, best: float | None, worst: float | None) -> str:
+    """Green for the row's best (smallest) value, red for the worst, else unstyled."""
+    if value is None or best is None:
+        return ""
+    return "green" if value == best else "red" if value == worst else ""
+
+
+def _scaled_cell_fmt(unit: str, factor: float, *, is_bytes: bool) -> Any:
+    """A formatter ``value -> str`` for the metric: bytes in ``factor``, counts, or seconds."""
+
+    def fmt(value: float | None) -> str:
+        if value is None or value != value:  # noqa: PLR0124 — NaN
+            return "—"
+        if is_bytes:
+            return f"{value:,.0f}" if factor == 1.0 else f"{value / factor:,.2f}"
+        if unit == "":  # a count (allocations)
+            return f"{int(value):,}"
+        return f"{value:.4g}"  # seconds
+
+    return fmt
 
 
 def compare_runs(
-    a: str | Path, b: str | Path, *, metric: Metric = "time", out: TextIO | None = None
+    runs: Sequence[str | Path], *, metric: Metric = "time", out: TextIO | None = None
 ) -> None:
-    """Print a per-id table of ``a`` vs ``b`` (for ``metric``) with percent change.
+    """Print a per-id table comparing two or more pytest-benchmark runs for ``metric``.
 
-    Reads the chosen metric (timing or memory) from two pytest-benchmark files.
-    Ids present in only one run show ``—``.
+    Follows the combined-table guidelines: the unit is hoisted into the title (byte
+    metrics share one scale, so cells are bare numbers), one column per run in the
+    order given (oldest → newest — a cross-version sweep is just N runs), and per id
+    the lightest/fastest value is tinted green, the heaviest red. With exactly two
+    runs a percent ``change`` column is added. Ids missing from a run show ``—``.
     """
     from rich import box
     from rich.console import Console
     from rich.table import Table
+    from rich.text import Text
 
-    df, unit = load_long_df([Path(a), Path(b)], metric=metric)
+    from pytest_benchmem.combined import _byte_unit
+
+    df, unit = load_long_df([Path(r) for r in runs], metric=metric)
     labels = df["snapshot"].drop_duplicates().tolist()
-    if len(labels) < 2:
+    if len(labels) < 2:  # noqa: PLR2004 — a comparison needs two sides
         raise ValueError(
-            f"compare needs two distinct runs; both resolve to {labels[0]!r} "
-            f"(the same file given twice?). Pass two different files."
+            f"compare needs at least two distinct runs; got {labels!r} "
+            f"(the same file more than once?). Pass distinct files."
         )
-    la, lb = labels[0], labels[1]
     wide = df.pivot(index="id", columns="snapshot", values="value")
 
-    table = Table(title=f"{metric} ({unit or 'count'})", box=box.SIMPLE, title_justify="left")
+    is_bytes = unit == "B"
+    unit_name, factor = _byte_unit(float(wide.max().max())) if is_bytes else (unit, 1.0)
+    fmt = _scaled_cell_fmt(unit, factor, is_bytes=is_bytes)
+
+    def at(test_id: str, label: str) -> float | None:
+        if label not in wide.columns:
+            return None
+        v = wide.at[test_id, label]
+        return None if v != v else float(v)  # NaN → None  # noqa: PLR0124
+
+    table = Table(title=f"{metric} ({unit_name or 'count'})", box=box.SIMPLE, title_justify="left")
     table.add_column("id", justify="left", no_wrap=True)
-    table.add_column(str(la), justify="right")
-    table.add_column(str(lb), justify="right")
-    table.add_column("change", justify="right")
+    for label in labels:
+        table.add_column(str(label), justify="right")
+    if len(labels) == 2:  # noqa: PLR2004 — a two-run compare gets a delta column
+        table.add_column("change", justify="right")
+
     for test_id in sorted(wide.index):
-        va = wide.at[test_id, la] if la in wide.columns else None
-        vb = wide.at[test_id, lb] if lb in wide.columns else None
-        va = None if va is None or va != va else va  # noqa: PLR0124 — NaN check
-        vb = None if vb is None or vb != vb else vb
-        change = f"{(vb - va) / va * 100:+.1f}%" if va and vb and va > 0 else "—"
-        table.add_row(test_id.split("::")[-1], _cell(va, unit), _cell(vb, unit), change)
-    Console(file=out or sys.stdout).print(table)
+        vals = [at(test_id, label) for label in labels]
+        present = [v for v in vals if v is not None]
+        best, worst = (min(present), max(present)) if len(present) > 1 else (None, None)
+        cells = [Text(test_id.split("::")[-1])]
+        for v in vals:
+            cells.append(Text(fmt(v), style=_rank_style(v, best, worst)))
+        if len(labels) == 2:  # noqa: PLR2004
+            va, vb = vals[0], vals[1]
+            change = f"{(vb - va) / va * 100:+.1f}%" if va and vb and va > 0 else "—"
+            cstyle = "red" if va and vb and vb > va else "green" if va and vb and vb < va else ""
+            cells.append(Text(change, style=cstyle))
+        table.add_row(*cells)
+    Console(file=out or sys.stdout, width=_COMPARE_WIDTH).print(table)
 
 
 # --- regression gate (--fail-on) -------------------------------------------------

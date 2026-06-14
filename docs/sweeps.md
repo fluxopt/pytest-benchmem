@@ -54,15 +54,22 @@ everything needed to launch the suite in isolation:
 | `as_of` | `None` | a `YYYY-MM-DD` date passed to uv's `--exclude-newer`, for reproducible resolution |
 | `tmp_prefix` | `"pytest-benchmem-"` | prefix for the temp venv dirs |
 
-## Plotting a sweep
+## Viewing a sweep
 
-Point `benchmem plot` at the per-version JSONs — with 3+ it defaults to the `sweep`
-view, a log₂ fold-change heatmap vs the baseline — and pick `--metric time` or any
-memory metric for either picture across versions:
+For a table, hand the per-version JSONs straight to `benchmem compare` — it takes
+**two or more** runs (oldest → newest) and renders one row per benchmark, one column
+per version, with the lightest value tinted green and the heaviest red:
+
+```bash
+benchmem compare 1.2.0.json 1.3.0.json main.json --metric peak
+```
+
+For a picture, point `benchmem plot` at the same files — with 3+ it defaults to the
+`sweep` view, a log₂ fold-change heatmap vs the baseline:
 
 ```bash
 benchmem plot 1.2.0.json 1.3.0.json main.json --metric peak
 ```
 
-See **[Compare & plot](compare-plot.ipynb)** for the other views and how to render them
-inline.
+Either way, pick `--metric time` or any memory metric. See **[Compare &
+plot](compare-plot.ipynb)** for the other views and how to render them inline.
