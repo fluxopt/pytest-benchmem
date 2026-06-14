@@ -136,17 +136,20 @@ def _timing_cell(
 
 
 def _blob_of(bench: Any) -> Mapping[str, Any] | None:
-    """The memory blob on a benchmark, or ``None`` for a timing-only test.
+    """The memory headline scalars for a benchmark, or ``None`` for a timing-only test.
 
     ``bs.groups`` holds pytest-benchmark's *flat dicts* (``bench.as_dict(flat=True)``),
-    so reads go through ``[...]`` — which also works on the ``Metadata`` objects.
+    so reads go through ``[...]``. The stored blob is per-repeat series; we derive the
+    headline (peak / max / allocations / total_bytes) the columns read.
     """
+    from pytest_benchmem.memray import headline
+
     try:
         extra = bench["extra_info"]
     except (KeyError, TypeError):
         return None
     blob = extra.get(BENCHMEM_KEY) if isinstance(extra, Mapping) else None
-    return blob if isinstance(blob, Mapping) else None
+    return headline(blob) if isinstance(blob, Mapping) else None
 
 
 _BYTE_STEPS = (("KiB", 1024.0), ("MiB", 1024.0**2), ("GiB", 1024.0**3), ("TiB", 1024.0**4))

@@ -2,9 +2,10 @@
 
 Both commands read the JSON pytest-benchmark writes (``.benchmarks/…``) and pick
 a ``--metric``: ``time`` from ``stats``; the rest from ``extra_info.benchmem`` —
-``peak``/``peak_max``, ``allocated``/``allocations``, and ``memory`` as an alias
-for ``peak``. Timing comparison/histograms are pytest-benchmark's own job; these
-commands are the memory-aware, dims-aware views on top.
+``peak``, ``allocated``, ``allocations``, and ``memory`` as an alias for ``peak``.
+``--stat`` reports a distribution over a metric's per-repeat series (e.g. ``peak
+--stat max`` is the worst peak). Timing comparison/histograms are pytest-benchmark's
+own job; these commands are the memory-aware, dims-aware views on top.
 """
 
 from __future__ import annotations
@@ -22,8 +23,8 @@ app = typer.Typer(help="pytest-benchmem — plot and compare benchmark runs.", n
 MetricOpt = Annotated[
     Metric,
     typer.Option(
-        help="Metric: time | peak | peak_max | allocated | allocations | memory "
-        "(memory is an alias of peak; the memory ones mirror memray stats)."
+        help="Metric: time | peak | allocated | allocations | memory "
+        "(memory is an alias of peak; pair with --stat for a distribution)."
     ),
 ]
 

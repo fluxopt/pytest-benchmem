@@ -51,13 +51,17 @@ class Measurement:
 class MemoryResult:
     """A memory measurement across ``repeats`` passes, derived from the per-repeat samples.
 
+    The per-repeat :attr:`samples` are the single source of truth — that's all the blob
+    stores (the ``series``). Unlike pytest-benchmark, which keeps a denormalized summary
+    and gates the raw rounds behind ``--benchmark-save-data`` *because they number in the
+    thousands*, our series is a handful of (expensive) memray passes, so storing it whole
+    and deriving on read is both lossless and free.
+
     Peak memory is noisier than expected (GC timing, lazy imports, page cache), so the
     headline :attr:`peak_bytes` is the *minimum* peak — the cleanest "floor this can hit" —
     and :attr:`allocations` / :attr:`total_bytes` come from that same representative
     (min-peak) run, a coherent snapshot. :attr:`peak_bytes_max` is the worst peak, so the
-    spread is visible. The full per-repeat :attr:`samples` ride along (stored as the blob's
-    ``series`` when ``repeats > 1``) so the readers can report a distribution — see
-    ``--stat`` in :func:`pytest_benchmem.snapshot.memory_from_pytest_benchmark`.
+    spread is visible.
     """
 
     samples: tuple[Measurement, ...]
@@ -99,31 +103,32 @@ class MemoryResult:
     def as_dict(self) -> dict[str, Any]:
         """The JSON blob stored under pytest-benchmark ``extra_info["benchmem"]``.
 
-        Carries the headline scalars always; the per-repeat ``series`` only when
-        ``repeats > 1`` (with one repeat each series is just ``[scalar]``).
+        Just the three per-repeat series, flat — no denormalized scalars and no
+        ``repeats`` (it's ``len`` of any series). Everything else derives on read.
         """
-        blob: dict[str, Any] = {
-            "peak_bytes": self.peak_bytes,
-            "peak_bytes_max": self.peak_bytes_max,
-            "allocations": self.allocations,
-            "total_bytes": self.total_bytes,
-            "repeats": self.repeats,
-        }
-        if self.repeats > 1:
-            blob["series"] = {f: self.series(f) for f in SERIES_FIELDS}
-        return blob
+        return {f: self.series(f) for f in SERIES_FIELDS}
 
     @classmethod
     def from_blob(cls, blob: Mapping[str, Any]) -> MemoryResult:
-        """Rebuild from a stored blob — its ``series`` if present, else a representative sample."""
-        series = blob.get("series")
-        if isinstance(series, Mapping) and series.get("peak_bytes"):
-            cols = [[int(v) for v in series[f]] for f in SERIES_FIELDS]
-            return cls(tuple(Measurement(*row) for row in zip(*cols, strict=True)))
-        one = Measurement(
-            int(blob["peak_bytes"]), int(blob["allocations"]), int(blob.get("total_bytes", 0))
-        )
-        return cls((one,))
+        """Rebuild from a blob's per-repeat series (one column per :data:`SERIES_FIELDS`)."""
+        cols = [[int(v) for v in blob[f]] for f in SERIES_FIELDS]
+        return cls(tuple(Measurement(*row) for row in zip(*cols, strict=True)))
+
+
+def headline(blob: Mapping[str, Any]) -> dict[str, int]:
+    """The denormalized headline scalars derived from a blob, for the display tables.
+
+    Re-derives what the blob no longer stores: ``peak_bytes`` (the min/floor),
+    ``peak_bytes_max`` (the worst peak, for the spread column), and the representative
+    (min-peak run's) ``allocations`` / ``total_bytes``.
+    """
+    r = MemoryResult.from_blob(blob)
+    return {
+        "peak_bytes": r.peak_bytes,
+        "peak_bytes_max": r.peak_bytes_max,
+        "allocations": r.allocations,
+        "total_bytes": r.total_bytes,
+    }
 
 
 def _require_memray() -> None:

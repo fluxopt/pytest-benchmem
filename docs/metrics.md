@@ -23,17 +23,17 @@ is the default, but `allocated` and `allocations` often catch what `peak` hides.
 | `allocated` | `total_bytes` | sum of *every* allocation over the run | churn / temporary spikes `peak` smooths over |
 | `allocations` | `allocations` | count of allocation calls | a near-deterministic, low-noise tripwire |
 
-`peak_max` (the worst peak across `repeats`) rides alongside as `peak_max`. All three
-are memray's **allocator demand** — what your code *requested*, in-process and
+All three are memray's **allocator demand** — what your code *requested*, in-process and
 byte-exact, so they see native (numpy / C-extension) allocations, not just Python
 objects.
 
 ### Distribution across repeats
 
 With `@pytest.mark.benchmem(repeats=N)`, every repeat's peak / allocations / total is
-kept as a series in the blob (`extra_info.benchmem.series`). The headline `peak` stays
-the *minimum* (the cleanest floor), but you can ask the readers for any distribution
-stat over the series with `--stat`:
+kept as a flat series in the blob (`extra_info.benchmem` *is* those three arrays — the
+headline numbers all derive from them). The headline `peak` is the *minimum* (the
+cleanest floor); ask for any other distribution stat over the series with `--stat` —
+e.g. the worst peak is `--stat max`:
 
 ```bash
 benchmem compare base.json head.json --metric peak --stat stddev   # how noisy is peak?

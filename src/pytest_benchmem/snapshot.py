@@ -29,27 +29,21 @@ from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 DimValue = str | int | float
 
 #: Which metric to read out of a pytest-benchmark file — the memory ones mirror
-#: ``memray stats``: ``peak`` / ``peak_max`` (the min- and max-of-repeats peak),
-#: ``allocated`` (total bytes allocated), ``allocations`` (count). ``memory`` is an
-#: alias for ``peak``. With ``repeats > 1`` each carries a per-repeat series, so a
-#: ``stat`` (see :data:`STATS`) reports its distribution.
-Metric = Literal["time", "peak", "peak_max", "allocated", "allocations", "memory"]
+#: ``memray stats``: ``peak`` (high-water of live bytes), ``allocated`` (total bytes
+#: allocated), ``allocations`` (count). ``memory`` is an alias for ``peak``. Each names
+#: a per-repeat series, so a ``stat`` (see :data:`STATS`) reports its distribution —
+#: e.g. ``peak`` with ``--stat max`` is the worst peak across repeats.
+Metric = Literal["time", "peak", "allocated", "allocations", "memory"]
 
 #: User-facing metric aliases, normalized to a canonical name by :func:`_canonical_metric`.
 _METRIC_ALIAS = {"memory": "peak"}
 
-#: Memory metric → its blob field (also the ``series`` key for the stat-able ones).
+#: Memory metric → its blob field, which doubles as its ``series`` key (``peak``→``peak_bytes``).
 _METRIC_FIELD = {
     "peak": "peak_bytes",
-    "peak_max": "peak_bytes_max",
     "allocated": "total_bytes",
     "allocations": "allocations",
 }
-
-#: Memory metrics whose per-repeat series a ``stat`` can reduce (``peak_max`` is itself a
-#: stat of peak, and ``time`` is pytest-benchmark's). For these the metric's blob field
-#: doubles as its ``series`` key — ``peak``→``peak_bytes``, etc.
-_STATABLE = ("peak", "allocated", "allocations")
 
 #: ``--stat`` choices → reducer over a per-repeat series. ``pstdev`` (population) so a
 #: single repeat reads as ``0`` rather than raising.
@@ -207,14 +201,9 @@ def from_pytest_benchmark(
 
 
 def _field_series(blob: Mapping[str, Any], field: str) -> list[float] | None:
-    """The per-repeat series for ``field``, or ``[blob[field]]`` if only the scalar was kept."""
-    series = blob.get("series")
-    if isinstance(series, Mapping) and isinstance(series.get(field), Sequence):
-        values = series[field]
-        if values:
-            return [float(v) for v in values]
-    one = blob.get(field)
-    return None if one is None else [float(one)]
+    """The per-repeat series for ``field`` — a flat top-level array in the blob."""
+    values = blob.get(field)
+    return [float(v) for v in values] if isinstance(values, Sequence) and values else None
 
 
 def memory_from_pytest_benchmark(
@@ -226,14 +215,16 @@ def memory_from_pytest_benchmark(
     """Read memory out of a pytest-benchmark file → ``(label, samples, unit)``.
 
     The ``benchmark_memory`` fixture stores each run's memory blob under
-    ``extra_info["benchmem"]``, keyed by the same benchmark id pytest-benchmark
-    uses. ``field`` picks which blob number to read (``peak_bytes`` → unit ``B``,
-    ``allocations`` → count). Pass ``reduce`` to instead compute a distribution stat
-    over ``field``'s per-repeat series (a blob without a stored series falls back to its
-    single scalar). Benchmarks lacking the blob (timing-only tests) are skipped. Dims
-    come from parametrize ``params`` and ``extra_info``, plus the structural ``node.*``
-    dims (see :func:`_node_dims`).
+    ``extra_info["benchmem"]`` (a flat per-repeat series per field), keyed by the same
+    benchmark id pytest-benchmark uses. ``field`` picks which series (``peak_bytes`` →
+    unit ``B``, ``allocations`` → count). Without ``reduce`` the headline scalar is
+    derived (peak = min, allocations/total_bytes = the min-peak run); pass ``reduce`` to
+    compute a distribution stat over the series instead. Benchmarks lacking the blob
+    (timing-only tests) are skipped. Dims come from parametrize ``params`` and
+    ``extra_info``, plus the structural ``node.*`` dims (see :func:`_node_dims`).
     """
+    from pytest_benchmem.memray import headline
+
     p, benchmarks = _read_benchmarks(path)
     unit = _FIELD_UNIT.get(field, "")
     samples = []
@@ -246,10 +237,8 @@ def memory_from_pytest_benchmark(
             if series is None:
                 continue
             value = float(reduce(series))
-        elif blob.get(field) is None:
-            continue
         else:
-            value = float(blob[field])
+            value = float(headline(blob)[field])
         samples.append(Sample(id=bm["fullname"], value=value, dims=_all_dims(bm)))
     return p.stem, samples, unit
 
@@ -264,10 +253,9 @@ def load_samples(
 ) -> tuple[str, list[Sample], str]:
     """Read one pytest-benchmark file for the chosen ``metric`` → ``(label, samples, unit)``.
 
-    ``stat`` selects a distribution stat over the per-repeat series for ``peak`` /
-    ``allocated`` / ``allocations`` (``min`` / ``max`` / ``mean`` / ``median`` /
-    ``stddev``); ``None`` reads the headline scalar. For ``time`` it picks the
-    pytest-benchmark stat (defaulting to ``min``).
+    ``stat`` selects a distribution stat over the metric's per-repeat series (``min`` /
+    ``max`` / ``mean`` / ``median`` / ``stddev``); ``None`` reads the headline scalar.
+    For ``time`` it picks the pytest-benchmark stat (defaulting to ``min``).
     """
     metric = _canonical_metric(metric)  # type: ignore[assignment]
     if metric == "time":
@@ -277,10 +265,6 @@ def load_samples(
         raise ValueError(f"metric must be one of time, {', '.join(_METRIC_FIELD)}; got {metric!r}")
     reduce = None
     if stat is not None:
-        if metric not in _STATABLE:
-            raise ValueError(
-                f"--stat doesn't apply to metric {metric!r}; use one of {', '.join(_STATABLE)}"
-            )
         reduce = STATS.get(stat)
         if reduce is None:
             raise ValueError(f"unknown stat {stat!r}; use one of {', '.join(STATS)}")

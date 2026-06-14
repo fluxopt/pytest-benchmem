@@ -24,11 +24,9 @@ def _bm(name, *, t=0.0, peak=None, allocations=0, total_bytes=0):
     if peak is not None:
         bm["extra_info"] = {
             "benchmem": {
-                "peak_bytes": peak,
-                "peak_bytes_max": peak,
-                "allocations": allocations,
-                "total_bytes": total_bytes,
-                "repeats": 1,
+                "peak_bytes": [peak],
+                "allocations": [allocations],
+                "total_bytes": [total_bytes],
             }
         }
     return bm
@@ -106,16 +104,9 @@ def _bm_series(name, peaks):
         "stats": {"min": 1.0},
         "extra_info": {
             "benchmem": {
-                "peak_bytes": min(peaks),
-                "peak_bytes_max": max(peaks),
-                "allocations": 1,
-                "total_bytes": 1,
-                "repeats": len(peaks),
-                "series": {
-                    "peak_bytes": peaks,
-                    "allocations": [1] * len(peaks),
-                    "total_bytes": [1] * len(peaks),
-                },
+                "peak_bytes": peaks,
+                "allocations": [1] * len(peaks),
+                "total_bytes": [1] * len(peaks),
             }
         },
     }

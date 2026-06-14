@@ -35,7 +35,7 @@ def test_measure_memory_returns_result_with_allocations():
     assert res.allocations > 0
     assert res.peak_bytes > 0
     assert res.peak_bytes_max >= res.peak_bytes  # reported peak is the floor
-    assert res.as_dict()["peak_bytes"] == res.peak_bytes
+    assert res.peak_bytes == min(res.as_dict()["peak_bytes"])  # headline = min of the series
 
 
 def test_total_bytes_mirrors_memray_stats():
@@ -47,7 +47,7 @@ def test_total_bytes_mirrors_memray_stats():
     res = measure_memory(action)
     assert res.total_bytes > 0
     assert res.total_bytes >= res.peak_bytes  # cumulative ≥ high-water mark
-    assert res.as_dict()["total_bytes"] == res.total_bytes
+    assert res.as_dict()["total_bytes"] == [res.total_bytes]  # one-repeat series
 
 
 def test_blob_roundtrips_engine_to_reader(tmp_path):
@@ -55,13 +55,7 @@ def test_blob_roundtrips_engine_to_reader(tmp_path):
     exactly the documented keys, and a reader lifts a metric back out of a real blob
     (the synthetic-JSON unit tests only assume this shape; here it's pinned)."""
     blob = measure_memory(lambda: [bytearray(1024) for _ in range(200)]).as_dict()
-    assert set(blob) == {
-        "peak_bytes",
-        "peak_bytes_max",
-        "allocations",
-        "total_bytes",
-        "repeats",
-    }
+    assert set(blob) == {"peak_bytes", "allocations", "total_bytes"}  # flat per-repeat series
     pb = tmp_path / "bench.json"
     pb.write_text(
         json.dumps(
@@ -73,7 +67,7 @@ def test_blob_roundtrips_engine_to_reader(tmp_path):
         )
     )
     _l, samples, unit = memory_from_pytest_benchmark(pb, field="peak_bytes")
-    assert (samples[0].value, unit) == (float(blob["peak_bytes"]), "B")
+    assert (samples[0].value, unit) == (float(min(blob["peak_bytes"])), "B")  # headline = min
 
 
 def test_compute_statistics_missing_raises_actionably(monkeypatch):
