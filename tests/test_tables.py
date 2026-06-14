@@ -16,14 +16,13 @@ def _render(table, width=120):
     return buf.getvalue()
 
 
-def _blob(peak, *, peak_max=None, allocations=0, total_bytes=0, repeats=1, mode="heap"):
+def _blob(peak, *, peak_max=None, allocations=0, total_bytes=0, repeats=1):
     return {
         "peak_bytes": peak,
         "peak_bytes_max": peak if peak_max is None else peak_max,
         "allocations": allocations,
         "total_bytes": total_bytes,
         "repeats": repeats,
-        "mode": mode,
     }
 
 
@@ -82,14 +81,6 @@ def test_bytes_autoscale_and_allocs_grouped():
     text = _render(build_run_table(blobs))
     assert "4 MiB" in text  # human_bytes auto-scale
     assert "1,234,567" in text  # thousands-separated count
-
-
-def test_rss_mode_swaps_churn_for_gross():
-    blob = _blob(5 * 1024**2, mode="rss")
-    blob["gross_bytes"] = 7 * 1024**2
-    text = _render(build_run_table({"t::x": blob}))
-    assert "gross" in text and "allocated" not in text and "allocs" not in text
-    assert "(rss)" in text
 
 
 def test_missing_field_renders_dash():

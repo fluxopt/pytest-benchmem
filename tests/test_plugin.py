@@ -62,7 +62,29 @@ def test_split_table_keeps_native_and_separate_memory(pytester):
     result.assert_outcomes(passed=3)
     out = result.stdout.str()
     assert "OPS: Operations Per Second" in out  # native pytest-benchmark table present
-    assert "Memory (heap)" in out  # our separate memory table present
+    assert "peak" in out and "allocs" in out  # our separate memory table present
+
+
+def test_combined_table_respects_grouping(pytester):
+    """--benchmark-group-by=group yields one combined table per group (timing + memory)."""
+    pytester.makepyfile("""
+        import pytest
+
+        @pytest.mark.benchmark(group="alpha")
+        def test_a(benchmark_memory):
+            benchmark_memory(lambda: [0] * 100_000)
+
+        @pytest.mark.benchmark(group="beta")
+        def test_b(benchmark_memory):
+            benchmark_memory(lambda: [0] * 200_000)
+    """)
+    result = pytester.runpytest_subprocess(
+        "--benchmark-only", "--benchmark-group-by=group", "-p", "no:cacheprovider"
+    )
+    result.assert_outcomes(passed=2)
+    out = result.stdout.str()
+    assert "benchmark 'alpha'" in out and "benchmark 'beta'" in out  # one table per group
+    assert "peak" in out  # memory folded into each
 
 
 def test_fixture_records_timing_and_memory(pytester):

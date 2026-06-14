@@ -7,12 +7,10 @@ to print — one row per benchmark that recorded memory, biggest peak first.
 
 Memory-first, not a slavish copy of pytest-benchmark's table: rows sort by peak
 *descending* (the heaviest consumer is what you came to find), bytes auto-scale
-via :func:`~pytest_benchmem.snapshot.human_bytes`, the heaviest peak is tinted red
-and the lightest green, and the columns shown follow the measurement ``mode`` —
-heap churn (allocated / allocations) is meaningless in rss mode, so it's omitted
-there. The ``max`` (worst peak across repeats) column appears only when some test
-ran ``repeats > 1``; with a single repeat it equals ``peak`` and would just be
-noise.
+via :func:`~pytest_benchmem.snapshot.human_bytes`, and the heaviest peak is tinted
+red, the lightest green. The ``max`` (worst peak across repeats) column appears
+only when some test ran ``repeats > 1``; with a single repeat it equals ``peak``
+and would just be noise.
 
 rich is a core dependency (it rides in for the CLI via typer anyway), so the
 plugin can render unconditionally — no plain-text fallback to keep in sync.
@@ -23,7 +21,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any, NamedTuple
 
-from pytest_benchmem.snapshot import DEFAULT_MODE, MODE_KEY, human_bytes
+from pytest_benchmem.snapshot import human_bytes
 
 if TYPE_CHECKING:
     from rich.table import Table
@@ -54,21 +52,15 @@ class _Column(NamedTuple):
     cell: Callable[[Mapping[str, Any]], str]
 
 
-#: Universal peak columns, then mode-specific ones. ``peak``/``max`` apply in any
-#: mode; heap adds churn (allocated / allocations), rss adds the resident
-#: high-water (``gross``). ``_MAX_COL`` is kept by identity so the builder can
-#: drop it when no test used ``repeats > 1`` (see :func:`build_run_table`).
-_PEAK_COL = _Column("peak", True, lambda b: _bytes_cell(b, "peak_bytes"))
+#: The memory metric columns, in display order. ``_MAX_COL`` is kept by identity so
+#: the builder can drop it when no test used ``repeats > 1`` (see :func:`_columns_for`).
 _MAX_COL = _Column("max", True, lambda b: _bytes_cell(b, "peak_bytes_max"))
-_MODE_COLUMNS: dict[str, list[_Column]] = {
-    "heap": [
-        _PEAK_COL,
-        _MAX_COL,
-        _Column("allocated", True, lambda b: _bytes_cell(b, "total_bytes")),
-        _Column("allocs", True, lambda b: _count_cell(b, "allocations")),
-    ],
-    "rss": [_PEAK_COL, _MAX_COL, _Column("gross", True, lambda b: _bytes_cell(b, "gross_bytes"))],
-}
+_METRIC_COLUMNS: list[_Column] = [
+    _Column("peak", True, lambda b: _bytes_cell(b, "peak_bytes")),
+    _MAX_COL,
+    _Column("allocated", True, lambda b: _bytes_cell(b, "total_bytes")),
+    _Column("allocs", True, lambda b: _count_cell(b, "allocations")),
+]
 _NAME_COL = _Column("name", False, lambda b: "")  # filled from the id, not the blob
 
 
@@ -77,11 +69,10 @@ def _has_spread(blobs: Mapping[str, Mapping[str, Any]]) -> bool:
     return any(b.get("peak_bytes_max") != b.get("peak_bytes") for b in blobs.values())
 
 
-def _columns_for(mode: str, blobs: Mapping[str, Mapping[str, Any]]) -> list[_Column]:
-    """The column set for ``mode``: name, then the metric columns, minus an idle ``max``."""
+def _columns_for(blobs: Mapping[str, Mapping[str, Any]]) -> list[_Column]:
+    """Name, then the metric columns — minus ``max`` when no test used ``repeats > 1``."""
     keep_max = _has_spread(blobs)
-    metric_cols = _MODE_COLUMNS.get(mode, _MODE_COLUMNS["heap"])
-    return [_NAME_COL] + [c for c in metric_cols if c is not _MAX_COL or keep_max]
+    return [_NAME_COL] + [c for c in _METRIC_COLUMNS if c is not _MAX_COL or keep_max]
 
 
 def _row_style(rank: int, total: int) -> str | None:
@@ -121,9 +112,8 @@ def build_run_table(
 ) -> Table | None:
     """A rich table of this run's memory — biggest peak first, or ``None`` if empty.
 
-    ``blobs`` maps benchmark id → its ``extra_info["benchmem"]`` blob. The columns
-    shown follow the blobs' ``mode`` (heap vs rss); the ``max`` column is dropped
-    when no test used ``repeats > 1``. Rows sort by peak descending.
+    ``blobs`` maps benchmark id → its ``extra_info["benchmem"]`` blob. The ``max``
+    column is dropped when no test used ``repeats > 1``. Rows sort by peak descending.
 
     Pass ``baseline`` (an ``{id: blob}`` map for a prior run) to fold the comparison
     into the *same* table: two extra columns — the baseline peak and the percent
@@ -136,15 +126,14 @@ def build_run_table(
     from rich import box
     from rich.table import Table
 
-    mode = str(next(iter(blobs.values())).get(MODE_KEY, DEFAULT_MODE))
-    columns = _columns_for(mode, blobs)
+    columns = _columns_for(blobs)
     order = sorted(blobs, key=lambda i: float(blobs[i].get("peak_bytes", 0)), reverse=True)
     comparing = baseline is not None
 
     if comparing:
-        heading = f"{title} ({mode}) vs {baseline_label or 'baseline'}"
+        heading = f"{title} vs {baseline_label or 'baseline'}"
     else:
-        heading = f"{title} ({mode}) — {len(blobs)} benchmark(s)"
+        heading = f"{title} — {len(blobs)} benchmark(s)"
     table = Table(title=heading, box=box.SIMPLE, title_justify="left")
     for col in columns:
         table.add_column(

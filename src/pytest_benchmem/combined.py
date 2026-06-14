@@ -18,6 +18,7 @@ like ``test_x[1000]`` is never mistaken for a ``rich`` markup tag.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+from math import isinf
 from operator import itemgetter
 from typing import TYPE_CHECKING, Any
 
@@ -93,6 +94,22 @@ def _rank_style(value: float, best: float, worst: float, *, solo: bool) -> str |
     return None
 
 
+def _rel(value: float, best: float, *, solo: bool) -> str:
+    """The ``(1.0)`` / ``(5.23)`` baseline-relative suffix pytest-benchmark appends.
+
+    Ratio to the group best (scale-invariant, so raw values are fine). Empty for a
+    solo group — pytest-benchmark drops it there too.
+    """
+    if solo:
+        return ""
+    if value == best:
+        return " (1.0)"
+    scale = abs(value / best) if best else float("inf")
+    if scale > 1000:  # noqa: PLR2004 — pytest-benchmark's own cutoff
+        return " (inf)" if isinf(scale) else " (>1000.0)"
+    return f" ({scale:.2f})"
+
+
 def _timing_cell(
     bench: Any,
     prop: str,
@@ -103,19 +120,12 @@ def _timing_cell(
     worst: Mapping[str, float],
     solo: bool,
 ) -> Text:
-    """One timing cell, scaled and coloured exactly as pytest-benchmark's table would."""
-    if prop in _SCALED:
+    """One timing cell, scaled, ranked, and annotated exactly as pytest-benchmark's would."""
+    if prop in _SCALED or prop == "ops":
         value = bench[prop]
-        return _cell(
-            _NUMBER_FMT.format(value * adj),
-            style=_rank_style(value, best[prop], worst[prop], solo=solo),
-        )
-    if prop == "ops":
-        value = bench[prop]
-        return _cell(
-            _NUMBER_FMT.format(value * ops_adj),
-            style=_rank_style(value, best[prop], worst[prop], solo=solo),
-        )
+        scale = ops_adj if prop == "ops" else adj
+        text = _NUMBER_FMT.format(value * scale) + _rel(value, best[prop], solo=solo)
+        return _cell(text, style=_rank_style(value, best[prop], worst[prop], solo=solo))
     return _cell(str(bench[prop]))  # outliers / rounds / iterations — plain counts
 
 
@@ -146,7 +156,7 @@ def render_combined_tables(
     ``groups`` is ``bs.groups`` (``(group_name, [Metadata, ...])``); ``columns`` /
     ``sort`` / ``name_format`` / ``scale_unit`` are pytest-benchmark's own, so the
     timing side renders identically. Memory columns (``peak`` / ``allocated`` /
-    ``allocs``, mode-aware) are appended for the benchmarks that recorded memory;
+    ``allocs``) are appended for the benchmarks that recorded memory;
     timing-only rows show ``—`` there.
     """
     from rich import box
@@ -166,7 +176,7 @@ def render_combined_tables(
         )
 
         group_blobs = {b["fullname"]: blob for b in benchmarks if (blob := _blob_of(b)) is not None}
-        mem_cols = _columns_for(_mode_of(group_blobs), group_blobs)[1:] if group_blobs else []
+        mem_cols = _columns_for(group_blobs)[1:] if group_blobs else []
         peaks = [float(b["peak_bytes"]) for b in group_blobs.values()] if group_blobs else []
         peak_best, peak_worst = (min(peaks), max(peaks)) if peaks else (0.0, 0.0)
 
@@ -198,10 +208,3 @@ def render_combined_tables(
                 cells.append(_cell(col.cell(blob), style=style))
             table.add_row(*cells)
         console.print(table)
-
-
-def _mode_of(blobs: Mapping[str, Mapping[str, Any]]) -> str:
-    """The measurement mode of a group's blobs (heap unless an rss blob leads)."""
-    from pytest_benchmem.snapshot import DEFAULT_MODE, MODE_KEY
-
-    return str(next(iter(blobs.values())).get(MODE_KEY, DEFAULT_MODE)) if blobs else DEFAULT_MODE

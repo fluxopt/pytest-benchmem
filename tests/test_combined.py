@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pytest_benchmem.combined import _best_worst, _blob_of, _rank_style
+from pytest_benchmem.combined import _best_worst, _blob_of, _rank_style, _rel
 
 
 def _bench(**stats):
@@ -45,6 +45,14 @@ def test_rank_style_colours_extremes_only():
     assert _rank_style(5.0, best=1.0, worst=5.0, solo=False) == "red"
     assert _rank_style(3.0, best=1.0, worst=5.0, solo=False) is None
     assert _rank_style(1.0, best=1.0, worst=5.0, solo=True) is None  # nothing to contrast
+
+
+def test_rel_matches_pytest_benchmark_annotation():
+    assert _rel(5.0, 5.0, solo=False) == " (1.0)"  # the group best
+    assert _rel(10.0, 5.0, solo=False) == " (2.00)"  # 2x the best
+    assert _rel(50_000.0, 1.0, solo=False) == " (>1000.0)"  # pytest-benchmark's cutoff
+    assert _rel(0.02, 10.0, solo=False) == " (0.00)"  # ops ratio below best
+    assert _rel(10.0, 5.0, solo=True) == ""  # dropped for a solo group
 
 
 def test_blob_of_reads_flat_dict():
