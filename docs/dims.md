@@ -52,7 +52,7 @@ def test_sort(benchmark_memory, n):
     benchmark_memory(sorted, list(range(n, 0, -1)))
 """)
 run = _tmp / "params.json"
-!pytest {suite} --benchmark-only --benchmark-json={run} -q -p no:cacheprovider
+!pytest {suite} --benchmark-only --benchmark-json={run} --benchmark-columns=min,median -q -p no:cacheprovider
 ```
 
 ```{code-cell} ipython3
@@ -137,4 +137,4 @@ raw function name (`to_lp` vs `test_to_lp`), set your own `phase` dim as above.
 ## Next
 
 - **[Compare & plot](compare-plot.ipynb)** — these dims become the plot axes.
-- **[Reference](reference.md)** — the readers and `load_long_df` in full.
+- **[Reference](reference.ipynb)** — the readers and `load_long_df` in full.

@@ -1,8 +1,36 @@
+---
+jupytext:
+  text_representation:
+    extension: .md
+    format_name: myst
+    format_version: 0.13
+    jupytext_version: 1.19.3
+kernelspec:
+  display_name: Python 3 (ipykernel)
+  language: python
+  name: python3
+---
+
 # Reference
 
-Every flag, marker, fixture, CLI command, and public function — in one place. For the
-narrative versions see [Getting started](getting-started.ipynb), [Metrics](metrics.ipynb),
+> ⚠️ The `.md` is the source; the `.ipynb` is generated (`jupytext --to ipynb
+> docs/reference.md`) and gitignored.
+
+Every flag, marker, fixture, CLI command, and public function. The `benchmem` CLI
+options are rendered **live from `--help`** below (typer is the source of truth, so
+they can't drift); everything `--help` can't express — the pytest flags, the marker,
+the fixture, the blob schema, the Python API — is curated here. For the narrative
+versions see [Getting started](getting-started.ipynb), [Metrics](metrics.ipynb),
 [Dims](dims.ipynb), and [Compare & plot](compare-plot.ipynb).
+
+```{code-cell} ipython3
+import os
+import sys
+from pathlib import Path
+
+os.environ["FORCE_COLOR"] = "1"
+os.environ["PATH"] = f"{Path(sys.executable).parent}{os.pathsep}{os.environ['PATH']}"
+```
 
 ## pytest command-line flags
 
@@ -17,6 +45,11 @@ The plugin adds these to any pytest run (alongside pytest-benchmark's own flags)
 Memory rides `--benchmark-only` runs the same as timing. Timing regressions still use
 pytest-benchmark's own `--benchmark-compare` / `--benchmark-compare-fail`; the
 `--benchmark-memory-compare*` flags are the memory mirror.
+
+The baseline the inline flags compare against comes from **pytest-benchmark's
+storage** (under `.benchmarks/`) — save one first with `--benchmark-save=NAME` or
+`--benchmark-autosave`, or the gate finds nothing and passes. See
+[Gate CI on regressions](compare-plot.ipynb#gate-ci-on-regressions) for the full flow.
 
 ## The `benchmem` marker
 
@@ -80,26 +113,25 @@ See [Metrics](metrics.ipynb) for when to reach for each.
 
 ## CLI — `benchmem`
 
-Installed with `pytest-benchmem[plot]`. Both subcommands take `--metric`, one of:
-`time`, `peak`, `peak_max`, `allocated`, `allocations`, or `memory` (an alias for
-`peak`).
+Installed with `pytest-benchmem[plot]`. The two subcommands and their options,
+straight from `--help`:
+
+```{code-cell} ipython3
+!benchmem --help
+```
 
 ### `benchmem compare`
 
-```bash
-benchmem compare BASE.json HEAD.json --metric peak
-benchmem compare BASE.json HEAD.json --fail-on peak:10% --fail-on allocations:5%
-```
-
 A per-id delta table (`b − a`) with percent change; ids in only one run show `—`.
 
-| Option | Default | What |
-|---|---|---|
-| `--metric` | `time` | which metric to diff |
-| `--fail-on FIELD:THRESHOLD` | — | exit non-zero past a threshold (repeatable). |
+```{code-cell} ipython3
+!benchmem compare --help
+```
 
-**`--fail-on` grammar.** `FIELD` is `peak`, `allocated`, `allocations`, or `time`.
-`THRESHOLD` is either a **percent** (`peak:10%`) or an **absolute**:
+**`--metric`** is one of `time`, `peak`, `peak_max`, `allocated`, `allocations`, or
+`memory` (an alias for `peak`). **`--fail-on FIELD:THRESHOLD`** (repeatable) exits
+non-zero past a threshold; `FIELD` is `peak`, `allocated`, `allocations`, or `time`,
+and `THRESHOLD` is either a **percent** (`peak:10%`) or an **absolute**:
 
 - bytes fields (`peak`, `allocated`): `5MiB` (units `B`/`KiB`/`MiB`/`GiB`)
 - `allocations`: a bare count, `5`
@@ -107,22 +139,15 @@ A per-id delta table (`b − a`) with percent change; ids in only one run show `
 
 ### `benchmem plot`
 
-```bash
-benchmem plot RUN.json [RUN2.json …] --metric peak -o out.html
+Writes an interactive plotly view to standalone HTML. The view auto-selects by run
+count (1 → `scaling`, 2 → `scatter`, 3+ → `sweep`); override with `--view`.
+
+```{code-cell} ipython3
+!benchmem plot --help
 ```
 
-Writes an interactive plotly view to standalone HTML. View auto-selects by run count
-(1 → `scaling`, 2 → `scatter`, 3+ → `sweep`); override with `--view`.
-
-| Option | Default | What |
-|---|---|---|
-| `--metric` | `time` | which metric to plot |
-| `--view compare\|scatter\|sweep\|scaling` | by run count | force a view |
-| `--facet DIM` | — | small-multiple by a dim (incl. `node.*`) |
-| `--x DIM` | auto | x-axis dim for `scaling` (numeric dim auto-picked) |
-| `--clip FLOAT` | — | clamp the colour scale |
-| `-o, --output PATH` | `.benchmarks/plots/{view}-{metric}.html` | HTML output |
-| `--open / --no-open` | `--no-open` | open the browser after rendering |
+`--facet` and `--label`/`-l` (a series label per run, repeatable, defaulting to the
+file stem) accept the same [dims](dims.ipynb) your tests carry.
 
 ## Public Python API
 
@@ -158,6 +183,9 @@ human_bytes(n) -> str
   `allocations`; `stat` (time only) is `min`/`median`/…
 - `load_long_df` stacks runs into the tidy frame the plots pivot — columns
   `snapshot`, `id`, `value`, plus one per [dim](dims.ipynb).
+- `discover_runs()` collects saved runs from `.benchmarks/` — pytest-benchmark's
+  storage dir, where `--benchmark-save` / `--benchmark-autosave` write — so you can
+  hand the readers a directory instead of listing files.
 - A `Sample` is `(id, value, dims)`; `dims` is a mapping of dim name → `str`/`int`/
   `float`.
 
@@ -166,14 +194,15 @@ human_bytes(n) -> str
 Every `plot_*` returns `(figure, n_ids)`:
 
 ```python
-plot_scaling(snapshots, *, metric="time", x=None, color=None, facet=None, log="auto")
-plot_scatter(snapshots, *, metric="time", facet=None, clip=None)
-plot_compare(snapshots, *, metric="time", sort="absolute", facet=None, clip=None)
-plot_sweep(snapshots,  *, metric="time", clip=None)
+plot_scaling(snapshots, *, metric="time", x=None, color=None, facet=None, log="auto", labels=None)
+plot_scatter(snapshots, *, metric="time", facet=None, clip=None, labels=None)
+plot_compare(snapshots, *, metric="time", sort="absolute", facet=None, clip=None, labels=None)
+plot_sweep(snapshots,  *, metric="time", clip=None, labels=None)
 ```
 
-`snapshots` is a list of run JSON paths. `plot_compare`'s `sort` is `"absolute"`
-(native units) or `"relative"` (percent).
+`snapshots` is a list of run JSON paths. `labels` names the series per run (defaults
+to the file stems) — the API behind `plot`'s `-l/--label`. `plot_compare`'s `sort` is
+`"absolute"` (native units) or `"relative"` (percent).
 
 ### Sweeps — `pytest_benchmem.sweep`
 

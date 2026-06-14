@@ -22,7 +22,7 @@ is the default, but `allocated` and `allocations` often catch what `peak` hides.
 
 | Metric | Blob key | What it is | Reach for it when |
 |---|---|---|---|
-| `peak` | `peak_bytes` | high-water of *live* bytes — the most resident at once | headline footprint; "how big did it get" |
+| `peak` | `peak_bytes` | high-water of *live* bytes — the most allocated at once | headline footprint; "how big did it get" |
 | `allocated` | `total_bytes` | sum of *every* allocation over the run | churn / temporary spikes `peak` smooths over |
 | `allocations` | `allocations` | count of allocation calls | a near-deterministic, low-noise tripwire |
 
@@ -62,7 +62,7 @@ def test_churn(benchmark_memory):
     benchmark_memory(work)
 """)
 run = _tmp / "churn.json"
-!pytest {suite} --benchmark-only --benchmark-json={run} -q -p no:cacheprovider
+!pytest {suite} --benchmark-only --benchmark-json={run} --benchmark-columns=min,median -q -p no:cacheprovider
 ```
 
 The same run read three ways — `peak` stays small (one list lives at a time) while
@@ -93,10 +93,10 @@ a change there is almost always a real change in behaviour, not measurement nois
 `peak` answers the capacity question; `allocated` catches churn regressions a peak
 gate would miss. You can gate on several at once — see
 [Compare & plot](compare-plot.ipynb) and the
-[reference](reference.md#benchmem-compare).
+[reference](reference.ipynb#benchmem-compare).
 
 ## Next
 
 - **[Grouping by dims](dims.ipynb)** — the axes plots scale by.
 - **[Compare & plot](compare-plot.ipynb)** — diff two runs on any of these metrics.
-- **[Reference](reference.md)** — every blob key and `--metric` value.
+- **[Reference](reference.ipynb)** — every blob key and `--metric` value.
