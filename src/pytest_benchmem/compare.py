@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TextIO
 
+from pytest_benchmem.format import byte_unit, fmt_bytes, fmt_count, rank_style
 from pytest_benchmem.snapshot import (
     Metric,
     from_pytest_benchmark,
@@ -48,13 +49,6 @@ def _fmt_value(field: str, value: float) -> str:
     return f"{value:.4g}{unit}"
 
 
-def _rank_style(value: float | None, best: float | None, worst: float | None) -> str:
-    """Green for the row's best (smallest) value, red for the worst, else unstyled."""
-    if value is None or best is None:
-        return ""
-    return "green" if value == best else "red" if value == worst else ""
-
-
 def _scaled_cell_fmt(unit: str, factor: float, *, is_bytes: bool) -> Any:
     """A formatter ``value -> str`` for the metric: bytes in ``factor``, counts, or seconds."""
 
@@ -62,9 +56,9 @@ def _scaled_cell_fmt(unit: str, factor: float, *, is_bytes: bool) -> Any:
         if value is None or value != value:  # noqa: PLR0124 — NaN
             return "—"
         if is_bytes:
-            return f"{value:,.0f}" if factor == 1.0 else f"{value / factor:,.2f}"
+            return fmt_bytes(value, factor)
         if unit == "":  # a count (allocations)
-            return f"{int(value):,}"
+            return fmt_count(value)
         return f"{value:.4g}"  # seconds
 
     return fmt
@@ -131,8 +125,6 @@ def compare_runs(
     from rich.table import Table
     from rich.text import Text
 
-    from pytest_benchmem.tables import _byte_unit
-
     if sort not in _SORTS:
         raise ValueError(f"unknown --sort {sort!r}; use one of {', '.join(_SORTS)}")
     df, unit = load_long_df([Path(r) for r in runs], metric=metric, stat=stat)
@@ -145,7 +137,7 @@ def compare_runs(
     wide = df.pivot(index="id", columns="snapshot", values="value")
 
     is_bytes = unit == "B"
-    unit_name, factor = _byte_unit(float(wide.max().max())) if is_bytes else (unit, 1.0)
+    unit_name, factor = byte_unit(float(wide.max().max())) if is_bytes else (unit, 1.0)
     fmt = _scaled_cell_fmt(unit, factor, is_bytes=is_bytes)
 
     def at(test_id: str, label: str) -> float | None:
@@ -171,7 +163,7 @@ def compare_runs(
         best, worst = (min(present), max(present)) if len(present) > 1 else (None, None)
         cells = [Text(test_id.split("::")[-1])]
         for v in vals:
-            cells.append(Text(fmt(v), style=_rank_style(v, best, worst)))
+            cells.append(Text(fmt(v), style=rank_style(v, best, worst) or ""))
         if len(labels) == 2:  # noqa: PLR2004
             va, vb = vals[0], vals[1]
             change = f"{(vb - va) / va * 100:+.1f}%" if va and vb and va > 0 else "—"

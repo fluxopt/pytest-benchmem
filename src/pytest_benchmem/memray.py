@@ -115,22 +115,6 @@ class MemoryResult:
         return cls(tuple(Measurement(*row) for row in zip(*cols, strict=True)))
 
 
-def headline(blob: Mapping[str, Any]) -> dict[str, int]:
-    """The denormalized headline scalars derived from a blob, for the display tables.
-
-    Re-derives what the blob no longer stores: ``peak_bytes`` (the min/floor),
-    ``peak_bytes_max`` (the worst peak, for the spread column), and the representative
-    (min-peak run's) ``allocations`` / ``total_bytes``.
-    """
-    r = MemoryResult.from_blob(blob)
-    return {
-        "peak_bytes": r.peak_bytes,
-        "peak_bytes_max": r.peak_bytes_max,
-        "allocations": r.allocations,
-        "total_bytes": r.total_bytes,
-    }
-
-
 def _require_memray() -> None:
     """Raise if memory measurement isn't supported — memray runs only on Linux/macOS."""
     if platform.system() not in ("Linux", "Darwin"):

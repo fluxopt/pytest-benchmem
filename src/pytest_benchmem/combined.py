@@ -22,6 +22,7 @@ from math import isinf
 from operator import itemgetter
 from typing import TYPE_CHECKING, Any
 
+from pytest_benchmem.format import byte_unit, fmt_bytes, growth, rank_style
 from pytest_benchmem.snapshot import BENCHMEM_KEY
 
 if TYPE_CHECKING:
@@ -93,13 +94,7 @@ def _cell(text: str, *, style: str | None = None) -> Text:
 
 def _rank_style(value: float, best: float, worst: float, *, solo: bool) -> str | None:
     """Green for the group best, red for the worst, nothing in between (or if solo)."""
-    if solo:
-        return None
-    if value == best:
-        return "green"
-    if value == worst:
-        return "red"
-    return None
+    return None if solo else rank_style(value, best, worst)
 
 
 def _rel(value: float, best: float, *, solo: bool) -> str:
@@ -163,10 +158,8 @@ def _peak_delta_cells(
     if base is None or res is None:
         return [_cell("—"), _cell("—")]
     bp, cp = float(base.peak_bytes), float(res.peak_bytes)
-    delta = f"{(cp - bp) / bp * 100:+.1f}%" if bp > 0 else "—"
-    style = "red" if cp > bp else "green" if cp < bp else ""
-    base_str = f"{bp:,.0f}" if factor == 1.0 else f"{bp / factor:,.2f}"
-    return [_cell(base_str), _cell(delta, style=style)]
+    delta, style = growth(bp, cp)
+    return [_cell(fmt_bytes(bp, factor)), _cell(delta, style=style)]
 
 
 def render_combined_tables(
@@ -196,7 +189,7 @@ def render_combined_tables(
     from rich.table import Table
 
     from pytest_benchmem.memray import MemoryResult
-    from pytest_benchmem.tables import _byte_unit, mem_columns
+    from pytest_benchmem.tables import mem_columns
 
     console = Console(width=_WIDE)
     base_results = (
@@ -222,7 +215,7 @@ def render_combined_tables(
         if comparing and base_results is not None:
             peaks = [r.peak_bytes for r in results.values()]
             peaks += [r.peak_bytes for r in base_results.values()]
-            base_unit, peak_factor = _byte_unit(max(peaks)) if peaks else ("B", 1.0)
+            base_unit, peak_factor = byte_unit(max(peaks)) if peaks else ("B", 1.0)
 
         title = f"benchmark{'' if group is None else f' {group!r}'}: {len(benchmarks)} tests"
         # The memory columns come from a separate, untimed pass — say so, and divide them

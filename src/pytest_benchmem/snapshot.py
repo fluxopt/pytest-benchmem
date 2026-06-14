@@ -6,8 +6,9 @@ file carries *both* metrics for each benchmark id:
 
 - ``stats`` — timing (min/mean/median/…), in seconds.
 - ``extra_info.benchmem`` — the memory blob written by the ``benchmark_memory``
-  fixture: ``{peak_bytes, peak_bytes_max, allocations, total_bytes, repeats}``;
-  byte fields are in **bytes** (the raw memray unit; the display layer auto-scales).
+  fixture: the per-repeat series ``{peak_bytes, allocations, total_bytes}`` (one flat
+  array each); byte fields are in **bytes** (the raw memray unit; the display layer
+  auto-scales). Headline scalars are derived on read — see :class:`MemoryResult`.
 
 So reads are *per metric*: :func:`from_pytest_benchmark` pulls timing,
 :func:`memory_from_pytest_benchmark` pulls memory, each yielding a list of
@@ -78,7 +79,7 @@ RESERVED_COLUMNS = ("snapshot", "id", "value")
 NODE_DIM_PREFIX = "node."
 
 #: Display unit per memory blob field (count fields have no unit).
-_FIELD_UNIT = {"peak_bytes": "B", "peak_bytes_max": "B", "total_bytes": "B", "allocations": ""}
+_FIELD_UNIT = {"peak_bytes": "B", "total_bytes": "B", "allocations": ""}
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -223,7 +224,7 @@ def memory_from_pytest_benchmark(
     (timing-only tests) are skipped. Dims come from parametrize ``params`` and
     ``extra_info``, plus the structural ``node.*`` dims (see :func:`_node_dims`).
     """
-    from pytest_benchmem.memray import headline
+    from pytest_benchmem.memray import MemoryResult
 
     p, benchmarks = _read_benchmarks(path)
     unit = _FIELD_UNIT.get(field, "")
@@ -238,7 +239,9 @@ def memory_from_pytest_benchmark(
                 continue
             value = float(reduce(series))
         else:
-            value = float(headline(blob)[field])
+            # No stat → the headline scalar: peak = min, allocations/total = the
+            # min-peak run, all exposed as MemoryResult properties named like the field.
+            value = float(getattr(MemoryResult.from_blob(blob), field))
         samples.append(Sample(id=bm["fullname"], value=value, dims=_all_dims(bm)))
     return p.stem, samples, unit
 
