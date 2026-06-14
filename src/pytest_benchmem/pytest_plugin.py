@@ -31,6 +31,7 @@ from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
 import pytest
+from rich.console import Console
 
 from pytest_benchmem.memray import MemoryResult, measure_memory
 from pytest_benchmem.snapshot import BENCHMEM_KEY
@@ -383,7 +384,19 @@ def pytest_sessionstart(session: pytest.Session) -> None:
 
 
 def pytest_terminal_summary(terminalreporter: Any, config: pytest.Config) -> None:
-    """Print the memory comparison and fail the run if a threshold is exceeded."""
+    """Print the per-run memory table, then the comparison if one was requested."""
+    bs = getattr(config, "_benchmarksession", None)
+    current = _memory_blobs(bs.benchmarks) if bs is not None else {}
+    write = terminalreporter.write_line
+    console = Console()
+
+    # The per-run table prints whenever memory was recorded — like pytest-benchmark's
+    # own timing table, you get it just by running, no compare flag needed.
+    if current:
+        from pytest_benchmem.tables import build_run_table
+
+        console.print(build_run_table(current))
+
     compare, fail_exprs = _compare_requested(config)
     if compare is False and not fail_exprs:
         return
@@ -394,7 +407,7 @@ def pytest_terminal_summary(terminalreporter: Any, config: pytest.Config) -> Non
         memory_regressions,
         parse_threshold,
     )
-    from pytest_benchmem.snapshot import human_bytes
+    from pytest_benchmem.tables import build_compare_table
 
     thresholds = []
     if fail_exprs:
@@ -410,12 +423,9 @@ def pytest_terminal_summary(terminalreporter: Any, config: pytest.Config) -> Non
                 f"(timing is pytest-benchmark's --benchmark-compare-fail)"
             )
 
-    bs = getattr(config, "_benchmarksession", None)
-    current = _memory_blobs(bs.benchmarks) if bs is not None else {}
     default: tuple[str | None, dict[str, dict[str, Any]]] = (None, {})
     label, baseline = getattr(config, "_benchmem_baseline", default)
 
-    write = terminalreporter.write_line
     if not current:
         write(
             "benchmem-compare: no memory recorded this run "
@@ -426,13 +436,11 @@ def pytest_terminal_summary(terminalreporter: Any, config: pytest.Config) -> Non
         write("benchmem-compare: no prior run with memory to compare against.")
         return
 
-    write(f"\nMemory vs {label} (peak):")
-    for test_id in sorted(current.keys() & baseline.keys()):
-        vb = float(baseline[test_id].get("peak_bytes", "nan"))
-        vh = float(current[test_id].get("peak_bytes", "nan"))
-        pct = f"{(vh - vb) / vb * 100:+.1f}%" if vb > 0 else "—"
-        short = test_id.split("::")[-1]
-        write(f"  {short}: {human_bytes(vb)} → {human_bytes(vh)} ({pct})")
+    compare_table = build_compare_table(baseline, current, baseline_label=label)
+    if compare_table is None:
+        write("benchmem-compare: no benchmark id is in both this run and the baseline.")
+    else:
+        console.print(compare_table)
 
     if thresholds:
         regressions: list[Regression] = memory_regressions(baseline, current, thresholds)

@@ -88,6 +88,30 @@ baseline = _tmp / "baseline.json"
 !pytest {suite} --benchmark-only --benchmark-json={baseline} -q -p no:cacheprovider
 ```
 
+Alongside pytest-benchmark's own timing table, pytest-benchmem prints a **memory
+table** in the terminal summary whenever a run records memory — no flag needed,
+just like the timing table. It lists each benchmark's `peak`, `allocated`, and
+`allocs`, biggest peak first, with the heaviest consumer tinted red and the
+lightest green. The plugin builds it from the recorded blobs; here it is rendered
+straight from the run we just wrote:
+
+```{code-cell} ipython3
+import json
+
+from rich.console import Console
+
+from pytest_benchmem.snapshot import BENCHMEM_KEY
+from pytest_benchmem.tables import build_run_table
+
+benchmarks = json.loads(baseline.read_text())["benchmarks"]
+blobs = {
+    b["fullname"]: b["extra_info"][BENCHMEM_KEY]
+    for b in benchmarks
+    if BENCHMEM_KEY in b.get("extra_info", {})
+}
+Console().print(build_run_table(blobs))
+```
+
 ## Read both metrics back
 
 pytest-benchmem reads that one file *per metric*: `from_pytest_benchmark` pulls

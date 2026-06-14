@@ -59,23 +59,28 @@ def compare_runs(
     Reads the chosen metric (timing or memory) from two pytest-benchmark files.
     Ids present in only one run show ``—``.
     """
-    out = out or sys.stdout
+    from rich import box
+    from rich.console import Console
+    from rich.table import Table
+
     df, unit = load_long_df([Path(a), Path(b)], metric=metric)
     labels = df["snapshot"].drop_duplicates().tolist()
     la, lb = labels[0], labels[1]
     wide = df.pivot(index="id", columns="snapshot", values="value")
 
-    print(f"\n{'id':<70} {la:>12} {lb:>12} {'change':>10}  ({unit or 'count'})", file=out)
-    print("-" * 108, file=out)
+    table = Table(title=f"{metric} ({unit or 'count'})", box=box.SIMPLE, title_justify="left")
+    table.add_column("id", justify="left", no_wrap=True)
+    table.add_column(str(la), justify="right")
+    table.add_column(str(lb), justify="right")
+    table.add_column("change", justify="right")
     for test_id in sorted(wide.index):
         va = wide.at[test_id, la] if la in wide.columns else None
         vb = wide.at[test_id, lb] if lb in wide.columns else None
         va = None if va is None or va != va else va  # noqa: PLR0124 — NaN check
         vb = None if vb is None or vb != vb else vb
         change = f"{(vb - va) / va * 100:+.1f}%" if va and vb and va > 0 else "—"
-        short = test_id.split("::")[-1]
-        print(f"{short:<70} {_cell(va, unit):>12} {_cell(vb, unit):>12} {change:>10}", file=out)
-    print(file=out)
+        table.add_row(test_id.split("::")[-1], _cell(va, unit), _cell(vb, unit), change)
+    Console(file=out or sys.stdout).print(table)
 
 
 # --- regression gate (--fail-on) -------------------------------------------------
