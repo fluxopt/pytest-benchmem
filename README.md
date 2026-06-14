@@ -26,24 +26,28 @@ def test_sort(benchmark_memory, n):
 ```
 
 ```bash
-pytest --benchmark-only --benchmark-json=run.json
+pytest --benchmark-only   # both metrics, in pytest-benchmark's own table
 ```
 
-One run, one `run.json`, for each benchmark id — both metrics, one node id:
+```
+ Name (time in us)              Min                  Median         │  peak (MiB)  allocated (MiB)  allocs
+ ──────────────────────────────────────────────────────────────────────────────────────────────────────
+  test_sort[10000]           32.5830 (1.0)         41.2080 (1.0)    │       0.08             0.08       1
+  test_sort[100000]         321.2080 (9.86)       419.9160 (10.19)  │       0.76             0.76       1
+  test_sort[1000000]      3,669.2920 (112.61)   4,331.5421 (105.11) │       7.63             7.63       1
 
-- `stats: {min, mean, median, …}` — **timing**, from pytest-benchmark.
-- `extra_info.benchmem: {peak_bytes: [...], allocations: [...], total_bytes: [...]}`
-  — **memory**, from pytest-benchmem: three flat per-repeat series (one entry per memray
-  pass) that mirror what `memray stats` reports (bytes raw, so the display auto-scales).
-  The `peak` / `allocated` / `allocations` metrics derive their headline from these — and
-  `--stat` reports a distribution over them.
+ memory (right of │): a separate, untimed pass — single shot, not the timed rounds
+```
 
-The two passes never overlap: pytest-benchmark times the action untracked, then
-memray measures peak on a *separate, untimed* call — so the allocator hooks cost
-the timing nothing. The parametrize `params` become the analysis dims the plots
-scale by; for an axis `params` can't carry (a per-operation `phase`, or a clean
-label for an object you parametrize over), set a scalar on `extra_info` — see
-[Grouping by dims](https://fluxopt.github.io/pytest-benchmem/dims/).
+Left of the divider is pytest-benchmark's timing, untouched; right is pytest-benchmem's
+memory. The two never overlap — memray measures peak on a *separate, untimed* call, so the
+allocator hooks cost the timing nothing.
+
+Add `--benchmark-json=run.json` and both persist under one node id: timing in `stats`,
+memory in `extra_info.benchmem` (per-repeat `peak_bytes` / `total_bytes` / `allocations` —
+the source for every `--metric` and `--stat`). Parametrize `params` become the analysis
+dims the plots scale by; for an axis `params` can't carry, set a scalar on `extra_info` —
+see [Grouping by dims](https://fluxopt.github.io/pytest-benchmem/dims/).
 
 ## Already have a pytest-benchmark suite?
 

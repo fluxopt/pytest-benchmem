@@ -25,10 +25,8 @@ everywhere).
 
 ## Setup
 
-A scratch dir for the suite and the JSON runs the cells below produce.
-
-The `PATH` line makes the `!pytest` / `!benchmem` cells resolve to this kernel's
-environment.
+A scratch dir for the suite and JSON the cells produce; the `PATH` line makes the
+`!pytest` / `!benchmem` cells resolve to this kernel's environment.
 
 ```{code-cell} ipython3
 import os
@@ -84,33 +82,15 @@ baseline = _tmp / "baseline.json"
 !pytest {suite} --benchmark-only --benchmark-json={baseline} --benchmark-columns=min,median -q -p no:cacheprovider
 ```
 
-Look at the run output above: whenever a run records memory, pytest-benchmem folds
-`peak`, `allocated`, and `allocs` into **pytest-benchmark's own table** — same timing
-columns, same scaling and sort, with the memory columns appended on the right. One
-table, both metrics, no flag needed. (Prefer the two tables separate? Pass
-`--benchmark-memory-table=split` to keep pytest-benchmark's table and print a memory
-table of its own below it.)
+In the output above, pytest-benchmem folds `peak`, `allocated`, and `allocs` into
+**pytest-benchmark's own table** — same columns, scaling, and sort, with the memory
+columns appended on the right. One table, both metrics, no flag needed. (Prefer them
+separate? `--benchmark-memory-table=split` prints a memory table of its own below.)
 
-That standalone memory table is also available programmatically — `build_run_table`
-turns the recorded blobs into a rich table, biggest peak first, heaviest consumer
-tinted red and lightest green:
-
-```{code-cell} ipython3
-import json
-
-from rich.console import Console
-
-from pytest_benchmem.snapshot import BENCHMEM_KEY
-from pytest_benchmem.tables import build_run_table
-
-benchmarks = json.loads(baseline.read_text())["benchmarks"]
-blobs = {
-    b["fullname"]: b["extra_info"][BENCHMEM_KEY]
-    for b in benchmarks
-    if BENCHMEM_KEY in b.get("extra_info", {})
-}
-Console().print(build_run_table(blobs))
-```
+> **Already have a `benchmark` suite?** Don't swap the fixture — add `--benchmark-memory`
+> to the run and every `benchmark(...)` call records memory too, no test changes. Reach for
+> the `benchmark_memory` fixture when you want memory on *specific* tests only, or the
+> `pedantic` control.
 
 ## Read both metrics back
 
@@ -156,11 +136,3 @@ from pytest_benchmem import human_bytes, measure_peak
 
 human_bytes(measure_peak(lambda: [0] * 5_000_000))
 ```
-
-## Next
-
-- **[Metrics: peak, allocated, allocations](metrics.ipynb)** — the three memory numbers
-  every run records, and when to reach for each.
-- **[Grouping by dims](dims.ipynb)** — give every plot the right axes.
-- **[Compare & plot](compare-plot.ipynb)** — diff two runs, render the views.
-- **[Reference](reference.ipynb)** — every flag, the marker, the CLI, the public API.

@@ -215,8 +215,3 @@ instance, `--facet node.func` gives one panel per operation:
 ```bash
 benchmem plot run.json --metric peak --facet node.func
 ```
-
-## Next
-
-- **[Cross-version sweeps](sweeps.md)** — the same suite across installed versions.
-- **[Reference](reference.ipynb)** — every CLI flag and `plot_*` signature.

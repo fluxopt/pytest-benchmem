@@ -111,9 +111,3 @@ a change there is almost always a real change in behaviour, not measurement nois
 gate would miss. You can gate on several at once — see
 [Compare & plot](compare-plot.ipynb) and the
 [reference](reference.ipynb#benchmem-compare).
-
-## Next
-
-- **[Grouping by dims](dims.ipynb)** — the axes plots scale by.
-- **[Compare & plot](compare-plot.ipynb)** — diff two runs on any of these metrics.
-- **[Reference](reference.ipynb)** — every blob key and `--metric` value.
