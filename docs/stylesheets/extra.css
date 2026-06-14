@@ -154,19 +154,11 @@ body[data-md-color-scheme="slate"] .jupyter-wrapper {
   transition: background 100ms, color 100ms;
 }
 
+/* No hover-fill pill on the nav or the TOC — just the link-color shift.
+   The filled hover reads as noise on the dense sidebars. */
 .md-nav__link:hover {
-  background: rgba(2, 132, 199, 0.07);     /* sky-600 tint */
-  color: var(--md-typeset-a-color);
-}
-
-[data-md-color-scheme="slate"] .md-nav__link:hover {
-  background: rgba(56, 189, 248, 0.10);    /* sky-400 tint */
-}
-
-/* Right-hand TOC (secondary nav): no hover-fill pill — just the link-color
-   shift. The filled hover reads as noise on the dense per-page TOC. */
-.md-nav--secondary .md-nav__link:hover {
   background: transparent;
+  color: var(--md-typeset-a-color);
 }
 
 .md-nav__link--active {
