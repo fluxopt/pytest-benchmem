@@ -51,6 +51,8 @@ def test_combined_table_is_default(pytester):
     out = result.stdout.str()
     assert "Min" in out and "peak" in out and "allocs" in out  # timing + memory, one table
     assert "OPS: Operations Per Second" not in out  # pytest-benchmark's own table is suppressed
+    assert "│" in out  # divider between timing and memory
+    assert "separate, untimed pass" in out  # caption flags memory's distinct provenance
 
 
 def test_split_table_keeps_native_and_separate_memory(pytester):
