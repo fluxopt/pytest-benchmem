@@ -396,15 +396,12 @@ def pytest_sessionfinish(session: pytest.Session) -> None:
 
     Runs ``trylast`` so pytest-benchmark's own ``pytest_sessionfinish`` (which calls
     ``finish()`` and populates ``bs.groups``) has already run, but before its
-    ``pytest_terminal_summary`` prints — the window to set ``bs.quiet``. Only fires
-    when memory was actually recorded and no comparison was requested (the compare
-    flow keeps pytest-benchmark's table for now).
+    ``pytest_terminal_summary`` prints — the window to set ``bs.quiet``. Fires whenever
+    memory was recorded; a ``--benchmark-memory-compare`` baseline folds into the same
+    table (see :func:`pytest_terminal_summary`).
     """
     config = session.config
     if config.getoption("--benchmark-memory-table") != "combined":
-        return
-    compare, fail_exprs = _compare_requested(config)
-    if compare is not False or fail_exprs:
         return
     bs = getattr(config, "_benchmarksession", None)
     if bs is None or not getattr(bs, "groups", None) or not _memory_blobs(bs.benchmarks):
@@ -413,59 +410,70 @@ def pytest_sessionfinish(session: pytest.Session) -> None:
     config._benchmem_combined = True  # type: ignore[attr-defined]
 
 
+def _parse_memory_thresholds(fail_exprs: list[str]) -> list[Any]:
+    """Parse + validate ``--benchmark-memory-compare-fail`` exprs (a bad one is a UsageError)."""
+    from pytest_benchmem.compare import _BLOB_FIELD, parse_threshold
+
+    if not fail_exprs:
+        return []
+    try:
+        thresholds = [parse_threshold(expr) for expr in fail_exprs]
+    except ValueError as exc:
+        raise pytest.UsageError(str(exc)) from exc
+    bad = [t.field for t in thresholds if t.field not in _BLOB_FIELD]
+    if bad:
+        raise pytest.UsageError(
+            f"--benchmark-memory-compare-fail can't gate on {', '.join(bad)}; "
+            f"use {' or '.join(_BLOB_FIELD)} "
+            f"(timing is pytest-benchmark's --benchmark-compare-fail)"
+        )
+    return thresholds
+
+
+def _render_combined(
+    config: pytest.Config,
+    bs: Any,
+    *,
+    baseline: dict[str, dict[str, Any]] | None = None,
+    baseline_label: str | None = None,
+) -> None:
+    """Render the combined timing+memory table, optionally folding in a baseline compare."""
+    from functools import partial
+
+    from pytest_benchmem.combined import render_combined_tables
+
+    render_combined_tables(
+        bs.groups,
+        columns=bs.columns,
+        sort=bs.sort,
+        name_format=bs.name_format,
+        scale_unit=partial(config.hook.pytest_benchmark_scale_unit, config=config),
+        baseline=baseline,
+        baseline_label=baseline_label,
+    )
+
+
 def pytest_terminal_summary(terminalreporter: Any, config: pytest.Config) -> None:
-    """Print the memory table — combined with timing, or folding in a baseline compare."""
+    """Print the memory table — combined with timing, folding in a baseline compare if asked."""
     bs = getattr(config, "_benchmarksession", None)
     current = _memory_blobs(bs.benchmarks) if bs is not None else {}
     write = terminalreporter.write_line
     console = Console()
+    combined = bool(getattr(config, "_benchmem_combined", False)) and bs is not None
 
     from pytest_benchmem.tables import build_run_table
 
-    # Combined mode: one table per group with pytest-benchmark's timing columns plus
-    # memory (their table was suppressed in pytest_sessionfinish).
-    if getattr(config, "_benchmem_combined", False) and bs is not None:
-        from functools import partial
-
-        from pytest_benchmem.combined import render_combined_tables
-
-        render_combined_tables(
-            bs.groups,
-            columns=bs.columns,
-            sort=bs.sort,
-            name_format=bs.name_format,
-            scale_unit=partial(config.hook.pytest_benchmark_scale_unit, config=config),
-        )
-        return
-
     compare, fail_exprs = _compare_requested(config)
-    # No comparison requested: just the per-run table, like pytest-benchmark's own
-    # timing table — you get it by running, no flag needed.
-    if compare is False and not fail_exprs:
-        if current:
+    comparing = compare is not False or bool(fail_exprs)
+    thresholds = _parse_memory_thresholds(fail_exprs)  # validate up front, any mode
+
+    if not comparing:
+        # No comparison requested: just the table, like pytest-benchmark's own — by running.
+        if combined:
+            _render_combined(config, bs)
+        elif current:
             console.print(build_run_table(current))
         return
-
-    from pytest_benchmem.compare import (
-        _BLOB_FIELD,
-        Regression,
-        memory_regressions,
-        parse_threshold,
-    )
-
-    thresholds = []
-    if fail_exprs:
-        try:
-            thresholds = [parse_threshold(expr) for expr in fail_exprs]
-        except ValueError as exc:
-            raise pytest.UsageError(str(exc)) from exc
-        bad = [t.field for t in thresholds if t.field not in _BLOB_FIELD]
-        if bad:
-            raise pytest.UsageError(
-                f"--benchmark-memory-compare-fail can't gate on {', '.join(bad)}; "
-                f"use {' or '.join(_BLOB_FIELD)} "
-                f"(timing is pytest-benchmark's --benchmark-compare-fail)"
-            )
 
     default: tuple[str | None, dict[str, dict[str, Any]]] = (None, {})
     label, baseline = getattr(config, "_benchmem_baseline", default)
@@ -476,16 +484,19 @@ def pytest_terminal_summary(terminalreporter: Any, config: pytest.Config) -> Non
             "(use benchmark_memory or --benchmark-memory)."
         )
         return
+
+    # Render once — the baseline (if any) folds into the same table.
+    if combined:
+        _render_combined(config, bs, baseline=baseline or None, baseline_label=label)
+    else:
+        console.print(build_run_table(current, baseline=baseline or None, baseline_label=label))
+
     if not baseline:
-        # Still show this run's memory; just note there's nothing to compare against.
-        console.print(build_run_table(current))
         write("benchmem-compare: no prior run with memory to compare against.")
         return
-
-    # One table: this run's memory with baseline + change columns folded in.
-    console.print(build_run_table(current, baseline=baseline, baseline_label=label))
-
     if thresholds:
+        from pytest_benchmem.compare import Regression, memory_regressions
+
         regressions: list[Regression] = memory_regressions(baseline, current, thresholds)
         if regressions:
             write("Memory regressions over threshold:")

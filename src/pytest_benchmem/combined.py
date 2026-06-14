@@ -222,6 +222,23 @@ def _mem_cell(col: _MemCol, blob: Mapping[str, Any] | None, *, solo: bool) -> Te
     return _cell(text, style=_rank_style(value, col.best, col.worst, solo=solo))
 
 
+def _peak_delta_cells(
+    peak_col: _MemCol, base_blob: Mapping[str, Any] | None, cur_blob: Mapping[str, Any] | None
+) -> list[Text]:
+    """``[baseline-peak, Δ%]`` for the compare fold — baseline in the peak column's unit.
+
+    A missing baseline or current peak yields ``—``; growth is tinted red, a shrink green.
+    """
+    base = base_blob.get("peak_bytes") if base_blob else None
+    cur = cur_blob.get("peak_bytes") if cur_blob else None
+    if base is None or cur is None:
+        return [_cell("—"), _cell("—")]
+    bp, cp = float(base), float(cur)
+    delta = f"{(cp - bp) / bp * 100:+.1f}%" if bp > 0 else "—"
+    style = "red" if cp > bp else "green" if cp < bp else None
+    return [_cell(peak_col.scaled(bp)), _cell(delta, style=style)]
+
+
 def render_combined_tables(
     groups: Sequence[tuple[str | None, Sequence[Any]]],
     *,
@@ -229,6 +246,8 @@ def render_combined_tables(
     sort: str,
     name_format: Callable[[Any], str],
     scale_unit: ScaleUnit,
+    baseline: Mapping[str, Mapping[str, Any]] | None = None,
+    baseline_label: str | None = None,
 ) -> None:
     """Print one rich table per group: pytest-benchmark's timing columns plus memory.
 
@@ -237,6 +256,10 @@ def render_combined_tables(
     timing side renders identically. Memory columns (``peak`` / ``allocated`` /
     ``allocs``) are appended for the benchmarks that recorded memory;
     timing-only rows show ``—`` there.
+
+    Pass ``baseline`` (an ``{id: blob}`` map from a prior run) to fold the memory
+    comparison into the *same* table: a ``base`` peak column (in the peak column's
+    unit) and a ``Δ peak`` column tinted by regression. New ids show ``—``.
     """
     from rich import box
     from rich.console import Console
@@ -256,11 +279,15 @@ def render_combined_tables(
 
         group_blobs = {b["fullname"]: blob for b in benchmarks if (blob := _blob_of(b)) is not None}
         mem_cols = _mem_columns(group_blobs)
+        peak_col = next((c for c in mem_cols if c.field == "peak_bytes"), None)
+        comparing = baseline is not None and peak_col is not None
 
         title = f"benchmark{'' if group is None else f' {group!r}'}: {len(benchmarks)} tests"
         # The memory columns come from a separate, untimed pass — say so, and divide them
         # off the timing distribution so peak isn't read as "over those rounds".
         caption = _MEMORY_CAPTION if mem_cols else None
+        if comparing and caption:
+            caption += f"; Δ peak vs {baseline_label or 'baseline'}"
         table = Table(
             title=title,
             caption=caption,
@@ -280,6 +307,9 @@ def render_combined_tables(
             table.add_column(_DIVIDER, justify="center", style="dim")
         for col in mem_cols:
             table.add_column(col.header, justify="right")
+        if comparing and peak_col is not None:
+            table.add_column(peak_col.header.replace("peak", "base", 1), justify="right")
+            table.add_column("Δ peak", justify="right")
 
         for bench in benchmarks:
             cells: list[Text] = [_cell(name_format(bench))]
@@ -291,5 +321,8 @@ def render_combined_tables(
                 blob = _blob_of(bench)
                 cells.append(_cell(_DIVIDER, style="dim"))
                 cells += [_mem_cell(col, blob, solo=solo) for col in mem_cols]
+                if comparing and peak_col is not None:
+                    base_blob = baseline.get(bench["fullname"]) if baseline else None
+                    cells += _peak_delta_cells(peak_col, base_blob, blob)
             table.add_row(*cells)
         console.print(table)

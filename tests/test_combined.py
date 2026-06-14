@@ -7,6 +7,7 @@ from pytest_benchmem.combined import (
     _mem_cell,
     _mem_columns,
     _MemCol,
+    _peak_delta_cells,
     _rank_style,
     _rel,
 )
@@ -91,6 +92,14 @@ def test_mem_cell_annotation_and_zero_floor():
     zero_floor = _MemCol("peak (KiB)", "peak_bytes", 1024.0, best=0.0, worst=8192.0)
     assert "(" not in _mem_cell(zero_floor, {"peak_bytes": 8192}, solo=False).plain  # ratio dropped
     assert _mem_cell(ranked, None, solo=False).plain == "—"  # timing-only row
+
+
+def test_peak_delta_cells_fold_baseline():
+    peak = _MemCol("peak (KiB)", "peak_bytes", 1024.0, best=1024.0, worst=8192.0)
+    base, delta = _peak_delta_cells(peak, {"peak_bytes": 4096}, {"peak_bytes": 8192})
+    assert base.plain == "4.00" and delta.plain == "+100.0%"  # baseline in peak's unit; grew
+    base_new, delta_new = _peak_delta_cells(peak, None, {"peak_bytes": 8192})
+    assert base_new.plain == "—" and delta_new.plain == "—"  # id absent from baseline
 
 
 def test_blob_of_reads_flat_dict():

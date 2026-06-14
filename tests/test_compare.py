@@ -42,7 +42,7 @@ def test_same_file_twice_errors_cleanly(tmp_path):
     # identical labels used to crash with IndexError on labels[0], labels[1] (#62)
     a = _write(tmp_path / "run.json", [_bm("test_x", t=1.0)])
     with pytest.raises(ValueError, match="two distinct runs"):
-        compare_runs(a, a, out=StringIO())
+        compare_runs([a, a], out=StringIO())
 
 
 def test_distinct_files_same_stem_disambiguate(tmp_path):
@@ -53,7 +53,7 @@ def test_distinct_files_same_stem_disambiguate(tmp_path):
     a = _write(tmp_path / "v1" / "bench.json", [_bm("test_x", t=1.0)])
     b = _write(tmp_path / "v2" / "bench.json", [_bm("test_x", t=2.0)])
     out = StringIO()
-    compare_runs(a, b, out=out)
+    compare_runs([a, b], out=out)
     assert "v1/bench" in out.getvalue() and "v2/bench" in out.getvalue()
 
 
@@ -61,7 +61,7 @@ def test_percent_change_time(tmp_path):
     a = _write(tmp_path / "base.json", [_bm("test_x", t=1.0), _bm("test_y", t=2.0)])
     b = _write(tmp_path / "head.json", [_bm("test_x", t=1.5), _bm("test_y", t=1.0)])
     out = StringIO()
-    compare_runs(a, b, out=out)  # metric defaults to "time"
+    compare_runs([a, b], out=out)  # metric defaults to "time"
     text = out.getvalue()
     assert "(s)" in text  # unit in the header
     assert "+50.0%" in _line(text, "test_x")  # 1.0 -> 1.5
@@ -72,10 +72,10 @@ def test_memory_metric_reads_blob(tmp_path):
     a = _write(tmp_path / "base.json", [_bm("test_x", peak=10 * 1024**2)])
     b = _write(tmp_path / "head.json", [_bm("test_x", peak=12 * 1024**2)])
     out = StringIO()
-    compare_runs(a, b, metric="peak", out=out)
+    compare_runs([a, b], metric="peak", out=out)
     text = out.getvalue()
-    assert "(B)" in text  # bytes header
-    assert "10 MiB" in text and "12 MiB" in text  # cells auto-scale to IEC
+    assert "peak (MiB)" in text  # unit hoisted into the header, one scale for the table
+    assert "10.00" in text and "12.00" in text  # cells are bare numbers in that unit
     assert "+20.0%" in _line(text, "test_x")  # 10 MiB -> 12 MiB
 
 
@@ -83,7 +83,7 @@ def test_one_sided_ids_show_dash(tmp_path):
     a = _write(tmp_path / "base.json", [_bm("only_a", t=1.0)])
     b = _write(tmp_path / "head.json", [_bm("only_b", t=2.0)])
     out = StringIO()
-    compare_runs(a, b, out=out)
+    compare_runs([a, b], out=out)
     text = out.getvalue()
     # each id is in only one run → the missing value column AND the change show —
     assert _line(text, "only_a").count("—") == 2
@@ -95,8 +95,20 @@ def test_zero_baseline_suppresses_percent(tmp_path):
     a = _write(tmp_path / "base.json", [_bm("test_x", t=0.0)])
     b = _write(tmp_path / "head.json", [_bm("test_x", t=1.0)])
     out = StringIO()
-    compare_runs(a, b, out=out)
+    compare_runs([a, b], out=out)
     assert _line(out.getvalue(), "test_x").rstrip().endswith("—")
+
+
+def test_three_runs_render_one_table_no_change_column(tmp_path):
+    # a cross-version sweep is just N runs → one column each, no two-run change column
+    a = _write(tmp_path / "v1.json", [_bm("test_x", peak=1 * 1024**2)])
+    b = _write(tmp_path / "v2.json", [_bm("test_x", peak=2 * 1024**2)])
+    c = _write(tmp_path / "v3.json", [_bm("test_x", peak=4 * 1024**2)])
+    out = StringIO()
+    compare_runs([a, b, c], metric="peak", out=out)
+    text = out.getvalue()
+    assert "v1" in text and "v2" in text and "v3" in text  # one column per run
+    assert "change" not in text  # the delta column is only for exactly two runs
 
 
 # --- the regression gate (--fail-on) ---------------------------------------------

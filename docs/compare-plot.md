@@ -13,8 +13,8 @@ kernelspec:
 
 # Compare & plot
 
-Two saved runs in, one delta out — as a table (`benchmem compare`) or an interactive
-view (`benchmem plot`). Both work over `--metric time` or any memory metric, and both
+Two (or more) saved runs in, one comparison out — as a table (`benchmem compare`) or an
+interactive view (`benchmem plot`). Both work over `--metric time` or any memory metric, and both
 group by the [dims](dims.ipynb) your tests carry.
 
 ## Setup
