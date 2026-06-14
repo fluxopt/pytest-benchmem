@@ -95,15 +95,41 @@ def _row_style(rank: int, total: int) -> str | None:
     return None
 
 
+def _baseline_delta(
+    base_blob: Mapping[str, Any] | None, blob: Mapping[str, Any], *, field: str = "peak_bytes"
+) -> tuple[str, str, str | None]:
+    """``(baseline-cell, change-cell, row-style)`` comparing ``blob`` to its baseline.
+
+    A missing baseline id (new benchmark) or a zero baseline yields ``—`` and no
+    tint; otherwise the row is tinted red on growth, green on a shrink.
+    """
+    if base_blob is None or base_blob.get(field) is None:
+        return "—", "—", None
+    vb, vh = float(base_blob[field]), float(blob.get(field, "nan"))
+    if vb <= 0:
+        return human_bytes(vb), "—", None
+    pct = f"{(vh - vb) / vb * 100:+.1f}%"
+    return human_bytes(vb), pct, "red" if vh > vb else "green" if vh < vb else None
+
+
 def build_run_table(
-    blobs: Mapping[str, Mapping[str, Any]], *, title: str = "Memory"
+    blobs: Mapping[str, Mapping[str, Any]],
+    *,
+    baseline: Mapping[str, Mapping[str, Any]] | None = None,
+    baseline_label: str | None = None,
+    title: str = "Memory",
 ) -> Table | None:
     """A rich table of this run's memory — biggest peak first, or ``None`` if empty.
 
     ``blobs`` maps benchmark id → its ``extra_info["benchmem"]`` blob. The columns
     shown follow the blobs' ``mode`` (heap vs rss); the ``max`` column is dropped
-    when no test used ``repeats > 1``. Rows sort by peak descending and the
-    heaviest/lightest are tinted (see :func:`_row_style`).
+    when no test used ``repeats > 1``. Rows sort by peak descending.
+
+    Pass ``baseline`` (an ``{id: blob}`` map for a prior run) to fold the comparison
+    into the *same* table: two extra columns — the baseline peak and the percent
+    change — with rows tinted by regression (growth red, a shrink green) rather than
+    by absolute weight. Ids absent from the baseline (new benchmarks) show ``—``.
+    Without a baseline, rows are tinted heaviest-red / lightest-green.
     """
     if not blobs:
         return None
@@ -113,51 +139,29 @@ def build_run_table(
     mode = str(next(iter(blobs.values())).get(MODE_KEY, DEFAULT_MODE))
     columns = _columns_for(mode, blobs)
     order = sorted(blobs, key=lambda i: float(blobs[i].get("peak_bytes", 0)), reverse=True)
+    comparing = baseline is not None
 
-    table = Table(
-        title=f"{title} ({mode}) — {len(blobs)} benchmark(s)", box=box.SIMPLE, title_justify="left"
-    )
+    if comparing:
+        heading = f"{title} ({mode}) vs {baseline_label or 'baseline'}"
+    else:
+        heading = f"{title} ({mode}) — {len(blobs)} benchmark(s)"
+    table = Table(title=heading, box=box.SIMPLE, title_justify="left")
     for col in columns:
         table.add_column(
             col.header, justify="right" if col.right else "left", no_wrap=not col.right
         )
+    if comparing:
+        table.add_column("baseline", justify="right")
+        table.add_column("change", justify="right")
+
     for rank, test_id in enumerate(order):
         blob = blobs[test_id]
         cells = [_short(test_id)] + [col.cell(blob) for col in columns[1:]]
-        table.add_row(*cells, style=_row_style(rank, len(order)))
-    return table
-
-
-def build_compare_table(
-    baseline: Mapping[str, Mapping[str, Any]],
-    current: Mapping[str, Mapping[str, Any]],
-    *,
-    baseline_label: str | None = None,
-    field: str = "peak_bytes",
-) -> Table | None:
-    """A rich peak-delta table for the ids in *both* runs, or ``None`` if none overlap.
-
-    One row per shared benchmark id: the baseline value, the current value, and the
-    percent change (growth tinted red, a shrink green). Mirrors the inline
-    ``--benchmark-memory-compare`` view; ``baseline_label`` names the prior run.
-    """
-    shared = sorted(baseline.keys() & current.keys())
-    if not shared:
-        return None
-    from rich import box
-    from rich.table import Table
-
-    base_header = f"baseline ({baseline_label})" if baseline_label else "baseline"
-    table = Table(title="Memory vs baseline (peak)", box=box.SIMPLE, title_justify="left")
-    table.add_column("name", justify="left", no_wrap=True)
-    table.add_column(base_header, justify="right")
-    table.add_column("current", justify="right")
-    table.add_column("change", justify="right")
-    for test_id in shared:
-        vb = float(baseline[test_id].get(field, "nan"))
-        vh = float(current[test_id].get(field, "nan"))
-        grew = vh > vb
-        pct = f"{(vh - vb) / vb * 100:+.1f}%" if vb > 0 else "—"
-        style = "red" if vb > 0 and grew else "green" if vb > 0 and vh < vb else None
-        table.add_row(_short(test_id), human_bytes(vb), human_bytes(vh), pct, style=style)
+        if comparing:
+            assert baseline is not None  # narrowed by `comparing`; for the type-checker
+            base_cell, change_cell, style = _baseline_delta(baseline.get(test_id), blob)
+            cells += [base_cell, change_cell]
+        else:
+            style = _row_style(rank, len(order))
+        table.add_row(*cells, style=style)
     return table

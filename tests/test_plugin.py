@@ -43,6 +43,28 @@ def _run_suite(pytester):
     return out, json.loads(out.read_text())
 
 
+def test_combined_table_is_default(pytester):
+    """By default a memory run prints ONE table: timing columns + memory, no native table."""
+    pytester.makepyfile(SUITE)
+    result = pytester.runpytest_subprocess("--benchmark-only", "-p", "no:cacheprovider")
+    result.assert_outcomes(passed=3)
+    out = result.stdout.str()
+    assert "Min" in out and "peak" in out and "allocs" in out  # timing + memory, one table
+    assert "OPS: Operations Per Second" not in out  # pytest-benchmark's own table is suppressed
+
+
+def test_split_table_keeps_native_and_separate_memory(pytester):
+    """--benchmark-memory-table=split leaves pytest-benchmark's table and adds ours below."""
+    pytester.makepyfile(SUITE)
+    result = pytester.runpytest_subprocess(
+        "--benchmark-only", "--benchmark-memory-table=split", "-p", "no:cacheprovider"
+    )
+    result.assert_outcomes(passed=3)
+    out = result.stdout.str()
+    assert "OPS: Operations Per Second" in out  # native pytest-benchmark table present
+    assert "Memory (heap)" in out  # our separate memory table present
+
+
 def test_fixture_records_timing_and_memory(pytester):
     out, data = _run_suite(pytester)
     by_name = {b["name"]: b for b in data["benchmarks"]}
@@ -197,7 +219,7 @@ def test_memory_compare_passes_within_threshold(pytester):
         "--benchmark-memory-compare-fail=peak:50%",
     )
     assert cand.ret == 0
-    cand.stdout.fnmatch_lines(["*Memory vs*"])  # the comparison table prints
+    cand.stdout.fnmatch_lines(["*Memory*vs*"])  # the combined table names the baseline
 
 
 def test_memory_compare_rejects_time_field(pytester):
