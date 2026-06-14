@@ -6,11 +6,11 @@ from ``extra_info``, :func:`build_run_table` returns a :class:`rich.table.Table`
 to print — one row per benchmark that recorded memory, biggest peak first.
 
 Memory-first, not a slavish copy of pytest-benchmark's table: rows sort by peak
-*descending* (the heaviest consumer is what you came to find), bytes auto-scale
-via :func:`~pytest_benchmem.snapshot.human_bytes`, and the heaviest peak is tinted
-red, the lightest green. The ``max`` (worst peak across repeats) column appears
-only when some test ran ``repeats > 1``; with a single repeat it equals ``peak``
-and would just be noise.
+*descending* (the heaviest consumer is what you came to find), each byte column
+hoists one unit into its header (``peak (MiB)``, bare cells) the way pytest-benchmark
+labels its timing unit, and the heaviest peak is tinted red, the lightest green. The
+``max`` (worst peak across repeats) column appears only when some test ran
+``repeats > 1``; with a single repeat it equals ``peak`` and would just be noise.
 
 rich is a core dependency (it rides in for the CLI via typer anyway), so the
 plugin can render unconditionally — no plain-text fallback to keep in sync.
@@ -21,8 +21,6 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any, NamedTuple
 
-from pytest_benchmem.snapshot import human_bytes
-
 if TYPE_CHECKING:
     from rich.table import Table
 
@@ -32,15 +30,24 @@ def _short(test_id: str) -> str:
     return test_id.split("::")[-1]
 
 
-def _bytes_cell(blob: Mapping[str, Any], field: str) -> str:
-    """Auto-scaled bytes for ``field``, or ``—`` when the blob lacks it."""
-    value = blob.get(field)
-    return human_bytes(float(value)) if value is not None else "—"
+def _byte_unit(max_bytes: float) -> tuple[str, float]:
+    """Unit ``(name, divisor)`` for a byte column, chosen from its largest value."""
+    name, factor = "B", 1.0
+    for step_name, step_factor in (("KiB", 1024.0), ("MiB", 1024.0**2), ("GiB", 1024.0**3)):
+        if max_bytes >= step_factor:
+            name, factor = step_name, step_factor
+    return name, factor
 
 
-def _count_cell(blob: Mapping[str, Any], field: str) -> str:
+def _fmt_bytes(value: float | None, factor: float) -> str:
+    """A byte value rendered bare in the column's unit (``—`` when missing)."""
+    if value is None:
+        return "—"
+    return f"{float(value):,.0f}" if factor == 1.0 else f"{float(value) / factor:,.2f}"
+
+
+def _count_cell(value: float | None) -> str:
     """A thousands-separated count, or ``—`` when absent."""
-    value = blob.get(field)
     return f"{int(value):,}" if value is not None else "—"
 
 
@@ -52,15 +59,8 @@ class _Column(NamedTuple):
     cell: Callable[[Mapping[str, Any]], str]
 
 
-#: The memory metric columns, in display order. ``_MAX_COL`` is kept by identity so
-#: the builder can drop it when no test used ``repeats > 1`` (see :func:`_columns_for`).
-_MAX_COL = _Column("max", True, lambda b: _bytes_cell(b, "peak_bytes_max"))
-_METRIC_COLUMNS: list[_Column] = [
-    _Column("peak", True, lambda b: _bytes_cell(b, "peak_bytes")),
-    _MAX_COL,
-    _Column("allocated", True, lambda b: _bytes_cell(b, "total_bytes")),
-    _Column("allocs", True, lambda b: _count_cell(b, "allocations")),
-]
+#: Byte columns, in display order (``max`` dropped when no test used ``repeats > 1``).
+_BYTE_FIELDS = (("peak", "peak_bytes"), ("max", "peak_bytes_max"), ("allocated", "total_bytes"))
 _NAME_COL = _Column("name", False, lambda b: "")  # filled from the id, not the blob
 
 
@@ -69,10 +69,31 @@ def _has_spread(blobs: Mapping[str, Mapping[str, Any]]) -> bool:
     return any(b.get("peak_bytes_max") != b.get("peak_bytes") for b in blobs.values())
 
 
-def _columns_for(blobs: Mapping[str, Mapping[str, Any]]) -> list[_Column]:
-    """Name, then the metric columns — minus ``max`` when no test used ``repeats > 1``."""
+def _byte_column(
+    label: str, field: str, blobs: Mapping[str, Mapping[str, Any]]
+) -> tuple[_Column, float]:
+    """A byte column with its unit hoisted into the header, plus the chosen divisor."""
+    values = [float(b[field]) for b in blobs.values() if b.get(field) is not None]
+    unit, factor = _byte_unit(max(values)) if values else ("B", 1.0)
+    return _Column(f"{label} ({unit})", True, lambda b: _fmt_bytes(b.get(field), factor)), factor
+
+
+def _columns_for(blobs: Mapping[str, Mapping[str, Any]]) -> tuple[list[_Column], float]:
+    """Name + metric columns with byte units hoisted into the headers, and the peak
+    column's divisor (for the baseline column). ``max`` is dropped without a spread.
+    """
     keep_max = _has_spread(blobs)
-    return [_NAME_COL] + [c for c in _METRIC_COLUMNS if c is not _MAX_COL or keep_max]
+    cols = [_NAME_COL]
+    peak_factor = 1.0
+    for label, field in _BYTE_FIELDS:
+        if label == "max" and not keep_max:
+            continue
+        col, factor = _byte_column(label, field, blobs)
+        if label == "peak":
+            peak_factor = factor
+        cols.append(col)
+    cols.append(_Column("allocs", True, lambda b: _count_cell(b.get("allocations"))))
+    return cols, peak_factor
 
 
 def _row_style(rank: int, total: int) -> str | None:
@@ -87,20 +108,25 @@ def _row_style(rank: int, total: int) -> str | None:
 
 
 def _baseline_delta(
-    base_blob: Mapping[str, Any] | None, blob: Mapping[str, Any], *, field: str = "peak_bytes"
+    base_blob: Mapping[str, Any] | None,
+    blob: Mapping[str, Any],
+    factor: float,
+    *,
+    field: str = "peak_bytes",
 ) -> tuple[str, str, str | None]:
     """``(baseline-cell, change-cell, row-style)`` comparing ``blob`` to its baseline.
 
-    A missing baseline id (new benchmark) or a zero baseline yields ``—`` and no
-    tint; otherwise the row is tinted red on growth, green on a shrink.
+    The baseline value renders bare in the peak column's unit (``factor``). A missing
+    baseline id (new benchmark) or a zero baseline yields ``—`` and no tint; otherwise
+    the row is tinted red on growth, green on a shrink.
     """
     if base_blob is None or base_blob.get(field) is None:
         return "—", "—", None
     vb, vh = float(base_blob[field]), float(blob.get(field, "nan"))
     if vb <= 0:
-        return human_bytes(vb), "—", None
+        return _fmt_bytes(vb, factor), "—", None
     pct = f"{(vh - vb) / vb * 100:+.1f}%"
-    return human_bytes(vb), pct, "red" if vh > vb else "green" if vh < vb else None
+    return _fmt_bytes(vb, factor), pct, "red" if vh > vb else "green" if vh < vb else None
 
 
 def build_run_table(
@@ -126,7 +152,7 @@ def build_run_table(
     from rich import box
     from rich.table import Table
 
-    columns = _columns_for(blobs)
+    columns, peak_factor = _columns_for(blobs)
     order = sorted(blobs, key=lambda i: float(blobs[i].get("peak_bytes", 0)), reverse=True)
     comparing = baseline is not None
 
@@ -140,7 +166,8 @@ def build_run_table(
             col.header, justify="right" if col.right else "left", no_wrap=not col.right
         )
     if comparing:
-        table.add_column("baseline", justify="right")
+        # base column shares the peak column's unit: "peak (MiB)" → "base (MiB)".
+        table.add_column(columns[1].header.replace("peak", "base", 1), justify="right")
         table.add_column("change", justify="right")
 
     for rank, test_id in enumerate(order):
@@ -148,7 +175,9 @@ def build_run_table(
         cells = [_short(test_id)] + [col.cell(blob) for col in columns[1:]]
         if comparing:
             assert baseline is not None  # narrowed by `comparing`; for the type-checker
-            base_cell, change_cell, style = _baseline_delta(baseline.get(test_id), blob)
+            base_cell, change_cell, style = _baseline_delta(
+                baseline.get(test_id), blob, peak_factor
+            )
             cells += [base_cell, change_cell]
         else:
             style = _row_style(rank, len(order))
