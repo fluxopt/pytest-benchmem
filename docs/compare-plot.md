@@ -13,9 +13,6 @@ kernelspec:
 
 # Compare & plot
 
-> ⚠️ The `.md` is the source; the `.ipynb` is generated (`jupytext --to ipynb
-> docs/compare-plot.md`) and gitignored.
-
 Two saved runs in, one delta out — as a table (`benchmem compare`) or an interactive
 view (`benchmem plot`). Both work over `--metric time` or any memory metric, and both
 group by the [dims](dims.ipynb) your tests carry.

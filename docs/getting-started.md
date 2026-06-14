@@ -13,10 +13,6 @@ kernelspec:
 
 # Getting started
 
-> ⚠️ **The `.md` is the source.** It renders as docs *and* converts to a runnable
-> notebook (`jupytext --to ipynb docs/getting-started.md`). The `.ipynb` is
-> gitignored — edit the `.md`, re-convert.
-
 pytest-benchmem is the **memory companion to pytest-benchmark**: you write ordinary
 pytest-benchmark tests, swap the `benchmark` fixture for `benchmark_memory`, and get
 a memray **peak-memory** number recorded right next to the timing — same test, same

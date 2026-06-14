@@ -13,9 +13,6 @@ kernelspec:
 
 # Metrics: peak, allocated, allocations
 
-> ⚠️ The `.md` is the source; the `.ipynb` is generated (`jupytext --to ipynb
-> docs/metrics.md`) and gitignored.
-
 One memray pass yields more than a single number. Every measured benchmark stores
 three memory metrics, and `compare` / `plot` / the readers take any of them — `peak`
 is the default, but `allocated` and `allocations` often catch what `peak` hides.
