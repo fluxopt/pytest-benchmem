@@ -1,0 +1,60 @@
+"""Shared display primitives for the terminal tables — byte/count rendering, unit
+hoisting, best/worst colour, and growth deltas.
+
+These are the small, repeatedly-needed bits the table renderers (``tables``,
+``combined``) and the text comparison (``compare``) all reach for, gathered in one
+place so a cell renders the same wherever it appears and there is a single spot to
+adjust a rounding policy or colour rule. :func:`human_bytes` (the standalone IEC
+*string*, e.g. ``4.1 MiB``) lives in :mod:`pytest_benchmem.snapshot` — it is a
+different shape (auto-scaled label, not a bare cell in a hoisted unit).
+"""
+
+from __future__ import annotations
+
+#: Byte units in ascending order — each a ``(name, divisor)``. :func:`byte_unit`
+#: walks these to hoist one unit into a column header so cells stay bare numbers.
+_BYTE_STEPS = (("KiB", 1024.0), ("MiB", 1024.0**2), ("GiB", 1024.0**3), ("TiB", 1024.0**4))
+
+
+def byte_unit(max_bytes: float) -> tuple[str, float]:
+    """Unit ``(name, divisor)`` for a byte column, chosen from its largest value."""
+    name, factor = "B", 1.0
+    for step_name, step_factor in _BYTE_STEPS:
+        if max_bytes >= step_factor:
+            name, factor = step_name, step_factor
+    return name, factor
+
+
+def fmt_bytes(value: float, factor: float) -> str:
+    """A byte value rendered bare in a column's unit (whole ``B``, else 2 decimals)."""
+    return f"{value:,.0f}" if factor == 1.0 else f"{value / factor:,.2f}"
+
+
+def fmt_count(value: float) -> str:
+    """A thousands-separated integer count."""
+    return f"{int(value):,}"
+
+
+def rank_style(value: float | None, best: float | None, worst: float | None) -> str | None:
+    """Green for the group's best (smallest) value, red for the worst, else unstyled.
+
+    ``None`` for any missing input (a row with nothing to contrast against).
+    """
+    if value is None or best is None or worst is None:
+        return None
+    if value == best:
+        return "green"
+    if value == worst:
+        return "red"
+    return None
+
+
+def growth(base: float, current: float) -> tuple[str, str | None]:
+    """``(Δ%-string, style)`` for ``current`` vs ``base`` — red on growth, green on shrink.
+
+    A non-positive baseline has no meaningful ratio, so the delta is ``—`` and unstyled.
+    """
+    if base <= 0:
+        return "—", None
+    pct = (current - base) / base * 100
+    return f"{pct:+.1f}%", "red" if current > base else "green" if current < base else None

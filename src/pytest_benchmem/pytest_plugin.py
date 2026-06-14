@@ -447,26 +447,42 @@ def _render_combined(
     )
 
 
+def _print_memory_table(
+    config: pytest.Config,
+    bs: Any,
+    current: dict[str, dict[str, Any]],
+    *,
+    combined: bool,
+    baseline: dict[str, dict[str, Any]] | None = None,
+    baseline_label: str | None = None,
+) -> None:
+    """Print the run's memory — folded into the combined timing table, or standalone.
+
+    A ``baseline`` (if any) folds into the *same* table either way; the standalone
+    path renders nothing when no memory was recorded this run.
+    """
+    if combined:
+        _render_combined(config, bs, baseline=baseline, baseline_label=baseline_label)
+    elif current:
+        from pytest_benchmem.tables import build_run_table
+
+        Console().print(build_run_table(current, baseline=baseline, baseline_label=baseline_label))
+
+
 def pytest_terminal_summary(terminalreporter: Any, config: pytest.Config) -> None:
     """Print the memory table — combined with timing, folding in a baseline compare if asked."""
     bs = getattr(config, "_benchmarksession", None)
     current = _memory_blobs(bs.benchmarks) if bs is not None else {}
     write = terminalreporter.write_line
-    console = Console()
     combined = bool(getattr(config, "_benchmem_combined", False)) and bs is not None
-
-    from pytest_benchmem.tables import build_run_table
 
     compare, fail_exprs = _compare_requested(config)
     comparing = compare is not False or bool(fail_exprs)
     thresholds = _parse_memory_thresholds(fail_exprs)  # validate up front, any mode
 
     if not comparing:
-        # No comparison requested: just the table, like pytest-benchmark's own — by running.
-        if combined:
-            _render_combined(config, bs)
-        elif current:
-            console.print(build_run_table(current))
+        # No comparison requested: just the table, like pytest-benchmark's own.
+        _print_memory_table(config, bs, current, combined=combined)
         return
 
     default: tuple[str | None, dict[str, dict[str, Any]]] = (None, {})
@@ -480,10 +496,9 @@ def pytest_terminal_summary(terminalreporter: Any, config: pytest.Config) -> Non
         return
 
     # Render once — the baseline (if any) folds into the same table.
-    if combined:
-        _render_combined(config, bs, baseline=baseline or None, baseline_label=label)
-    else:
-        console.print(build_run_table(current, baseline=baseline or None, baseline_label=label))
+    _print_memory_table(
+        config, bs, current, combined=combined, baseline=baseline or None, baseline_label=label
+    )
 
     if not baseline:
         write("benchmem-compare: no prior run with memory to compare against.")

@@ -4,8 +4,9 @@ from io import StringIO
 
 from rich.console import Console
 
+from pytest_benchmem.format import byte_unit
 from pytest_benchmem.memray import Measurement, MemoryResult
-from pytest_benchmem.tables import _byte_unit, build_run_table, mem_columns
+from pytest_benchmem.tables import build_run_table, mem_columns
 
 
 def _render(table, width=10_000):
@@ -110,9 +111,9 @@ def test_no_baseline_omits_compare_columns():
 
 
 def test_byte_unit_picks_from_largest():
-    assert _byte_unit(0) == ("B", 1.0)
-    assert _byte_unit(2048)[0] == "KiB"
-    assert _byte_unit(5 * 1024**2)[0] == "MiB"
+    assert byte_unit(0) == ("B", 1.0)
+    assert byte_unit(2048)[0] == "KiB"
+    assert byte_unit(5 * 1024**2)[0] == "MiB"
 
 
 def test_mem_columns_spreads_only_varying_metrics():

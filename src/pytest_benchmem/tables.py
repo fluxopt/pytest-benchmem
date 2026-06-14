@@ -19,8 +19,10 @@ deterministic allocation count) stays a single column. The column logic
 from __future__ import annotations
 
 import statistics
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, NamedTuple
+
+from pytest_benchmem.format import byte_unit, fmt_bytes, fmt_count, growth
 
 if TYPE_CHECKING:
     from rich.table import Table
@@ -31,25 +33,6 @@ if TYPE_CHECKING:
 def _short(test_id: str) -> str:
     """The trailing node-id segment — ``module.py::test_x[1]`` → ``test_x[1]``."""
     return test_id.split("::")[-1]
-
-
-def _byte_unit(max_bytes: float) -> tuple[str, float]:
-    """Unit ``(name, divisor)`` for a byte column, chosen from its largest value."""
-    name, factor = "B", 1.0
-    for step_name, step_factor in (("KiB", 1024.0), ("MiB", 1024.0**2), ("GiB", 1024.0**3)):
-        if max_bytes >= step_factor:
-            name, factor = step_name, step_factor
-    return name, factor
-
-
-def _fmt_bytes(value: float, factor: float) -> str:
-    """A byte value rendered bare in the column's unit."""
-    return f"{value:,.0f}" if factor == 1.0 else f"{value / factor:,.2f}"
-
-
-def _count(value: float) -> str:
-    """A thousands-separated count."""
-    return f"{int(value):,}"
 
 
 class MemColumn(NamedTuple):
@@ -76,8 +59,8 @@ _STATS: tuple[tuple[str, Callable[[Sequence[float]], float]], ...] = (
 def _formatter(*, is_byte: bool, factor: float) -> Callable[[float], str]:
     """Cell formatter for a metric — bytes in ``factor``, or a plain count."""
     if is_byte:
-        return lambda v: _fmt_bytes(v, factor)
-    return _count
+        return lambda v: fmt_bytes(v, factor)
+    return fmt_count
 
 
 def _spread_cell(
@@ -105,7 +88,7 @@ def mem_columns(results: Sequence[MemoryResult]) -> list[MemColumn]:
         all_values = [v for series in per_series for v in series]
         if not all_values:
             continue
-        unit, factor = _byte_unit(max(all_values)) if is_byte else ("", 1.0)
+        unit, factor = byte_unit(max(all_values)) if is_byte else ("", 1.0)
         fmt = _formatter(is_byte=is_byte, factor=factor)
         if any(min(s) != max(s) for s in per_series):  # varies across repeats → spread it
             for i, (stat_name, reduce) in enumerate(_STATS):
@@ -115,6 +98,15 @@ def mem_columns(results: Sequence[MemoryResult]) -> list[MemColumn]:
             header = f"{label} ({unit})" if is_byte else label
             cols.append(MemColumn(header, _single_cell(field, fmt)))
     return cols
+
+
+def peak_scale(*result_groups: Iterable[MemoryResult]) -> tuple[str, float]:
+    """The shared ``(unit, divisor)`` for the baseline peak column — one scale across
+    every benchmark's peak in the given groups (current + baseline), so the ``base``
+    cell and the headline ``peak`` cell read on the same unit.
+    """
+    peaks = [r.peak_bytes for group in result_groups for r in group]
+    return byte_unit(max(peaks)) if peaks else ("B", 1.0)
 
 
 def _row_style(rank: int, total: int) -> str | None:
@@ -140,10 +132,8 @@ def _baseline_delta(
     if base is None:
         return "—", "—", None
     vb, vh = float(base.peak_bytes), float(res.peak_bytes)
-    if vb <= 0:
-        return _fmt_bytes(vb, factor), "—", None
-    pct = f"{(vh - vb) / vb * 100:+.1f}%"
-    return _fmt_bytes(vb, factor), pct, "red" if vh > vb else "green" if vh < vb else None
+    pct, style = growth(vb, vh)
+    return fmt_bytes(vb, factor), pct, style
 
 
 def build_run_table(
@@ -192,9 +182,7 @@ def build_run_table(
 
     peak_factor = 1.0
     if comparing and base_results is not None:
-        peaks = [r.peak_bytes for r in results.values()]
-        peaks += [r.peak_bytes for r in base_results.values()]
-        unit, peak_factor = _byte_unit(max(peaks))
+        unit, peak_factor = peak_scale(results.values(), base_results.values())
         table.add_column(f"base ({unit})", justify="right")
         table.add_column("change", justify="right")
 
