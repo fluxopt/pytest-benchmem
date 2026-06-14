@@ -22,7 +22,7 @@ from math import isinf
 from operator import itemgetter
 from typing import TYPE_CHECKING, Any
 
-from pytest_benchmem.format import byte_unit, fmt_bytes, growth, rank_style
+from pytest_benchmem.format import fmt_bytes, growth, rank_style
 from pytest_benchmem.snapshot import BENCHMEM_KEY
 
 if TYPE_CHECKING:
@@ -189,7 +189,7 @@ def render_combined_tables(
     from rich.table import Table
 
     from pytest_benchmem.memray import MemoryResult
-    from pytest_benchmem.tables import mem_columns
+    from pytest_benchmem.tables import mem_columns, peak_scale
 
     console = Console(width=_WIDE)
     base_results = (
@@ -213,9 +213,7 @@ def render_combined_tables(
         comparing = base_results is not None and bool(mem_cols)
         peak_factor = 1.0
         if comparing and base_results is not None:
-            peaks = [r.peak_bytes for r in results.values()]
-            peaks += [r.peak_bytes for r in base_results.values()]
-            base_unit, peak_factor = byte_unit(max(peaks)) if peaks else ("B", 1.0)
+            base_unit, peak_factor = peak_scale(results.values(), base_results.values())
 
         title = f"benchmark{'' if group is None else f' {group!r}'}: {len(benchmarks)} tests"
         # The memory columns come from a separate, untimed pass — say so, and divide them
