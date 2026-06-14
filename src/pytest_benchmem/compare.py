@@ -71,7 +71,11 @@ def _scaled_cell_fmt(unit: str, factor: float, *, is_bytes: bool) -> Any:
 
 
 def compare_runs(
-    runs: Sequence[str | Path], *, metric: Metric = "time", out: TextIO | None = None
+    runs: Sequence[str | Path],
+    *,
+    metric: Metric = "time",
+    stat: str | None = None,
+    out: TextIO | None = None,
 ) -> None:
     """Print a per-id table comparing two or more pytest-benchmark runs for ``metric``.
 
@@ -80,6 +84,10 @@ def compare_runs(
     order given (oldest → newest — a cross-version sweep is just N runs), and per id
     the lightest/fastest value is tinted green, the heaviest red. With exactly two
     runs a percent ``change`` column is added. Ids missing from a run show ``—``.
+
+    ``stat`` reports a distribution stat (``mean`` / ``median`` / ``stddev`` / …) over
+    each benchmark's per-repeat series instead of the headline value — see
+    :func:`~pytest_benchmem.snapshot.load_samples`.
     """
     from rich import box
     from rich.console import Console
@@ -88,7 +96,7 @@ def compare_runs(
 
     from pytest_benchmem.combined import _byte_unit
 
-    df, unit = load_long_df([Path(r) for r in runs], metric=metric)
+    df, unit = load_long_df([Path(r) for r in runs], metric=metric, stat=stat)
     labels = df["snapshot"].drop_duplicates().tolist()
     if len(labels) < 2:  # noqa: PLR2004 — a comparison needs two sides
         raise ValueError(
@@ -107,7 +115,8 @@ def compare_runs(
         v = wide.at[test_id, label]
         return None if v != v else float(v)  # NaN → None  # noqa: PLR0124
 
-    table = Table(title=f"{metric} ({unit_name or 'count'})", box=box.SIMPLE, title_justify="left")
+    heading = f"{metric} {stat}" if stat else metric
+    table = Table(title=f"{heading} ({unit_name or 'count'})", box=box.SIMPLE, title_justify="left")
     table.add_column("id", justify="left", no_wrap=True)
     for label in labels:
         table.add_column(str(label), justify="right")

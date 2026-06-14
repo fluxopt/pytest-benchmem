@@ -109,6 +109,14 @@ def compare(
         typer.Argument(help="Two or more pytest-benchmark runs, oldest → newest (a sweep is N)."),
     ],
     metric: MetricOpt = "time",
+    stat: Annotated[
+        str | None,
+        typer.Option(
+            help="Distribution stat over each benchmark's per-repeat series "
+            "(min | max | mean | median | stddev) for peak/allocated/allocations. "
+            "Default: the headline value.",
+        ),
+    ] = None,
     fail_on: Annotated[
         list[str] | None,
         typer.Option(
@@ -129,7 +137,7 @@ def compare(
     from pytest_benchmem.compare import compare_runs, find_regressions, parse_threshold
 
     try:
-        compare_runs(runs, metric=metric)
+        compare_runs(runs, metric=metric, stat=stat)
     except ValueError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1) from exc

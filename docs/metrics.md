@@ -28,6 +28,22 @@ are memray's **allocator demand** — what your code *requested*, in-process and
 byte-exact, so they see native (numpy / C-extension) allocations, not just Python
 objects.
 
+### Distribution across repeats
+
+With `@pytest.mark.benchmem(repeats=N)`, every repeat's peak / allocations / total is
+kept as a series in the blob (`extra_info.benchmem.series`). The headline `peak` stays
+the *minimum* (the cleanest floor), but you can ask the readers for any distribution
+stat over the series with `--stat`:
+
+```bash
+benchmem compare base.json head.json --metric peak --stat stddev   # how noisy is peak?
+benchmem compare v1.json v2.json --metric allocated --stat mean
+```
+
+`--stat` takes `min` / `max` / `mean` / `median` / `stddev` and applies to `peak`,
+`allocated`, or `allocations`. Peak is the noisy one (GC timing, page cache); `stddev`
+tells you how much. Without `--stat` you get the headline value.
+
 ## Setup
 
 ```{code-cell} ipython3

@@ -99,6 +99,38 @@ def test_zero_baseline_suppresses_percent(tmp_path):
     assert _line(out.getvalue(), "test_x").rstrip().endswith("—")
 
 
+def _bm_series(name, peaks):
+    """A benchmark blob carrying a per-repeat peak series (allocations/total constant)."""
+    return {
+        "fullname": name,
+        "stats": {"min": 1.0},
+        "extra_info": {
+            "benchmem": {
+                "peak_bytes": min(peaks),
+                "peak_bytes_max": max(peaks),
+                "allocations": 1,
+                "total_bytes": 1,
+                "repeats": len(peaks),
+                "series": {
+                    "peak_bytes": peaks,
+                    "allocations": [1] * len(peaks),
+                    "total_bytes": [1] * len(peaks),
+                },
+            }
+        },
+    }
+
+
+def test_compare_stat_reports_distribution(tmp_path):
+    a = _write(tmp_path / "a.json", [_bm_series("test_x", [10, 20, 30])])
+    b = _write(tmp_path / "b.json", [_bm_series("test_x", [40, 50, 60])])
+    out = StringIO()
+    compare_runs([a, b], metric="peak", stat="mean", out=out)
+    text = out.getvalue()
+    assert "peak mean" in text  # heading names the stat
+    assert "20" in _line(text, "test_x") and "50" in _line(text, "test_x")  # mean of each series
+
+
 def test_three_runs_render_one_table_no_change_column(tmp_path):
     # a cross-version sweep is just N runs → one column each, no two-run change column
     a = _write(tmp_path / "v1.json", [_bm("test_x", peak=1 * 1024**2)])

@@ -13,7 +13,7 @@ the pytest plugin (entry point), not by import.
 
 from __future__ import annotations
 
-from pytest_benchmem.memray import MemoryResult, measure_memory, measure_peak
+from pytest_benchmem.memray import Measurement, MemoryResult, measure_memory, measure_peak
 from pytest_benchmem.snapshot import (
     DimValue,
     Metric,
@@ -28,6 +28,7 @@ from pytest_benchmem.snapshot import (
 
 __all__ = [
     "DimValue",
+    "Measurement",
     "MemoryResult",
     "Metric",
     "Sample",

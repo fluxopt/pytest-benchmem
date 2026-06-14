@@ -62,13 +62,7 @@ def _record_memory(
     """
     existing = benchmark.extra_info.get(BENCHMEM_KEY)
     if isinstance(existing, Mapping):
-        return MemoryResult(
-            int(existing["peak_bytes"]),
-            int(existing["peak_bytes_max"]),
-            int(existing["allocations"]),
-            int(existing.get("total_bytes", 0)),
-            int(existing["repeats"]),
-        )
+        return MemoryResult.from_blob(existing)
     result = measure_memory(action, repeats=repeats)
     benchmark.extra_info[BENCHMEM_KEY] = result.as_dict()
     return result

@@ -23,41 +23,107 @@ from __future__ import annotations
 import gc
 import platform
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any
 
 #: A zero-arg callable doing the work that gets memory-tracked.
 Action = Callable[[], object]
 
+#: The three per-repeat quantities, in the blob's ``series`` sub-dict and as ``Measurement``
+#: fields. Drives the series read-back so the names never drift between writer and reader.
+SERIES_FIELDS = ("peak_bytes", "allocations", "total_bytes")
 
-class MemoryResult(NamedTuple):
-    """One memory measurement, in bytes — mirroring what ``memray stats`` reports.
 
-    With ``repeats > 1`` the reported :attr:`peak_bytes` is the *minimum* peak —
-    peak memory is noisier than expected (GC timing, lazy imports, page cache),
-    so min-of-N is the cleanest "floor this can hit". :attr:`peak_bytes_max` keeps
-    the worst observed peak so callers can judge the spread; with one repeat the
-    two are equal. :attr:`allocations` and :attr:`total_bytes` (memray's *total
-    allocations* and *total memory allocated*) are the representative (min-peak)
-    run's churn — they catch temporaries that GC frees, which peak hides.
+@dataclass(frozen=True)
+class Measurement:
+    """One repeat's raw ``memray stats`` numbers — peak high-water, allocation count,
+    and total bytes allocated (cumulative churn, incl. temporaries GC later frees).
     """
 
     peak_bytes: int
-    peak_bytes_max: int
     allocations: int
     total_bytes: int
-    repeats: int
+
+
+@dataclass(frozen=True)
+class MemoryResult:
+    """A memory measurement across ``repeats`` passes, derived from the per-repeat samples.
+
+    Peak memory is noisier than expected (GC timing, lazy imports, page cache), so the
+    headline :attr:`peak_bytes` is the *minimum* peak — the cleanest "floor this can hit" —
+    and :attr:`allocations` / :attr:`total_bytes` come from that same representative
+    (min-peak) run, a coherent snapshot. :attr:`peak_bytes_max` is the worst peak, so the
+    spread is visible. The full per-repeat :attr:`samples` ride along (stored as the blob's
+    ``series`` when ``repeats > 1``) so the readers can report a distribution — see
+    ``--stat`` in :func:`pytest_benchmem.snapshot.memory_from_pytest_benchmark`.
+    """
+
+    samples: tuple[Measurement, ...]
+
+    @property
+    def repeats(self) -> int:
+        """How many passes were measured."""
+        return len(self.samples)
+
+    @property
+    def representative(self) -> Measurement:
+        """The min-peak run — the one the headline peak/allocations/total_bytes come from."""
+        return min(self.samples, key=lambda m: m.peak_bytes)
+
+    @property
+    def peak_bytes(self) -> int:
+        """The headline peak — the minimum high-water across repeats (the cleanest floor)."""
+        return self.representative.peak_bytes
+
+    @property
+    def peak_bytes_max(self) -> int:
+        """The worst peak across repeats (equals :attr:`peak_bytes` with one repeat)."""
+        return max(m.peak_bytes for m in self.samples)
+
+    @property
+    def allocations(self) -> int:
+        """Allocation count from the representative (min-peak) run."""
+        return self.representative.allocations
+
+    @property
+    def total_bytes(self) -> int:
+        """Total bytes allocated by the representative (min-peak) run."""
+        return self.representative.total_bytes
+
+    def series(self, field: str) -> list[int]:
+        """The per-repeat values of one :data:`SERIES_FIELDS` field."""
+        return [getattr(m, field) for m in self.samples]
 
     def as_dict(self) -> dict[str, Any]:
-        """The JSON blob stored under pytest-benchmark ``extra_info["benchmem"]``."""
-        return {
+        """The JSON blob stored under pytest-benchmark ``extra_info["benchmem"]``.
+
+        Carries the headline scalars always; the per-repeat ``series`` only when
+        ``repeats > 1`` (with one repeat each series is just ``[scalar]``).
+        """
+        blob: dict[str, Any] = {
             "peak_bytes": self.peak_bytes,
             "peak_bytes_max": self.peak_bytes_max,
             "allocations": self.allocations,
             "total_bytes": self.total_bytes,
             "repeats": self.repeats,
         }
+        if self.repeats > 1:
+            blob["series"] = {f: self.series(f) for f in SERIES_FIELDS}
+        return blob
+
+    @classmethod
+    def from_blob(cls, blob: Mapping[str, Any]) -> MemoryResult:
+        """Rebuild from a stored blob — its ``series`` if present, else a representative sample."""
+        series = blob.get("series")
+        if isinstance(series, Mapping) and series.get("peak_bytes"):
+            cols = [[int(v) for v in series[f]] for f in SERIES_FIELDS]
+            return cls(tuple(Measurement(*row) for row in zip(*cols, strict=True)))
+        one = Measurement(
+            int(blob["peak_bytes"]), int(blob["allocations"]), int(blob.get("total_bytes", 0))
+        )
+        return cls((one,))
 
 
 def _require_memray() -> None:
@@ -90,8 +156,8 @@ def _compute_statistics() -> Callable[[str], Any]:
     return compute_statistics
 
 
-def _track_once(action: Action) -> tuple[int, int, int]:
-    """One fresh tracker run → ``(peak_bytes, allocations, total_bytes)`` via memray stats."""
+def _track_once(action: Action) -> Measurement:
+    """One fresh tracker run → a :class:`Measurement` via memray stats."""
     import memray
 
     compute_statistics = _compute_statistics()
@@ -100,36 +166,27 @@ def _track_once(action: Action) -> tuple[int, int, int]:
         with memray.Tracker(out):
             action()
         s = compute_statistics(str(out))
-        return (
-            int(s.peak_memory_allocated),
-            int(s.total_num_allocations),
-            int(s.total_memory_allocated),
+        return Measurement(
+            peak_bytes=int(s.peak_memory_allocated),
+            allocations=int(s.total_num_allocations),
+            total_bytes=int(s.total_memory_allocated),
         )
 
 
 def measure_memory(action: Action, repeats: int = 1) -> MemoryResult:
     """Run ``action()`` under ``memray.Tracker`` ``repeats`` times → :class:`MemoryResult`.
 
-    Each repeat gets a fresh tracker; the representative peak is the minimum across
-    repeats (see :class:`MemoryResult`), with the allocation count and total bytes
-    taken from that same min-peak run.
+    Each repeat gets a fresh tracker; the headline peak is the minimum across repeats
+    (see :class:`MemoryResult`), and every repeat's :class:`Measurement` is retained for
+    distribution stats.
     """
     _require_memray()
 
-    runs: list[tuple[int, int, int]] = []
+    samples = []
     for _ in range(max(1, repeats)):
-        runs.append(_track_once(action))
+        samples.append(_track_once(action))
         gc.collect()
-
-    peaks = [r[0] for r in runs]
-    rep = min(runs, key=lambda r: r[0])
-    return MemoryResult(
-        peak_bytes=rep[0],
-        peak_bytes_max=max(peaks),
-        allocations=rep[1],
-        total_bytes=rep[2],
-        repeats=len(runs),
-    )
+    return MemoryResult(tuple(samples))
 
 
 def measure_peak(action: Action, repeats: int = 1) -> int:
