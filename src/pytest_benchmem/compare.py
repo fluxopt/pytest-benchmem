@@ -1,23 +1,30 @@
-"""Text comparison of two pytest-benchmark runs — keyed on the benchmark id.
+"""Text comparison of two or more pytest-benchmark runs — keyed on the benchmark id.
 
-:func:`compare_runs` prints the per-id delta table. The rest is the regression
-gate behind ``benchmem compare --fail-on``: parse a threshold like ``peak:10%`` /
-``peak:5MiB`` / ``allocations:5%`` / ``time:5%``, find the ids whose chosen field
-grew past it, and hand them back so the CLI can exit non-zero in CI — mirroring
-pytest-benchmark's ``--benchmark-compare-fail=min:5%`` grammar, for memory.
+:func:`compare_runs` prints the comparison table, modelled on pytest-benchmark's own:
+rows are one per ``(benchmark × run)``, ``columns`` selects the metric columns (time +
+the memory metrics, each with its own unit), every cell carries a relative ``(N.NN)``
+multiplier vs its group's best (best green, worst red), and ``group_by`` splits the rows
+into sub-tables. ``--metric both`` is the shorthand for ``--columns time,peak``.
+
+The rest is the regression gate behind ``benchmem compare --fail-on``: parse a threshold
+like ``peak:10%`` / ``peak:5MiB`` / ``allocations:5%`` / ``time:5%``, find the ids whose
+chosen field grew past it, and hand them back so the CLI can exit non-zero in CI —
+mirroring pytest-benchmark's ``--benchmark-compare-fail=min:5%`` grammar, for memory.
 """
 
 from __future__ import annotations
 
+import math
 import re
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, TextIO
+from typing import Any, TextIO, cast
 
 from pytest_benchmem.format import byte_unit, fmt_bytes, fmt_count, rank_style, signed_pct
 from pytest_benchmem.snapshot import (
+    RESERVED_COLUMNS,
     Metric,
     _human_bytes,
     from_pytest_benchmark,
@@ -49,76 +56,170 @@ def _fmt_value(field: str, value: float) -> str:
     return f"{value:.4g}{unit}"
 
 
-def _scaled_cell_fmt(unit: str, factor: float, *, is_bytes: bool) -> Any:
-    """A formatter ``value -> str`` for the metric: bytes in ``factor``, counts, or seconds."""
-
-    def fmt(value: float | None) -> str:
-        if value is None or value != value:  # noqa: PLR0124 — NaN
-            return "—"
-        if is_bytes:
-            return fmt_bytes(value, factor)
-        if unit == "":  # a count (allocations)
-            return fmt_count(value)
-        return f"{value:.4g}"  # seconds
-
-    return fmt
-
+#: Metrics selectable as table columns (each carries its own unit), in canonical order.
+_COLUMN_METRICS: tuple[Metric, ...] = ("time", "peak", "allocated", "allocations")
 
 #: Valid ``--sort`` keys for the comparison table.
 _SORTS = ("name", "value", "change")
 
+#: ``--group-by`` node keys → the ``node.*`` dim they read. ``fullname``/``name`` come
+#: off the id and ``param:NAME`` off a param — mirroring pytest-benchmark's grammar.
+_GROUP_NODE = {"func", "group", "module", "class"}
+
+
+def _resolve_columns(columns: Sequence[str] | str | None, metric: str) -> list[Metric]:
+    """The metric columns to show: explicit ``columns``, else ``metric`` (``both`` → time+peak)."""
+    if columns:
+        cols = columns.split(",") if isinstance(columns, str) else list(columns)
+        cols = [c.strip() for c in cols]
+    elif metric == "both":
+        cols = ["time", "peak"]
+    else:
+        cols = [metric]
+    bad = [c for c in cols if c not in _COLUMN_METRICS]
+    if bad:
+        raise ValueError(
+            f"unknown column metric(s): {', '.join(bad)}; choose from {', '.join(_COLUMN_METRICS)}"
+        )
+    return cast("list[Metric]", cols)
+
+
+def _group_of(test_id: str, dims: dict[str, Any], group_by: str | None) -> tuple[str, ...]:
+    """The group key for an id under ``group_by`` (comma-composable, pytest-benchmark grammar)."""
+    if not group_by:
+        return ()
+    parts: list[str] = []
+    for raw in group_by.split(","):
+        key = raw.strip()
+        if key == "fullname":
+            parts.append(test_id)
+        elif key == "name":
+            parts.append(test_id.split("::")[-1])
+        elif key in _GROUP_NODE:
+            parts.append(str(dims.get(f"node.{key}", "")))
+        elif key.startswith("param:"):
+            name = key[len("param:") :]
+            parts.append(f"{name}={dims.get(name)}")
+        else:
+            allowed = "fullname, name, func, group, module, class, param:NAME"
+            raise ValueError(f"unknown --group-by key {key!r}; use {allowed}")
+    return tuple(parts)
+
+
+def _mult(value: float, best: float | None) -> str:
+    """pytest-benchmark's relative annotation: ``(1.0)`` for the best, else ``(N.NN)``×."""
+    if best is None or best <= 0:
+        return ""
+    if value == best:
+        return " (1.0)"
+    scale = value / best
+    if scale > 1000:  # noqa: PLR2004 — pytest-benchmark's own cap
+        return " (inf)" if math.isinf(scale) else " (>1000.0)"
+    return f" ({scale:.2f})"
+
+
+def _short(test_id: str) -> str:
+    """The trailing node-id segment — ``module.py::test_x[1]`` → ``test_x[1]``."""
+    return test_id.split("::")[-1]
+
+
+def _load_columns(
+    runs: Sequence[str | Path], columns: Sequence[Metric], stat: str | None
+) -> tuple[list[str], dict[tuple[str, str, str], float], dict[str, str], dict[str, dict[str, Any]]]:
+    """Load every column metric into ``(labels, {(metric,id,run): value}, {metric: unit}, dims)``.
+
+    Runs keep file order (oldest → newest). ``stat`` applies to the memory metrics'
+    per-repeat series; ``time`` has no distribution, so it ignores it.
+    """
+    paths = [Path(r) for r in runs]
+    labels: list[str] = []
+    values: dict[tuple[str, str, str], float] = {}
+    units: dict[str, str] = {}
+    dims: dict[str, dict[str, Any]] = {}
+    for metric in columns:
+        df, unit = load_long_df(paths, metric=metric, stat=stat if metric != "time" else None)
+        units[metric] = unit
+        for lab in df["snapshot"]:
+            if lab not in labels:
+                labels.append(lab)
+        for lab, test_id, value in zip(df["snapshot"], df["id"], df["value"], strict=True):
+            values[(metric, test_id, lab)] = float(value)
+        dim_cols = [c for c in df.columns if c not in RESERVED_COLUMNS]
+        for idx, test_id in enumerate(df["id"]):
+            dims.setdefault(test_id, {c: df[c].iloc[idx] for c in dim_cols})
+    return labels, values, units, dims
+
 
 def _ordered_ids(
-    at: Callable[[str, str], float | None], ids: list[str], labels: list[str], sort: str
+    ids: list[str],
+    values: dict[tuple[str, str, str], float],
+    col0: str,
+    labels: list[str],
+    sort: str,
 ) -> list[str]:
-    """Row order for the comparison table per ``sort`` (see :func:`compare_runs`)."""
+    """Row order within a group per ``sort``, keyed on the first column metric."""
     if sort == "name":
         return sorted(ids)
-    last = labels[-1]
+    first, last = labels[0], labels[-1]
     if sort == "value":
-        # largest in the last run first; ids missing there sink to the bottom
-        return sorted(ids, key=lambda i: (at(i, last) is None, -(at(i, last) or 0.0)))
-    first = labels[0]  # sort == "change"
+        return sorted(
+            ids,
+            key=lambda i: (
+                values.get((col0, i, last)) is None,
+                -(values.get((col0, i, last)) or 0.0),
+            ),
+        )
 
-    def growth(test_id: str) -> float:
-        a, b = at(test_id, first), at(test_id, last)
+    def growth(test_id: str) -> float:  # sort == "change"
+        a, b = values.get((col0, test_id, first)), values.get((col0, test_id, last))
         return (b - a) / a if a and b and a > 0 else float("-inf")
 
     return sorted(ids, key=lambda i: -growth(i))
 
 
-def _write_csv(wide: Any, labels: list[str], path: Path) -> None:
-    """Write the raw (unscaled) comparison to ``path`` — one row per id, a column per run."""
-    export = wide.copy()
-    if len(labels) == 2:  # noqa: PLR2004 — a two-run compare gets a change column
-        export["change_pct"] = (export[labels[1]] - export[labels[0]]) / export[labels[0]] * 100
-    export.to_csv(path)
+def _write_csv(
+    values: dict[tuple[str, str, str], float],
+    columns: Sequence[str],
+    ids: list[str],
+    labels: list[str],
+    path: Path,
+) -> None:
+    """Write the raw (unscaled) comparison: one row per id, a column per ``metric:run``."""
+    import pandas as pd
+
+    rows = [
+        {"id": i, **{f"{m}:{lab}": values.get((m, i, lab)) for m in columns for lab in labels}}
+        for i in ids
+    ]
+    pd.DataFrame(rows).set_index("id").to_csv(path)
 
 
 def compare_runs(
     runs: Sequence[str | Path],
     *,
-    metric: Metric = "time",
+    metric: str = "time",
+    columns: Sequence[str] | str | None = None,
     stat: str | None = None,
+    group_by: str | None = "fullname",
     sort: str = "name",
     csv: Path | None = None,
     out: TextIO | None = None,
 ) -> None:
-    """Print a per-id table comparing two or more pytest-benchmark runs for ``metric``.
+    """Print a per-(benchmark, run) comparison table across two or more runs.
 
-    Follows the combined-table guidelines: the unit is hoisted into the title (byte
-    metrics share one scale, so cells are bare numbers), one column per run in the
-    order given (oldest → newest — a cross-version sweep is just N runs), and per id
-    the lightest/fastest value is tinted green, the heaviest red. With exactly two
-    runs a percent ``change`` column is added. Ids missing from a run show ``—``.
+    Mirrors pytest-benchmark's table model: rows are one per ``(benchmark × run)``,
+    ``columns`` selects which metric columns appear (``time`` / ``peak`` / ``allocated``
+    / ``allocations``), each cell carries the value plus a relative ``(N.NN)`` multiplier
+    vs the group's best (best green, worst red), and ``group_by`` splits the rows into
+    sub-tables (``fullname`` / ``name`` / ``func`` / ``group`` / ``module`` / ``class`` /
+    ``param:NAME``, comma-composable). With no ``group_by`` the whole comparison is one
+    table.
 
-    ``sort`` orders the rows: ``name`` (by id), ``value`` (largest in the last run
-    first), or ``change`` (biggest regression first). ``csv`` also writes the raw
-    (unscaled) comparison to that path for machine consumption.
-
-    ``stat`` reports a distribution stat (``mean`` / ``median`` / ``stddev`` / …) over
-    each benchmark's per-repeat series instead of the headline value — see
-    :func:`~pytest_benchmem.snapshot.load_samples`.
+    ``metric`` is the single-column shorthand when ``columns`` is unset (``both`` →
+    ``time,peak``). ``sort`` orders rows within a group: ``name``, ``value`` (largest in
+    the last run), or ``change`` (biggest growth first). ``stat`` reports a distribution
+    stat over each memory metric's per-repeat series. ``csv`` also writes the raw
+    (unscaled) comparison for machine consumption.
     """
     from rich import box
     from rich.console import Console
@@ -127,50 +228,65 @@ def compare_runs(
 
     if sort not in _SORTS:
         raise ValueError(f"unknown --sort {sort!r}; use one of {', '.join(_SORTS)}")
-    df, unit = load_long_df([Path(r) for r in runs], metric=metric, stat=stat)
-    labels = df["snapshot"].drop_duplicates().tolist()
+    cols = _resolve_columns(columns, metric)
+    labels, values, units, dims = _load_columns(runs, cols, stat)
     if len(labels) < 2:  # noqa: PLR2004 — a comparison needs two sides
         raise ValueError(
             f"compare needs at least two distinct runs; got {labels!r} "
             f"(the same file more than once?). Pass distinct files."
         )
-    wide = df.pivot(index="id", columns="snapshot", values="value")
-
-    is_bytes = unit == "B"
-    unit_name, factor = byte_unit(wide.stack().tolist()) if is_bytes else (unit, 1.0)
-    fmt = _scaled_cell_fmt(unit, factor, is_bytes=is_bytes)
-
-    def at(test_id: str, label: str) -> float | None:
-        if label not in wide.columns:
-            return None
-        v = wide.at[test_id, label]
-        return None if v != v else float(v)  # NaN → None  # noqa: PLR0124
-
+    ids = sorted({test_id for _m, test_id, _lab in values})
     if csv is not None:
-        _write_csv(wide[labels], labels, csv)
+        _write_csv(values, cols, ids, labels, csv)
 
-    heading = f"{metric} {stat}" if stat else metric
-    table = Table(title=f"{heading} ({unit_name or 'count'})", box=box.SIMPLE, title_justify="left")
-    table.add_column("id", justify="left", no_wrap=True)
-    for label in labels:
-        table.add_column(str(label), justify="right")
-    if len(labels) == 2:  # noqa: PLR2004 — a two-run compare gets a delta column
-        table.add_column("change", justify="right")
+    groups: dict[tuple[str, ...], list[str]] = {}
+    for test_id in ids:
+        groups.setdefault(_group_of(test_id, dims.get(test_id, {}), group_by), []).append(test_id)
 
-    for test_id in _ordered_ids(at, list(wide.index), labels, sort):
-        vals = [at(test_id, label) for label in labels]
-        present = [v for v in vals if v is not None]
-        best, worst = (min(present), max(present)) if len(present) > 1 else (None, None)
-        cells = [Text(test_id.split("::")[-1])]
-        for v in vals:
-            cells.append(Text(fmt(v), style=rank_style(v, best, worst) or ""))
-        if len(labels) == 2:  # noqa: PLR2004
-            va, vb = vals[0], vals[1]
-            change = signed_pct((vb - va) / va * 100) if va and vb and va > 0 else "—"
-            cstyle = "red" if va and vb and vb > va else "green" if va and vb and vb < va else ""
-            cells.append(Text(change, style=cstyle))
-        table.add_row(*cells)
-    Console(file=out or sys.stdout, width=_COMPARE_WIDTH).print(table)
+    console = Console(file=out or sys.stdout, width=_COMPARE_WIDTH)
+    for key in sorted(groups):
+        gids = _ordered_ids(groups[key], values, cols[0], labels, sort)
+        rows = [
+            (i, lab) for i in gids for lab in labels if any((m, i, lab) in values for m in cols)
+        ]
+        title = " ".join(p for p in key if p) if key else None
+        heading = (
+            f"benchmark {title!r}: {len(rows)} rows" if title else f"comparison: {len(rows)} rows"
+        )
+        table = Table(title=heading, box=box.SIMPLE, title_justify="left")
+        table.add_column("name", justify="left", no_wrap=True)
+
+        scale: dict[str, tuple[float, float | None, float | None]] = {}
+        for metric_col in cols:
+            present = [
+                values[(metric_col, i, lab)] for i, lab in rows if (metric_col, i, lab) in values
+            ]
+            unit = units[metric_col]
+            uname, factor = byte_unit(present) if unit == "B" and present else (unit, 1.0)
+            best, worst = (min(present), max(present)) if present else (None, None)
+            scale[metric_col] = (factor, best, worst)
+            header = f"{metric_col} ({uname})" if uname else metric_col
+            table.add_column(header, justify="right")
+
+        for i, lab in rows:
+            cells = [Text(f"{_short(i)} ({lab})")]
+            for metric_col in cols:
+                factor, best, worst = scale[metric_col]
+                if (metric_col, i, lab) not in values:
+                    cells.append(Text("—"))
+                    continue
+                v = values[(metric_col, i, lab)]
+                unit = units[metric_col]
+                body = (
+                    fmt_bytes(v, factor)
+                    if unit == "B"
+                    else fmt_count(v)
+                    if unit == ""
+                    else f"{v:.4g}"
+                )
+                cells.append(Text(body + _mult(v, best), style=rank_style(v, best, worst) or ""))
+            table.add_row(*cells)
+        console.print(table)
 
 
 # --- regression gate (--fail-on) -------------------------------------------------

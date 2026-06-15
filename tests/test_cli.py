@@ -56,7 +56,16 @@ def test_compare_prints_table(tmp_path):
     b = _run(tmp_path, "head.json", [_bm("test_x", t=2.0)])
     result = runner.invoke(app, ["compare", str(a), str(b)])
     assert result.exit_code == 0
-    assert "+100.0%" in result.output  # compare_runs writes the table to stdout
+    # the relative-multiplier table: head 2.0 is 2.00× the best run (1.0)
+    assert "(2.00)" in result.output and "time (s)" in result.output
+
+
+def test_compare_metric_both_columns(tmp_path):
+    a = _run(tmp_path, "base.json", [_bm("test_x", t=1.0, peak=10 * 1024**2)])
+    b = _run(tmp_path, "head.json", [_bm("test_x", t=1.0, peak=20 * 1024**2)])
+    result = runner.invoke(app, ["compare", str(a), str(b), "--metric", "both"])
+    assert result.exit_code == 0, _text(result)
+    assert "time (s)" in result.output and "peak (MiB)" in result.output
 
 
 def test_compare_missing_file_exits_2(tmp_path):

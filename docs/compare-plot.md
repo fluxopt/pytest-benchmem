@@ -73,14 +73,27 @@ for _out, _row in [(baseline, "[(i, i * i) for i in range(n)]"),
                     f"--benchmark-json={_out}"], check=True, capture_output=True)
 ```
 
-## `benchmem compare` — the delta table
+## `benchmem compare` — the comparison table
 
-A per-id delta table with percent change, for whichever `--metric` you ask for. Ids in only
-one run show `—`:
+Modelled on pytest-benchmark's own table: one row per `(benchmark × run)`, one column per
+`--metric`, and each cell carries a relative `(N.NN)` multiplier vs the group's best run (best
+green, worst red). Rows are grouped into sub-tables by `--group-by` (default `fullname`, so
+each benchmark's runs sit together and the multiplier reads as the cross-run ratio):
 
 ```{code-cell} ipython3
 !benchmem compare {baseline} {candidate} --metric peak
 ```
+
+Show **timing and memory side by side** with `--metric both` (shorthand for `--columns
+time,peak`), or pick any set with `--columns time,peak,allocated`:
+
+```{code-cell} ipython3
+!benchmem compare {baseline} {candidate} --metric both
+```
+
+`--group-by` follows pytest-benchmark's grammar (`fullname` | `name` | `func` | `group` |
+`module` | `class` | `param:NAME`, comma-composable); pass it to cluster param-variants
+(`--group-by func`) or collapse everything into one table.
 
 ## Gate CI on a regression
 
