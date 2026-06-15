@@ -30,18 +30,19 @@ pytest --benchmark-only   # both metrics, in pytest-benchmark's own table
 ```
 
 ```
- Name (time in us)              Min                  Median         │  peak (MiB)  allocated (MiB)  allocs
- ──────────────────────────────────────────────────────────────────────────────────────────────────────
-  test_sort[10000]           32.5830 (1.0)         41.2080 (1.0)    │       0.08             0.08       1
-  test_sort[100000]         321.2080 (9.86)       419.9160 (10.19)  │       0.76             0.76       1
-  test_sort[1000000]      3,669.2920 (112.61)   4,331.5421 (105.11) │       7.63             7.63       1
+ Name (time in us)              Min                  Median         │  peak (MiB)
+ ──────────────────────────────────────────────────────────────────────────────
+  test_sort[10000]           32.5830 (1.0)         41.2080 (1.0)    │       0.08
+  test_sort[100000]         321.2080 (9.86)       419.9160 (10.19)  │       0.76
+  test_sort[1000000]      3,669.2920 (112.61)   4,331.5421 (105.11) │       7.63
 
- memory (right of │): a separate, untimed pass — single shot, not the timed rounds
+ memory (right of │): a separate, untimed pass, not the timed rounds  •  also available via --benchmark-memory-columns: allocated, allocs
 ```
 
 Left of the divider is pytest-benchmark's timing, untouched; right is pytest-benchmem's
 memory. The two never overlap — memray measures peak on a *separate, untimed* call, so the
-allocator hooks cost the timing nothing.
+allocator hooks cost the timing nothing. Peak is the headline, so it shows by default;
+`allocated` and `allocs` are one flag away (`--benchmark-memory-columns`).
 
 Add `--benchmark-json=run.json` and both persist under one node id: timing in `stats`,
 memory in `extra_info.benchmem` (per-repeat `peak_bytes` / `total_bytes` / `allocations` —
