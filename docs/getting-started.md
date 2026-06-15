@@ -70,17 +70,3 @@ before. Add `--benchmark-json=run.json` to save both metrics to one file.
     Benchmark a pure call, or use the
     [`pedantic` form](reference.md#the-benchmark_memory-fixture) with a `setup` that rebuilds
     fresh state each round.
-
-### Read the numbers back in Python
-
-`load_long_df` stacks one or more saved run JSONs into a tidy frame — one row per
-`(run, id)` for the chosen metric, one column per [dim](dims.md):
-
-```python
-from pytest_benchmem import load_long_df
-
-df, unit = load_long_df(["run.json"], metric="peak")   # unit: "B"
-```
-
-For the per-metric readers and the bare `measure_peak` engine, see the
-[Reference](reference.md#public-python-api).

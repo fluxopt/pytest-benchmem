@@ -88,7 +88,13 @@ regression the offending ids print and it exits `1`:
 `benchmem plot` writes an interactive plotly view to standalone HTML, picking the view by run
 count. **Scaling** (one run) draws cost vs. input size — `sorted`'s peak-memory curve:
 
+```bash
+benchmem plot baseline.json --metric peak -o scaling.html
+```
+
 ```{code-cell} ipython3
+:tags: [hide-input]
+
 from pytest_benchmem import plotting
 
 plotting.plot_scaling([baseline], metric="peak")[0]
@@ -98,7 +104,13 @@ plotting.plot_scaling([baseline], metric="peak")[0]
 colour = absolute Δ. The top-right corner is "big *and* got bigger" — where a regression
 actually costs you:
 
+```bash
+benchmem plot baseline.json candidate.json --metric peak -o scatter.html
+```
+
 ```{code-cell} ipython3
+:tags: [hide-input]
+
 plotting.plot_scatter([baseline, candidate], metric="peak")[0]
 ```
 
@@ -106,7 +118,7 @@ plotting.plot_scatter([baseline, candidate], metric="peak")[0]
 
 - Which metric to gate on → [Choosing a metric](metrics.md)
 - Compare across *versions* of a package → [Cross-version sweeps](sweeps.md)
-- Every CLI flag and `plot_*` signature → [Reference](reference.md)
+- Every CLI flag and option → [Reference](reference.md)
 
 ---
 
@@ -154,7 +166,7 @@ A minimal GitHub Actions job using the two-file approach, caching the baseline a
 - run: benchmem compare main.json pr.json --fail-on peak:10% --fail-on allocations:5%
 ```
 
-### The other two views, and the plotting API
+### The other two views
 
 `plot` auto-selects by run count; override with `--view`:
 
@@ -165,14 +177,10 @@ A minimal GitHub Actions job using the two-file approach, caching the baseline a
 | 2 | `compare` (`--view compare`) | ranked — what moved *most*, in native units? |
 | 3+ | `sweep` | fold-change across versions, one cell per (id, run) |
 
-Every view is a `plot_*` function over the same `load_long_df` seam — call it directly to
-render inline, no HTML round-trip. Each returns `(figure, n_ids)` and shares `facet`
-(small-multiple by a [dim](dims.md), including `node.*`), `labels` (name the series, default
-the file stems), and `clip` (clamp the colour scale so one outlier doesn't wash the rest out):
+`--facet` splits any view into small multiples by a [dim](dims.md) (including `node.*`), and
+`--label`/`-l` names the series per run (defaulting to the file stems):
 
 ```bash
 benchmem plot run.json --metric peak --facet node.func        # one panel per operation
 benchmem plot v1.json v2.json v3.json -l 0.6 -l 0.7 -l 0.8     # name series, not file stems
 ```
-
-See the [Reference](reference.md#plotting-pytest_benchmem-plotting) for every signature.

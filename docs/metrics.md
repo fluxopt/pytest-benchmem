@@ -28,30 +28,29 @@ def test_churn(benchmark):
     benchmark(work)
 ```
 
-Read the one run three ways — `peak` stays small (one list lives at a time) while `allocated`
-is far larger (every list summed) and `allocations` counts the calls:
+Show all three in the table at once with `--benchmark-memory-columns`:
 
-```python
-from pytest_benchmem import human_bytes, load_long_df
-
-for metric in ("peak", "allocated", "allocations"):
-    df, unit = load_long_df(["churn.json"], metric=metric)
-    v = df["value"].iloc[0]
-    print(f"{metric:<12}", human_bytes(v) if unit == "B" else f"{v:.0f}")
+```bash
+pytest test_churn.py --benchmark-only --benchmark-memory \
+       --benchmark-memory-columns=peak,allocated,allocs
 ```
 
 ```
-peak         1.16 MiB
-allocated    294 MiB
-allocations  9001
+ Name (time in ms)        Min      │  peak (MiB)   allocated (MiB)   allocs
+ ─────────────────────────────────────────────────────────────────────────
+  test_churn          73.9735      │        1.16            294.07    9,001
+
+ memory (right of │): a separate, untimed pass, not the timed rounds
 ```
 
-A peak gate would wave this churn through; `allocated` catches it.
+`peak` stays small (one list lives at a time) while `allocated` is far larger (every list
+summed) and `allocs` counts the calls. A peak gate would wave this churn through;
+`allocated` catches it.
 
 ## Where to go next
 
 - See these metrics in a delta table or plot, and gate CI on them → [Compare & gate CI](compare-plot.ipynb)
-- Every flag, the blob schema, and the readers → [Reference](reference.md)
+- Every flag and the blob schema → [Reference](reference.md)
 
 ---
 

@@ -17,20 +17,11 @@ def test_sort(benchmark, n):
     benchmark(sorted, list(range(n, 0, -1)))
 ```
 
-After a run, `load_long_df` exposes `n` as a real, numeric column a scaling plot can use as
-its x:
+After a run, `n` is a real, numeric axis your plots and compares group by — `benchmem plot`
+picks it up as the x of a scaling curve with no extra flags:
 
-```python
-from pytest_benchmem import load_long_df
-
-df, _ = load_long_df(["params.json"], metric="peak")
-df[["id", "value", "n"]]
-```
-
-```
-                                  id     value       n
-0   test_params.py::test_sort[10000]   80000.0   10000
-1  test_params.py::test_sort[100000]  800000.0  100000
+```bash
+benchmem plot run.json --metric peak     # scaling: peak vs n, auto-inferred
 ```
 
 Only **scalars** (`str`/`int`/`float`) become dims; a `list`/`dict`, or an object
