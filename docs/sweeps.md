@@ -1,8 +1,32 @@
 # Cross-version sweeps
 
-To benchmark across installed versions of a package, `pytest_benchmem.sweep` provisions
-one fresh `uv` venv per version (with import isolation) and calls your `run` callback in
-each. The callback runs your pytest suite in that venv, writing a per-version JSON.
+To benchmark *across installed versions* of a package — something pytest-benchmark
+has no answer for — pytest-benchmem provisions one fresh `uv` venv per version (with
+import isolation) and runs your suite in each, writing a per-version JSON.
+
+## The `benchmem sweep` CLI
+
+For the common case — *"run this suite across these versions of one package"* — the
+CLI is one line, no harness to write:
+
+```bash
+benchmem sweep mypkg 1.2.0 1.3.0 git+https://github.com/me/pkg@main \
+    --suite benchmarks/ --out .benchmarks/sweep --memory
+```
+
+It provisions a venv per version (a plain version installs `mypkg==<version>`; a
+`git+…`/pip spec is used verbatim), runs `pytest <suite> --benchmark-only` in each
+writing `<out>/<version>.json`, then prints the `benchmem compare` / `plot` next
+step. `--memory` adds the memory pass; forward any other pytest flag with
+`--pytest-arg` (one token each, repeatable). `--pin`, `--as-of`, `--import-check`,
+and `--copy-dir` map to the `provision` parameters below. A non-zero exit lists any
+versions that failed to provision. See the [reference](reference.ipynb) for the live
+`--help`.
+
+## The `sweep()` API — custom `run`
+
+When you need more than the CLI offers (a non-pytest command, custom post-processing),
+`pytest_benchmem.sweep` calls your own `run` callback in each provisioned venv.
 Everything package-specific is injected, so it isn't tied to any one library.
 
 ```python

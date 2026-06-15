@@ -3,6 +3,8 @@ from __future__ import annotations
 import contextlib
 import importlib.util
 import json
+from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -176,3 +178,84 @@ def test_plot_without_plotly_exits_2(tmp_path, monkeypatch):
     result = runner.invoke(app, ["plot", str(r), "-o", str(tmp_path / "o.html")])
     assert result.exit_code == 2
     assert "pytest-benchmem[plot]" in _text(result)
+
+
+# --- sweep -----------------------------------------------------------------------
+
+
+def _patch_sweep(monkeypatch, tmp_path, *, failed=()):
+    """Stub the sweep engine + subprocess so no uv/network is touched.
+
+    Records the call into the returned dict; the fake engine runs the CLI's ``run``
+    callback against one fake Venv per version, and the fake subprocess writes the
+    JSON the callback expects (so ``produced`` is populated).
+    """
+    import pytest_benchmem.sweep as sweepmod
+
+    captured: dict[str, Any] = {"cmds": []}
+
+    def fake_sweep(versions, run, **kw):
+        captured["versions"] = list(versions)
+        captured.update(kw)
+        for v in versions:
+            run(sweepmod.Venv(v, tmp_path / "py", {}, tmp_path, None))
+        return list(failed)
+
+    def fake_subprocess_run(cmd, **kw):
+        captured["cmds"].append(cmd)
+        for arg in cmd:
+            if isinstance(arg, str) and arg.startswith("--benchmark-json="):
+                path = Path(arg.split("=", 1)[1])
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("{}")
+
+        class _Completed:
+            returncode = 0
+
+        return _Completed()
+
+    monkeypatch.setattr(sweepmod, "sweep", fake_sweep)
+    monkeypatch.setattr("pytest_benchmem.cli.subprocess.run", fake_subprocess_run)
+    return captured
+
+
+def test_sweep_runs_each_version_and_hints_next_step(tmp_path, monkeypatch):
+    captured = _patch_sweep(monkeypatch, tmp_path)
+    out = tmp_path / "out"
+    result = runner.invoke(
+        app,
+        [
+            "sweep",
+            "mypkg",
+            "1.2.0",
+            "1.3.0",
+            "--suite",
+            "benchmarks/",
+            "--out",
+            str(out),
+            "--memory",  # adds --benchmark-memory
+            "--pytest-arg=-k",
+            "--pytest-arg=build",  # forwarded verbatim
+        ],
+    )
+    assert result.exit_code == 0, _text(result)
+    assert captured["versions"] == ["1.2.0", "1.3.0"]
+    # a plain version maps to pkg==version
+    assert captured["install_spec"]("1.2.0") == "mypkg==1.2.0"
+    # the always-on --benchmark-only, the --memory pass, and the forwarded args all reach pytest
+    assert all("--benchmark-only" in cmd for cmd in captured["cmds"])
+    assert all("--benchmark-memory" in cmd for cmd in captured["cmds"])
+    assert all(cmd[-2:] == ["-k", "build"] for cmd in captured["cmds"])
+    # one json per version, under --out, and the next-step hint is printed
+    assert (out / "1.2.0.json").exists() and (out / "1.3.0.json").exists()
+    assert "benchmem compare" in result.output
+
+
+def test_sweep_exits_1_on_provision_failure(tmp_path, monkeypatch):
+    _patch_sweep(monkeypatch, tmp_path, failed=["1.3.0"])
+    result = runner.invoke(
+        app,
+        ["sweep", "mypkg", "1.2.0", "1.3.0", "--suite", "b/", "--out", str(tmp_path / "o")],
+    )
+    assert result.exit_code == 1
+    assert "failed to provision: 1.3.0" in _text(result)
