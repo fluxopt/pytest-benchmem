@@ -61,7 +61,18 @@ def test_build(benchmark_memory):
 
 | Kwarg | Default | What |
 |---|---|---|
-| `repeats` | `1` | run `N` memray passes and keep the **min** — peak memory is noisy (GC timing, lazy imports, page cache), so min-of-N is the cleanest floor. Overrides the suite-wide `--benchmark-memory-repeats` for this test. |
+| `repeats` | `1` | measure this test with `N` memray passes. **Every** pass is kept (the blob stores the whole series); the headline `peak` is the *minimum* across them, and `--stat` reports any other. Overrides the suite-wide `--benchmark-memory-repeats` for this test. |
+
+Why measure memory once when timing reruns many times? Timing *needs* the reruns — to
+beat timer granularity and average out scheduler / CPU jitter. Peak memory doesn't:
+it's *allocator demand* (the bytes your code requests for a given code path and inputs),
+not a wall-clock measurement, so it's near-deterministic and a single pass is usually
+representative — the more so because the timing phase has already run the function many
+times first, warming away one-time effects (lazy imports, module caches). (memray's
+allocator tracking also makes each pass much heavier than an untimed call, so there's no
+reason to multiply it for free.) Raise `repeats` when the peak *isn't* deterministic —
+hash randomization, GC collection timing, randomized inputs — to settle the min floor and
+quantify the spread (the `min`/`mean`/`max` columns and `--stat stddev`).
 
 ## The `benchmark_memory` fixture
 

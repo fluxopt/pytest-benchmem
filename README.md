@@ -68,8 +68,11 @@ It's opt-in at the run level: without the flag, plain `benchmark` tests are
 untouched. (Reach for the `benchmark_memory` fixture when you want memory on
 specific tests only, or `pedantic` control.) Set `--benchmark-memory-repeats=N`
 (suite-wide) or `@pytest.mark.benchmem(repeats=N)` (per test, overrides the flag) to
-measure `N` times and keep the min (peak memory is noisy — GC timing, lazy imports,
-page cache — so min-of-N is the cleanest floor).
+measure `N` times: every pass is kept and the headline peak is the *minimum* across them.
+The default is one pass — unlike timing, peak memory is near-deterministic (it's allocator
+demand, not wall-clock jitter), and the function is already warm from the timing phase, so
+one pass usually suffices. Raise it when the peak *isn't* deterministic (hash randomization,
+GC timing) to settle the floor and see the spread.
 
 > **Your benchmark must be safe to re-run.** Memory is measured on an *extra,
 > separate* invocation, after pytest-benchmark has already called your function

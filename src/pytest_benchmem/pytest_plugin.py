@@ -176,7 +176,8 @@ def benchmark_memory(
 
     Depends on the ``benchmark`` fixture, so timing rides pytest-benchmark fully;
     the memray memory pass is added on top and stored in the same entry. The
-    ``@pytest.mark.benchmem(repeats=N)`` marker sets min-of-N passes for this test.
+    ``@pytest.mark.benchmem(repeats=N)`` marker measures this test ``N`` times (every pass
+    kept; the headline peak is the min), overriding ``--benchmark-memory-repeats``.
     For an existing suite, prefer the ``--benchmark-memory`` flag over rewriting tests.
     """
     return MemoryBenchmark(benchmark, repeats=_repeats_from_node(request.node))
