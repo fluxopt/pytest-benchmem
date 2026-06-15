@@ -29,7 +29,7 @@ def test_build(benchmark_memory):
 
 | Kwarg | Default | What |
 |---|---|---|
-| `repeats` | `1` | measure this test with `N` memray passes. **Every** pass is kept (the blob stores the whole series); the headline `peak` is the *minimum* across them, and `--stat` reports any other. Overrides the suite-wide `--benchmark-memory-repeats` for this test. |
+| `repeats` | *auto* | force a fixed `N` memray passes for this test (default: auto-calibrate — see below). **Every** pass is kept (the blob stores the whole series); the headline `peak` is the *minimum* across them, and `--stat` reports any other. Overrides the suite-wide `--benchmark-memory-repeats`. |
 | `max_peak` | — | fail the test if the headline `peak` exceeds this **absolute** ceiling. A size string (`"100MiB"`, units `B`/`KiB`/`MiB`/`GiB`) or a bare int (bytes). |
 | `max_allocated` | — | as `max_peak`, on `allocated` (total bytes). |
 | `max_allocations` | — | as above, on the `allocations` *count* — a bare number (no unit). |
@@ -57,11 +57,19 @@ fixture *and* the `--benchmark-memory` patch — but a plain `benchmark()` call 
     [pytest-memray](https://pytest-memray.readthedocs.io)'s `limit_memory` / `limit_leaks`
     — see the README's "With pytest-memray".
 
-Why once, when timing reruns many times? Peak memory is allocator demand — the bytes
-your code requests for a given code path and inputs — not a wall-clock number, so it's
-near-deterministic and one pass is usually representative. Raise `repeats` when the peak
-*isn't* deterministic (hash randomization, GC timing, randomized inputs) to settle the
-min floor and quantify the spread (the `min`/`mean`/`max` columns and `--stat stddev`).
+How many passes? By default pytest-benchmem **auto-calibrates** — the same idea as
+pytest-benchmark auto-tuning its timing rounds, but for a different reason. memray gives an
+*exact* peak per pass (no timer resolution to average out), so passes exist only to find the
+floor and quantify spread. Rather than a fixed count — wasteful for deterministic code, too few
+for noisy code — it runs passes until the headline **min** stops improving (no new low for a
+couple of passes), always taking at least 2 (the first pass carries one-time warmup — lazy
+imports, allocator-arena growth — that the min discards), capped at 10 and, optionally, a
+`--benchmark-memory-max-time` wall-clock budget. Deterministic code settles in a few passes;
+noisy code (hash randomization, GC timing, a multithreaded allocator like polars) runs more,
+exactly where it pays off. Set `repeats=N` (marker) or `--benchmark-memory-repeats=N` (suite)
+to force a fixed, reproducible count — what CI gating against a saved baseline wants. The
+spread lands in the `min`/`mean`/`max` columns and `--stat stddev`; when a workload is noisy,
+removing the noise source often beats averaging over it.
 
 ## The `benchmark_memory` fixture
 
@@ -73,8 +81,9 @@ measures peak in a separate untimed pass.
     the memray pass — so memory is measured on an already-warmed function and the allocator
     hooks never touch the timing. This holds for `__call__`, `pedantic`, and the
     `--benchmark-memory` patch alike. (The standalone `measure_peak` / `measure_memory`
-    have no timing phase, so they measure cold — warm up first, or use `repeats > 1`, if a
-    cold first call would distort the peak.)
+    have no timing phase, so the first pass is cold — but they auto-calibrate the same way
+    by default, taking ≥2 passes so the min discards that cold pass; pass `repeats=N` to
+    force a fixed count instead.)
 
 === "Call form"
 

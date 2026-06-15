@@ -62,8 +62,9 @@ summed) and `allocations` counts the calls. A peak gate would wave this churn th
 
 ### Distribution across repeats
 
-With `--benchmark-memory-repeats=N` (suite-wide) or `@pytest.mark.benchmem(repeats=N)`
-(per test), every repeat is kept as a flat series in the blob. The headline `peak` is the
+Memory passes auto-calibrate by default (run until the min floor settles), and every pass is
+kept as a flat series in the blob — or force a fixed count with `--benchmark-memory-repeats=N`
+(suite-wide) or `@pytest.mark.benchmem(repeats=N)` (per test). The headline `peak` is the
 *minimum* (the cleanest floor); ask for any other stat over the series with `--stat`:
 
 ```bash

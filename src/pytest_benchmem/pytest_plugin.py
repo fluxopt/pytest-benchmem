@@ -54,24 +54,47 @@ _LIMIT_FIELDS = {
 }
 
 
-def _global_repeats(config: Any) -> int:
-    """Suite-wide default repeats from ``--benchmark-memory-repeats`` (``>= 1``)."""
+def _global_repeats(config: Any) -> int | None:
+    """Suite-wide fixed repeats from ``--benchmark-memory-repeats``; ``None`` = auto-calibrate.
+
+    ``None`` (the option's default) means no fixed count was requested, so
+    :func:`~pytest_benchmem.memray.measure_memory` auto-calibrates the pass count.
+    """
     if config is None:
-        return 1
+        return None
+    raw = config.getoption("--benchmark-memory-repeats")
+    if raw is None:
+        return None
     try:
-        return max(1, int(config.getoption("--benchmark-memory-repeats")))
+        return max(1, int(raw))
     except (ValueError, TypeError):
-        return 1
+        return None
 
 
-def _repeats_from_node(node: Any) -> int:
+def _repeats_from_node(node: Any) -> int | None:
     """Resolve a test's memray repeats: ``@pytest.mark.benchmem(repeats=N)`` wins,
-    else the suite-wide ``--benchmark-memory-repeats``, else ``1``.
+    else the suite-wide ``--benchmark-memory-repeats``, else ``None`` (auto-calibrate).
     """
     marker = node.get_closest_marker(MARKER) if node is not None else None
     if marker is not None and "repeats" in marker.kwargs:
         return max(1, int(marker.kwargs["repeats"]))
     return _global_repeats(getattr(node, "config", None))
+
+
+def _max_time_from_node(node: Any) -> float | None:
+    """Resolve the auto-calibration wall-clock budget from ``--benchmark-memory-max-time``.
+
+    ``None`` (the default) means no time bound — the pass cap alone bounds auto-calibration.
+    Ignored when ``repeats`` forces a fixed count.
+    """
+    config = getattr(node, "config", None)
+    if config is None:
+        return None
+    raw = config.getoption("--benchmark-memory-max-time")
+    try:
+        return float(raw) if raw is not None else None
+    except (ValueError, TypeError):
+        return None
 
 
 def _parse_limit(kwarg: str, value: Any, *, is_bytes: bool) -> float:
@@ -148,21 +171,23 @@ def _record_memory(
     benchmark: BenchmarkFixture,
     action: Callable[[], Any],
     *,
-    repeats: int = 1,
+    repeats: int | None = None,
+    max_time: float | None = None,
     limits: Mapping[str, float] | None = None,
 ) -> MemoryResult:
     """Memory-profile ``action`` into ``benchmark.extra_info["benchmem"]``, once.
 
     Idempotent: if a blob is already recorded for this benchmark (e.g. the
     ``--benchmark-memory`` patch and the explicit fixture both fire), reuse it
-    rather than measuring twice. Any ``max_*`` ``limits`` are enforced on the result
-    (whether freshly measured or reused), so a breach fails the test exactly once.
+    rather than measuring twice. ``repeats`` (``None`` = auto-calibrate) and ``max_time``
+    pass through to :func:`~pytest_benchmem.memray.measure_memory`. Any ``max_*`` ``limits``
+    are enforced on the result (freshly measured or reused), so a breach fails the test once.
     """
     existing = benchmark.extra_info.get(BENCHMEM_KEY)
     if isinstance(existing, Mapping):
         result = MemoryResult.from_blob(existing)
     else:
-        result = measure_memory(action, repeats=repeats)
+        result = measure_memory(action, repeats=repeats, max_time=max_time)
         benchmark.extra_info[BENCHMEM_KEY] = result.as_dict()
     if limits:
         _enforce_limits(result, limits, getattr(benchmark, "fullname", "") or "")
@@ -182,11 +207,13 @@ class MemoryBenchmark:
         self,
         benchmark: BenchmarkFixture,
         *,
-        repeats: int = 1,
+        repeats: int | None = None,
+        max_time: float | None = None,
         limits: Mapping[str, float] | None = None,
     ) -> None:
         self._benchmark = benchmark
         self._repeats = repeats
+        self._max_time = max_time
         self._limits = dict(limits or {})
         self.result: MemoryResult | None = None
 
@@ -212,6 +239,7 @@ class MemoryBenchmark:
             self._benchmark,
             lambda: function_to_benchmark(*args, **kwargs),
             repeats=self._repeats,
+            max_time=self._max_time,
             limits=self._limits,
         )
         return result
@@ -246,6 +274,7 @@ class MemoryBenchmark:
             self._benchmark,
             _pedantic_action(target, args, kwargs, setup),
             repeats=self._repeats,
+            max_time=self._max_time,
             limits=self._limits,
         )
         return result
@@ -277,14 +306,16 @@ def benchmark_memory(
     """Time *and* peak-memory-profile a callable in one pytest-benchmark test.
 
     Depends on the ``benchmark`` fixture, so timing rides pytest-benchmark fully;
-    the memray memory pass is added on top and stored in the same entry. The
-    ``@pytest.mark.benchmem(repeats=N)`` marker measures this test ``N`` times (every pass
-    kept; the headline peak is the min), overriding ``--benchmark-memory-repeats``.
-    For an existing suite, prefer the ``--benchmark-memory`` flag over rewriting tests.
+    the memray memory pass is added on top and stored in the same entry. By default the
+    pass count auto-calibrates (run until the min floor settles); ``@pytest.mark.benchmem(
+    repeats=N)`` forces a fixed ``N`` passes (every pass kept; the headline peak is the min),
+    overriding ``--benchmark-memory-repeats``. For an existing suite, prefer the
+    ``--benchmark-memory`` flag over rewriting tests.
     """
     return MemoryBenchmark(
         benchmark,
         repeats=_repeats_from_node(request.node),
+        max_time=_max_time_from_node(request.node),
         limits=_limits_from_node(request.node),
     )
 
@@ -337,8 +368,11 @@ def _install_auto_memory() -> None:
         orig_init(self, node, *a, **k)  # type: ignore[no-untyped-call]
         setattr(self, "_benchmem_node", node)  # noqa: B010 — stash for the marker read
 
-    def _repeats(self: BenchmarkFixture) -> int:
+    def _repeats(self: BenchmarkFixture) -> int | None:
         return _repeats_from_node(getattr(self, "_benchmem_node", None))
+
+    def _max_time(self: BenchmarkFixture) -> float | None:
+        return _max_time_from_node(getattr(self, "_benchmem_node", None))
 
     def _limits(self: BenchmarkFixture) -> dict[str, float]:
         return _limits_from_node(getattr(self, "_benchmem_node", None))
@@ -351,6 +385,7 @@ def _install_auto_memory() -> None:
             self,
             lambda: function_to_benchmark(*a, **k),
             repeats=_repeats(self),
+            max_time=_max_time(self),
             limits=_limits(self),
         )
         return result
@@ -380,6 +415,7 @@ def _install_auto_memory() -> None:
             self,
             _pedantic_action(target, args, kwargs, setup),
             repeats=_repeats(self),
+            max_time=_max_time(self),
             limits=_limits(self),
         )
         return result
@@ -415,11 +451,24 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--benchmark-memory-repeats",
         action="store",
         type=int,
-        default=1,
+        default=None,
         metavar="N",
-        help="Number of memray passes per benchmark, suite-wide; the reported peak is the "
-        "minimum across them. Overridden per-test by @pytest.mark.benchmem(repeats=N). "
-        "Default: 1.",
+        help="Force a fixed number of memray passes per benchmark, suite-wide; the reported "
+        "peak is the minimum across them. Overridden per-test by @pytest.mark.benchmem("
+        "repeats=N). Default: auto-calibrate — run passes until the min floor settles (≥2, "
+        "cap 10), like pytest-benchmark auto-tuning its timing rounds. Set this for a fixed, "
+        "reproducible count (e.g. CI gating against a saved baseline).",
+    )
+    group.addoption(
+        "--benchmark-memory-max-time",
+        action="store",
+        type=float,
+        default=None,
+        metavar="SECONDS",
+        help="Wall-clock budget for the adaptive memory passes (the analogue of "
+        "--benchmark-max-time): caps how long auto-calibration spends per benchmark. Ignored "
+        "when --benchmark-memory-repeats forces a fixed count. Default: no time bound — the "
+        "pass cap alone bounds it.",
     )
     group.addoption(
         "--benchmark-memory-compare",
@@ -472,8 +521,9 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line(
         "markers",
         "benchmem(repeats=N, max_peak=..., max_allocated=..., max_allocations=N): "
-        "pytest-benchmem peak-memory options — repeats sets the number of memray passes "
-        "(the reported peak is the min); max_peak / max_allocated / max_allocations fail the "
+        "pytest-benchmem peak-memory options — repeats forces a fixed number of memray passes "
+        "(the reported peak is the min; default auto-calibrates the count); max_peak / "
+        "max_allocated / max_allocations fail the "
         "test if the measured headline metric exceeds an absolute ceiling (e.g. "
         "max_peak='100MiB', max_allocations=5000).",
     )

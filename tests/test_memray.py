@@ -6,7 +6,7 @@ import platform
 import pytest
 
 from pytest_benchmem import measure_memory, measure_peak
-from pytest_benchmem.memray import MemoryResult
+from pytest_benchmem.memray import Measurement, MemoryResult
 from pytest_benchmem.snapshot import memory_from_pytest_benchmark
 
 pytest.importorskip("memray")
@@ -57,7 +57,7 @@ def test_total_bytes_mirrors_memray_stats():
         for _ in range(20):
             _ = [bytearray(4096) for _ in range(1000)]
 
-    res = measure_memory(action)
+    res = measure_memory(action, repeats=1)
     assert res.total_bytes > 0
     assert res.total_bytes >= res.peak_bytes  # cumulative ≥ high-water mark
     assert res.as_dict()["total_bytes"] == [res.total_bytes]  # one-repeat series
@@ -81,6 +81,52 @@ def test_blob_roundtrips_engine_to_reader(tmp_path):
     )
     _l, samples, unit = memory_from_pytest_benchmark(pb, field="peak_bytes")
     assert (samples[0].value, unit) == (float(min(blob["peak_bytes"])), "B")  # headline = min
+
+
+def _feed_peaks(monkeypatch, peaks):
+    """Drive ``measure_memory``'s adaptive loop with a fixed sequence of per-pass peaks."""
+    import pytest_benchmem.memray as m
+
+    seq = iter(peaks)
+    monkeypatch.setattr(m, "_require_memray", lambda: None)
+    monkeypatch.setattr(m, "_track_once", lambda action: Measurement(next(seq), 1, 1))
+
+
+def test_explicit_repeats_runs_exactly_n(monkeypatch):
+    # An int repeats forces a fixed count — no calibration, even if the floor settled.
+    _feed_peaks(monkeypatch, [100] * 20)
+    assert measure_memory(lambda: None, repeats=5).repeats == 5
+
+
+def test_adaptive_stops_once_floor_settles(monkeypatch):
+    # Constant peak: the min never improves, so it stops as soon as patience is exhausted —
+    # a few passes, not the cap.
+    _feed_peaks(monkeypatch, [100] * 20)
+    res = measure_memory(lambda: None)
+    assert 2 <= res.repeats < 10  # ≥ min_passes, well short of the cap
+
+
+def test_adaptive_takes_at_least_min_passes(monkeypatch):
+    # Even when pass 1 is already low, take ≥2 so the warmup pass can't be the lone sample.
+    _feed_peaks(monkeypatch, [10] * 20)
+    assert measure_memory(lambda: None).repeats >= 2
+
+
+def test_adaptive_runs_to_cap_while_floor_keeps_dropping(monkeypatch):
+    # A strictly-decreasing peak always sets a new min → never goes stale → hits the cap.
+    _feed_peaks(monkeypatch, list(range(10_000, 0, -100)))
+    assert measure_memory(lambda: None).repeats == 10  # _ADAPTIVE_MAX_PASSES
+
+
+def test_adaptive_honors_max_time(monkeypatch):
+    # A decreasing peak would run to the cap, but the wall-clock budget cuts it short.
+    import pytest_benchmem.memray as m
+
+    _feed_peaks(monkeypatch, list(range(10_000, 0, -100)))
+    clock = iter([0.0, 0.0, 0.0, 100.0])  # start, then below-budget until the 3rd check
+    monkeypatch.setattr(m, "perf_counter", lambda: next(clock))
+    res = measure_memory(lambda: None, max_time=5.0)
+    assert 2 <= res.repeats < 10  # stopped by the budget, before the cap
 
 
 def test_compute_statistics_missing_raises_actionably(monkeypatch):
