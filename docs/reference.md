@@ -106,6 +106,19 @@ benchmark_memory.pedantic(target, args=(), kwargs=None, setup=None,
   each round, essential for side-effectful workloads.
 - `rounds`, `warmup_rounds`, `iterations` — as in pytest-benchmark.
 
+**Mostly memory, little timing?** There's no in-pytest "memory-only" switch — the node id
+and JSON entry come from pytest-benchmark's timing run, so memory rides it. But you don't
+have to pay for full timing: `pedantic(rounds=1, warmup_rounds=0, iterations=1)` does a
+*single* bare call (pedantic never calibrates), so timing is essentially just "run it
+once," then the memray pass(es) follow. For *pure* memory with no pytest-benchmark entry
+at all, use the standalone `measure_peak` / `measure_memory` (see the Public Python API
+below) outside pytest.
+
+```python
+def test_build(benchmark_memory):
+    benchmark_memory.pedantic(build_model, args=(1000,), rounds=1, warmup_rounds=0)
+```
+
 **Attributes** (available after a call):
 
 | Attribute | What |
