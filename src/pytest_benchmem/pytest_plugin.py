@@ -407,8 +407,9 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--benchmark-memory",
         action="store_true",
         default=False,
-        help="Record peak memory (memray) for every benchmark() call, "
-        "not only benchmark_memory — no test changes needed.",
+        help="Record peak memory (a memray pass) for every benchmark() call, not just "
+        "the benchmark_memory fixture — no test changes. Off by default; the fixture is "
+        "always measured, with or without this flag.",
     )
     group.addoption(
         "--benchmark-memory-repeats",
@@ -416,8 +417,9 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         type=int,
         default=1,
         metavar="N",
-        help="Default memray passes per benchmark; the reported peak is the min. "
-        "Per-test @pytest.mark.benchmem(repeats=N) overrides it. Default: 1.",
+        help="Number of memray passes per benchmark, suite-wide; the reported peak is the "
+        "minimum across them. Overridden per-test by @pytest.mark.benchmem(repeats=N). "
+        "Default: 1.",
     )
     group.addoption(
         "--benchmark-memory-compare",
@@ -426,40 +428,42 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=False,
         const=True,
         metavar="REF",
-        help="Compare this run's peak memory against a prior saved run "
-        "(pytest-benchmark storage ref like 0001, or the latest if no value); "
-        "prints a per-id memory delta in the summary.",
+        help="Compare this run's peak memory against a prior saved run (a pytest-benchmark "
+        "storage ref like 0001, or the latest if no value is given); folds base and "
+        "delta-peak columns into the table.",
     )
     group.addoption(
         "--benchmark-memory-compare-fail",
         action="append",
         metavar="FIELD:THRESHOLD",
-        help="Fail the session on a memory regression (repeatable): "
-        "peak:10% / peak:5MiB / allocations:5%. Implies --benchmark-memory-compare.",
+        help="Fail the session on a memory regression, e.g. peak:10%, peak:5MiB, "
+        "allocations:5% (repeatable). Fields: peak, allocated, allocations. "
+        "Implies --benchmark-memory-compare.",
     )
     group.addoption(
         "--benchmark-memory-table",
         action="store",
         choices=["combined", "split"],
         default="combined",
-        help="combined (default): fold memory into pytest-benchmark's timing table as "
-        "one table. split: leave pytest-benchmark's table and print memory separately.",
+        help="Layout for the memory metrics: combined (default) folds them into "
+        "pytest-benchmark's timing table; split prints a separate memory table.",
     )
     group.addoption(
         "--benchmark-memory-columns",
         action="store",
         default=None,
         metavar="peak,allocated,allocs",
-        help="Which memory metrics to show in the table, comma-separated, in order "
-        "(peak, allocated, allocs). Default: peak.",
+        help="Which memory metrics the table shows, comma-separated and in order: "
+        "peak, allocated, allocs. Default: peak only.",
     )
     group.addoption(
         "--benchmark-memory-stats",
         action="store",
         default=None,
         metavar="min,mean,max",
-        help="When a benchmark is measured more than once (repeats > 1), the stats each "
-        "metric spreads into (min, mean, max, median, stddev). Default: min,mean,max.",
+        help="With repeats > 1, the stats each shown metric spreads into: "
+        "min, mean, max, median, stddev. A single pass stays one column. "
+        "Default: min,mean,max.",
     )
 
 

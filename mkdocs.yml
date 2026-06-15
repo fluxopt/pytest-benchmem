@@ -32,15 +32,22 @@ theme:
 
 nav:
   - Home: index.md
-  - Getting started: getting-started.ipynb
-  - Metrics: metrics.ipynb
-  - Grouping by dims: dims.ipynb
-  - Compare & plot: compare-plot.ipynb
-  - Cross-version sweeps: sweeps.md
-  - Reference: reference.ipynb
+  - Quickstart: getting-started.md
+  - Guides:
+      - Choosing a metric: metrics.md
+      - Compare & gate CI: compare-plot.ipynb
+      - Grouping by dims: dims.md
+      - Cross-version sweeps: sweeps.md
+  - Reference: reference.md
 
 plugins:
   - search
+  - macros:
+      module_name: docs_macros
+      # Distinctive delimiters so ordinary {{ }} in docs (e.g. GitHub Actions ${{ }})
+      # is left untouched; only [[[ macro() ]]] is rendered.
+      j2_variable_start_string: "[[["
+      j2_variable_end_string: "]]]"
   - mkdocs-jupyter:
       execute: true
       include: ["*.ipynb"]
@@ -49,15 +56,25 @@ plugins:
         remove_input_tags: ["hide-input"]
         remove_all_outputs_tags: ["hide-output"]
         remove_cell_tags: ["hide-cell"]
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_source: false
+            show_root_heading: true
+            show_root_full_path: false
+            show_signature_annotations: true
+            separate_signature: true
+            heading_level: 3
+            members_order: source
+  - mkdocs-typer2:
+      pretty: true
 
-# Exclude the notebook pages' jupytext .md sources — CI converts them to .ipynb
-# (docs.yaml) and mkdocs-jupyter serves those. index.md/sweeps.md stay as markdown.
+# compare-plot is the one executed notebook (live plotly views) — CI converts its
+# jupytext .md source to .ipynb (docs.yaml) and mkdocs-jupyter serves that. Every other
+# page is plain markdown.
 exclude_docs: |
-  getting-started.md
-  metrics.md
-  dims.md
   compare-plot.md
-  reference.md
 
 markdown_extensions:
   - admonition
@@ -74,6 +91,8 @@ markdown_extensions:
   - pymdownx.inlinehilite
   - pymdownx.superfences
   - pymdownx.details
+  - pymdownx.tabbed:
+      alternate_style: true
   - pymdownx.emoji:
       emoji_index: !!python/name:material.extensions.emoji.twemoji
       emoji_generator: !!python/name:material.extensions.emoji.to_svg

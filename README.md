@@ -13,20 +13,20 @@ started, metrics, dims, compare & plot, sweeps, and the reference.
 
 ## Quickstart
 
-Write a normal pytest-benchmark test; swap `benchmark` for `benchmark_memory`:
+A **drop-in** for an existing pytest-benchmark suite: add `--benchmark-memory` and every
+`benchmark(...)` call also records peak memory — no test changes.
 
 ```python
 import pytest
 
 
 @pytest.mark.parametrize("n", [10_000, 100_000, 1_000_000])
-def test_sort(benchmark_memory, n):
-    data = list(range(n, 0, -1))
-    benchmark_memory(sorted, data)
+def test_sort(benchmark, n):          # an ordinary pytest-benchmark test, unchanged
+    benchmark(sorted, list(range(n, 0, -1)))
 ```
 
 ```bash
-pytest --benchmark-only   # both metrics, in pytest-benchmark's own table
+pytest --benchmark-only --benchmark-memory   # both metrics, in pytest-benchmark's own table
 ```
 
 ```
@@ -41,8 +41,9 @@ pytest --benchmark-only   # both metrics, in pytest-benchmark's own table
 
 Left of the divider is pytest-benchmark's timing, untouched; right is pytest-benchmem's
 memory. The two never overlap — memray measures peak on a *separate, untimed* call, so the
-allocator hooks cost the timing nothing. Peak is the headline, so it shows by default;
-`allocated` and `allocs` are one flag away (`--benchmark-memory-columns`).
+allocator hooks cost the timing nothing. It's opt-in at the run level: without the flag, your
+suite runs exactly as before. Peak is the headline, so it shows by default; `allocated` and
+`allocs` are one flag away (`--benchmark-memory-columns`).
 
 Add `--benchmark-json=run.json` and both persist under one node id: timing in `stats`,
 memory in `extra_info.benchmem` (per-repeat `peak_bytes` / `total_bytes` / `allocations` —
@@ -50,29 +51,23 @@ the source for every `--metric` and `--stat`). Parametrize `params` become the a
 dims the plots scale by; for an axis `params` can't carry, set a scalar on `extra_info` —
 see [Grouping by dims](https://fluxopt.github.io/pytest-benchmem/dims/).
 
-## Already have a pytest-benchmark suite?
+## Memory on specific tests — the `benchmark_memory` fixture
 
-Don't rewrite a thing — add `--benchmark-memory` and every `benchmark(...)` call
-also records peak memory:
+`--benchmark-memory` measures the whole suite. To opt in *per test* instead — no run-level
+flag — swap `benchmark` for the `benchmark_memory` fixture on just those tests; it's always
+measured, and adds a `pedantic` form for explicit control:
 
 ```python
-def test_sort(benchmark):            # unchanged
-    benchmark(sorted, list(range(1_000_000, 0, -1)))
+def test_sort(benchmark_memory):
+    benchmark_memory(sorted, list(range(1_000_000, 0, -1)))
 ```
 
-```bash
-pytest --benchmark-only --benchmark-memory   # timing + memory for the whole suite
-```
-
-It's opt-in at the run level: without the flag, plain `benchmark` tests are
-untouched. (Reach for the `benchmark_memory` fixture when you want memory on
-specific tests only, or `pedantic` control.) Set `--benchmark-memory-repeats=N`
-(suite-wide) or `@pytest.mark.benchmem(repeats=N)` (per test, overrides the flag) to
-measure `N` times: every pass is kept and the headline peak is the *minimum* across them.
-The default is one pass — unlike timing, peak memory is near-deterministic (it's allocator
-demand, not wall-clock jitter), and the function is already warm from the timing phase, so
-one pass usually suffices. Raise it when the peak *isn't* deterministic (hash randomization,
-GC timing) to settle the floor and see the spread.
+Either way, set `--benchmark-memory-repeats=N` (suite-wide) or
+`@pytest.mark.benchmem(repeats=N)` (per test) to measure `N` times: every pass is kept and
+the headline peak is the *minimum* across them. The default is one pass — unlike timing, peak
+memory is near-deterministic (it's allocator demand, not wall-clock jitter), and the function
+is already warm from the timing phase, so one pass usually suffices. Raise it when the peak
+*isn't* deterministic (hash randomization, GC timing) to settle the floor and see the spread.
 
 > **Your benchmark must be safe to re-run.** Memory is measured on an *extra,
 > separate* invocation, after pytest-benchmark has already called your function

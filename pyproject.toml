@@ -51,6 +51,9 @@ docs = [
     "mkdocs",
     "mkdocs-material",
     "mkdocs-jupyter",
+    "mkdocstrings[python]",
+    "mkdocs-typer2[mkdocs]",
+    "mkdocs-macros-plugin",
 ]
 
 [tool.ruff]
