@@ -30,12 +30,10 @@ def test_churn(benchmark):
 
 Show all three in the table at once with `--benchmark-memory-columns`:
 
-```bash
-pytest test_churn.py --benchmark-only --benchmark-memory \
-       --benchmark-memory-columns=peak,allocated,allocs
-```
+<!-- termynal -->
 
-```
+```console
+$ pytest test_churn.py --benchmark-only --benchmark-memory --benchmark-memory-columns=peak,allocated,allocs
  Name (time in ms)        Min      │  peak (MiB)   allocated (MiB)   allocs
  ─────────────────────────────────────────────────────────────────────────
   test_churn          73.9735      │        1.16            294.07    9,001

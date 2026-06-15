@@ -23,11 +23,10 @@ def test_sort(benchmark, n):
 
 Add the flag and peak memory appends to pytest-benchmark's own table:
 
-```bash
-pytest test_sortbench.py --benchmark-only --benchmark-memory
-```
+<!-- termynal -->
 
-```
+```console
+$ pytest test_sortbench.py --benchmark-only --benchmark-memory
  Name (time in us)              Min                  Median         │  peak (MiB)
  ──────────────────────────────────────────────────────────────────────────────
   test_sort[10000]           32.5830 (1.0)         41.2080 (1.0)    │       0.08

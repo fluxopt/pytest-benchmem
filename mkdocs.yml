@@ -69,6 +69,9 @@ plugins:
             members_order: source
   - mkdocs-typer2:
       pretty: true
+  - termynal:
+      prompt_literal_start:
+        - "$"
 
 # compare-plot is the one executed notebook (live plotly views) — CI converts its
 # jupytext .md source to .ipynb (docs.yaml) and mkdocs-jupyter serves that. Every other

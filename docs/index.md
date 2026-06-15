@@ -10,14 +10,13 @@ def test_sort(benchmark, n):          # your existing pytest-benchmark test, unc
     benchmark(sorted, list(range(n, 0, -1)))
 ```
 
-```bash
-pytest --benchmark-only --benchmark-memory      # timing + peak memory, one table
-```
-
 Peak appears in pytest-benchmark's own table, appended after the timing columns — no
 second tool:
 
-```
+<!-- termynal -->
+
+```console
+$ pytest --benchmark-only --benchmark-memory
  Name (time in us)              Min                  Median         │  peak (MiB)
  ──────────────────────────────────────────────────────────────────────────────
   test_sort[10000]           32.5830 (1.0)         41.2080 (1.0)    │       0.08

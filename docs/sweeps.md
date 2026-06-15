@@ -25,15 +25,19 @@ repeatable). A non-zero exit lists any versions that failed to provision.
 Hand the per-version JSONs (oldest → newest) straight to `benchmem compare` for a table —
 one row per benchmark, one column per version, lightest value tinted green, heaviest red:
 
-```bash
-benchmem compare 1.2.0.json 1.3.0.json main.json --metric peak
+<!-- termynal -->
+
+```console
+$ benchmem compare 1.2.0.json 1.3.0.json main.json --metric peak
 ```
 
 For a picture, point `benchmem plot` at the same files — with 3+ runs it defaults to the
 `sweep` view, a log₂ fold-change heatmap vs the baseline:
 
-```bash
-benchmem plot 1.2.0.json 1.3.0.json main.json --metric peak
+<!-- termynal -->
+
+```console
+$ benchmem plot 1.2.0.json 1.3.0.json main.json --metric peak
 ```
 
 Either way, pick `--metric time` or any memory metric. See
