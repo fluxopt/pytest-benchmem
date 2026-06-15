@@ -11,6 +11,7 @@ own job; these commands are the memory-aware, dims-aware views on top.
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -170,3 +171,103 @@ def compare(
             typer.secho(reg.format(), fg=typer.colors.RED)
         raise typer.Exit(code=1)
     typer.secho("no regressions over thresholds", fg=typer.colors.GREEN)
+
+
+@app.command()
+def sweep(
+    package: Annotated[
+        str,
+        typer.Argument(help="Package under test; each plain version installs `<package>==<v>`."),
+    ],
+    versions: Annotated[
+        list[str],
+        typer.Argument(
+            help="Versions or pip specs to sweep, e.g. 1.2.0 1.3.0 git+https://github.com/me/pkg@main."
+        ),
+    ],
+    suite: Annotated[
+        Path,
+        typer.Option(help="Benchmark suite (dir or file) to run in each version's venv."),
+    ],
+    out: Annotated[
+        Path,
+        typer.Option(help="Directory for the per-version JSON runs."),
+    ] = Path(".benchmarks/sweep"),
+    memory: Annotated[
+        bool,
+        typer.Option("--memory/--no-memory", help="Add --benchmark-memory to each pytest run."),
+    ] = False,
+    pytest_arg: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--pytest-arg",
+            help="Arg forwarded to pytest, one token each, repeatable (e.g. --pytest-arg=-k).",
+        ),
+    ] = None,
+    pins: Annotated[
+        list[str] | None,
+        typer.Option("--pin", help="Extra pip spec installed alongside (repeatable)."),
+    ] = None,
+    as_of: Annotated[
+        str | None,
+        typer.Option("--as-of", help="YYYY-MM-DD for uv --exclude-newer (reproducible resolve)."),
+    ] = None,
+    import_check: Annotated[
+        str | None,
+        typer.Option(help="Module asserted to resolve to the venv (isolation preflight)."),
+    ] = None,
+    copy_dir: Annotated[
+        Path | None,
+        typer.Option(help="Directory copied into each venv's cwd (the suite imports from here)."),
+    ] = None,
+) -> None:
+    """Run a benchmark suite across several installed versions of a package.
+
+    Provisions one fresh uv venv per version, runs 'pytest <suite> --benchmark-only'
+    in each writing <out>/<version>.json, then prints the next step. --memory adds
+    the memory pass; forward any other pytest flag with --pytest-arg, e.g.
+    benchmem sweep mypkg 1.2.0 1.3.0 --suite benchmarks/ --memory --pytest-arg=-k.
+    """
+    if not versions:
+        raise _fail("sweep needs at least one version", 2)
+    from pytest_benchmem.sweep import sweep as run_sweep
+    from pytest_benchmem.sweep import version_label
+
+    out.mkdir(parents=True, exist_ok=True)
+    extra = (["--benchmark-memory"] if memory else []) + list(pytest_arg or [])
+    produced: list[Path] = []
+
+    def run(venv: object) -> None:
+        v = venv  # a sweep.Venv (python/env/cwd resolved)
+        json_path = out / f"{version_label(v.version)}.json"  # type: ignore[attr-defined]
+        cmd = [
+            str(v.python),  # type: ignore[attr-defined]
+            "-m",
+            "pytest",
+            str(suite),
+            "--benchmark-only",
+            f"--benchmark-json={json_path}",
+            *extra,
+        ]
+        typer.secho(f"sweep[{v.version}]: {' '.join(cmd)}", fg=typer.colors.BLUE)  # type: ignore[attr-defined]
+        subprocess.run(cmd, cwd=v.cwd, env=v.env, check=False)  # type: ignore[attr-defined]
+        if json_path.exists():
+            produced.append(json_path)
+
+    failed = run_sweep(
+        versions,
+        run,
+        install_spec=lambda v: f"{package}=={v}",
+        pins=tuple(pins or ()),
+        copy_dir=copy_dir,
+        import_check=import_check,
+        as_of=as_of,
+    )
+
+    if produced:
+        files = " ".join(str(p) for p in produced)
+        typer.secho(f"sweep: wrote {len(produced)} run(s) under {out}/", fg=typer.colors.GREEN)
+        typer.echo(f"  compare: benchmem compare {files} --metric peak")
+        typer.echo(f"  plot:    benchmem plot {files} --metric peak")
+    if failed:
+        raise _fail(f"failed to provision: {', '.join(failed)}", 1)
