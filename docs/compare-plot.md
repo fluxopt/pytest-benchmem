@@ -17,6 +17,28 @@ Two (or more) saved runs in, one comparison out — a table (`benchmem compare`)
 interactive view (`benchmem plot`). Both take `--metric time` or any memory metric, and group
 by the [dims](dims.md) your tests carry.
 
+## A regression to catch
+
+A benchmark builds a table of `(i, i²)` rows. On `main`, each row is a lightweight tuple:
+
+```python
+@pytest.mark.parametrize("n", [10_000, 50_000, 200_000, 500_000])
+def test_build_rows(benchmark, n):
+    benchmark(lambda: [(i, i * i) for i in range(n)])
+```
+
+A branch switches the rows to dicts for readability — a classic memory regression, since a
+dict is several times heavier than a 2-tuple:
+
+```python
+@pytest.mark.parametrize("n", [10_000, 50_000, 200_000, 500_000])
+def test_build_rows(benchmark, n):
+    benchmark(lambda: [{"x": i, "sq": i * i} for i in range(n)])
+```
+
+Run each on its branch and save the `--benchmark-json` — here, `baseline.json` (main) and
+`candidate.json` (the branch).
+
 ```{code-cell} ipython3
 :tags: [hide-input]
 
@@ -33,25 +55,23 @@ os.environ["PATH"] = f"{Path(sys.executable).parent}{os.pathsep}{os.environ['PAT
 pio.renderers.default = "notebook_connected"
 _tmp = Path(tempfile.mkdtemp(prefix="pytest-benchmem-"))
 
-suite = _tmp / "test_sortbench.py"
-suite.write_text("""
-import pytest
-
-@pytest.mark.parametrize("n", [10_000, 50_000, 200_000, 500_000])
-def test_sort(benchmark, n):
-    benchmark(sorted, list(range(n, 0, -1)))
-""")
+suite = _tmp / "test_rows.py"
 baseline, candidate = _tmp / "baseline.json", _tmp / "candidate.json"
 _args = ["--benchmark-only", "--benchmark-memory", "--benchmark-columns=min",
          "-q", "-p", "no:cacheprovider"]
-for _out in (baseline, candidate):
+_suite = """
+import pytest
+
+@pytest.mark.parametrize("n", [10_000, 50_000, 200_000, 500_000])
+def test_build_rows(benchmark, n):
+    benchmark(lambda: %s)
+"""
+for _out, _row in [(baseline, "[(i, i * i) for i in range(n)]"),
+                   (candidate, '[{"x": i, "sq": i * i} for i in range(n)]')]:
+    suite.write_text(_suite % _row)
     subprocess.run([sys.executable, "-m", "pytest", str(suite), *_args,
                     f"--benchmark-json={_out}"], check=True, capture_output=True)
 ```
-
-Below, `baseline.json` and `candidate.json` are two runs of the same suite. On a real change
-you'd run it on `main`, then on your branch; here it's the same code twice, so the deltas are
-just measurement noise.
 
 ## `benchmem compare` — the delta table
 
@@ -74,8 +94,8 @@ pytest --benchmark-only --benchmark-memory --benchmark-json=pr.json
 benchmem compare main.json pr.json --fail-on peak:10% --fail-on allocations:5%
 ```
 
-Here baseline and candidate are the same code, so nothing trips it (exit `0`); on a real
-regression the offending ids print and it exits `1`:
+The dict rows blow past the threshold on every size, so the offending ids print and it exits
+`1` — failing the CI job:
 
 ```{code-cell} ipython3
 !benchmem compare {baseline} {candidate} --metric peak --fail-on peak:10% --fail-on allocations:5%; echo "exit: $?"
@@ -86,7 +106,7 @@ regression the offending ids print and it exits `1`:
 ## `benchmem plot` — interactive views
 
 `benchmem plot` writes an interactive plotly view to standalone HTML, picking the view by run
-count. **Scaling** (one run) draws cost vs. input size — `sorted`'s peak-memory curve:
+count. **Scaling** (one run) draws cost vs. input size — the baseline's peak-memory curve:
 
 ```bash
 benchmem plot baseline.json --metric peak -o scaling.html
