@@ -34,7 +34,7 @@ import pytest
 from rich.console import Console
 
 from pytest_benchmem.memray import MemoryResult, measure_memory
-from pytest_benchmem.snapshot import BENCHMEM_KEY, human_bytes
+from pytest_benchmem.snapshot import BENCHMEM_KEY, _human_bytes
 
 if TYPE_CHECKING:
     from pytest_benchmark.fixture import BenchmarkFixture
@@ -139,7 +139,7 @@ def _enforce_limits(result: MemoryResult, limits: Mapping[str, float], name: str
         attr, label, is_bytes = _LIMIT_FIELDS[kwarg]
         actual = float(getattr(result, attr))
         if actual > limit:
-            shown = human_bytes if is_bytes else (lambda v: f"{v:.0f}")
+            shown = _human_bytes if is_bytes else (lambda v: f"{v:.0f}")
             where = f"{name}: " if name else ""
             raise AssertionError(f"{where}{label} {shown(actual)} exceeds {kwarg} {shown(limit)}")
 

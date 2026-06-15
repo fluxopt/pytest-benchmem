@@ -164,7 +164,6 @@ storage, so you can hand the readers a directory instead of listing files.
 ::: pytest_benchmem.load_samples
 ::: pytest_benchmem.load_long_df
 ::: pytest_benchmem.discover_runs
-::: pytest_benchmem.human_bytes
 ::: pytest_benchmem.Sample
 
 ### Plotting — `pytest_benchmem.plotting`

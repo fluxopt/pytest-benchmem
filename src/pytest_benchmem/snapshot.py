@@ -85,7 +85,7 @@ if TYPE_CHECKING:
     import pandas as pd
 
 
-def human_bytes(n: float) -> str:
+def _human_bytes(n: float) -> str:
     """Auto-scale a byte count to a short IEC string: ``932 B``, ``4.1 MiB``, ``2.3 GiB``."""
     step = 1024.0
     value = float(n)
