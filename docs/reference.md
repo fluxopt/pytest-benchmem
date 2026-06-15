@@ -13,11 +13,9 @@ kernelspec:
 
 # Reference
 
-Every flag, marker, fixture, CLI command, and public function. The `benchmem` CLI
-options are rendered live from `--help` below; everything else — pytest flags, the
-marker, the fixture, the blob schema, the Python API — is curated here. For the
-narrative versions see [Getting started](getting-started.ipynb),
-[Metrics](metrics.ipynb), [Dims](dims.ipynb), and [Compare & plot](compare-plot.ipynb).
+Every flag, marker, fixture, CLI command, and public function. For the narrative
+versions see [Getting started](getting-started.ipynb), [Metrics](metrics.ipynb),
+[Dims](dims.ipynb), and [Compare & plot](compare-plot.ipynb).
 
 ```{code-cell} ipython3
 import os
@@ -194,63 +192,5 @@ file stem) accept the same [dims](dims.ipynb) your tests carry.
 
 ## Public Python API
 
-Light to import — `pytest_benchmem` re-exports only the engine and the readers;
-`pytest_benchmem.plotting` pulls plotly and `pytest_benchmem.sweep` shells to `uv`,
-so import those submodules directly.
-
-### Engine — `pytest_benchmem`
-
-```python
-measure_peak(action, repeats=1) -> int
-measure_memory(action, repeats=1) -> MemoryResult
-```
-
-`action` is a zero-arg callable. `measure_peak` returns the bare peak in bytes;
-`measure_memory` returns the full `MemoryResult` (`peak_bytes`, `peak_bytes_max`,
-`allocations`, `total_bytes`, `repeats`).
-
-### Readers & loader — `pytest_benchmem`
-
-```python
-from_pytest_benchmark(path, *, metric="min") -> (label, [Sample], unit)
-memory_from_pytest_benchmark(path, *, field="peak_bytes") -> (label, [Sample], unit)
-load_samples(path, *, metric="time", stat="min") -> (label, [Sample], unit)
-load_long_df(runs, *, metric="time", stat="min") -> (DataFrame, unit)
-discover_runs(root=".benchmarks") -> [Path]
-human_bytes(n) -> str
-```
-
-- `from_pytest_benchmark` reads **timing** (seconds, from `stats`);
-  `memory_from_pytest_benchmark` reads **memory** (bytes, from `extra_info.benchmem`).
-  `load_samples` is the unified reader — `metric` is one of `time`/`peak`/`allocated`/
-  `allocations`; `stat` (time only) is `min`/`median`/…
-- `load_long_df` stacks runs into the tidy frame the plots pivot — columns
-  `snapshot`, `id`, `value`, plus one per [dim](dims.ipynb).
-- `discover_runs()` collects saved runs from `.benchmarks/` — pytest-benchmark's
-  storage dir, where `--benchmark-save` / `--benchmark-autosave` write — so you can
-  hand the readers a directory instead of listing files.
-- A `Sample` is `(id, value, dims)`; `dims` is a mapping of dim name → `str`/`int`/
-  `float`.
-
-### Plotting — `pytest_benchmem.plotting`
-
-Every `plot_*` returns `(figure, n_ids)`:
-
-```python
-plot_scaling(snapshots, *, metric="time", x=None, color=None, facet=None, log="auto", labels=None)
-plot_scatter(snapshots, *, metric="time", facet=None, clip=None, labels=None)
-plot_compare(snapshots, *, metric="time", sort="absolute", facet=None, clip=None, labels=None)
-plot_sweep(snapshots,  *, metric="time", clip=None, labels=None)
-```
-
-`snapshots` is a list of run JSON paths. `labels` names the series per run (defaults
-to the file stems) — the API behind `plot`'s `-l/--label`. `plot_compare`'s `sort` is
-`"absolute"` (native units) or `"relative"` (percent).
-
-### Sweeps — `pytest_benchmem.sweep`
-
-```python
-sweep(versions, run, **provision_kwargs) -> [failed_version_label]
-```
-
-See **[Cross-version sweeps](sweeps.md)** for the parameters and the `Venv` object.
+The importable API — the engine, the readers/loader, the `plot_*` functions, and
+`sweep` — is documented on its own page: **[Python API](api.md)**.

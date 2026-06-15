@@ -52,10 +52,7 @@ class MemoryResult:
     """A memory measurement across ``repeats`` passes, derived from the per-repeat samples.
 
     The per-repeat :attr:`samples` are the single source of truth — that's all the blob
-    stores (the ``series``). Unlike pytest-benchmark, which keeps a denormalized summary
-    and gates the raw rounds behind ``--benchmark-save-data`` *because they number in the
-    thousands*, our series is a handful of (expensive) memray passes, so storing it whole
-    and deriving on read is both lossless and free.
+    stores (the ``series``); everything else is derived from them on read.
 
     Peak memory is noisier than expected (GC timing, lazy imports, page cache), so the
     headline :attr:`peak_bytes` is the *minimum* peak — the cleanest "floor this can hit" —
