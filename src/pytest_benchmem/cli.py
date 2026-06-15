@@ -15,11 +15,14 @@ import subprocess
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 import typer
 
 from pytest_benchmem.snapshot import Metric, discover_runs
+
+#: Which facet axes to unmatch from the shared default (see ``benchmem plot``).
+FreeAxes = Literal["x", "y", "both"]
 
 app = typer.Typer(help="pytest-benchmem — plot and compare benchmark runs.", no_args_is_help=True)
 
@@ -91,6 +94,10 @@ def plot(
         list[str] | None,
         typer.Option("--where", help="Filter rows by dim: KEY=VALUE (repeatable, AND-combined)."),
     ] = None,
+    free_axes: Annotated[
+        FreeAxes | None,
+        typer.Option("--free-axes", help="Free facet axes: x | y | both (needs --facet)."),
+    ] = None,
     label: Annotated[
         list[str] | None,
         typer.Option(
@@ -112,11 +119,23 @@ def plot(
     with _exit_on_value_error():
         if chosen == "compare":
             fig, n = plotting.plot_compare(
-                runs, metric=metric, facet=facet, clip=clip, where=filters, labels=labels
+                runs,
+                metric=metric,
+                facet=facet,
+                clip=clip,
+                where=filters,
+                free_axes=free_axes,
+                labels=labels,
             )
         elif chosen == "scatter":
             fig, n = plotting.plot_scatter(
-                runs, metric=metric, facet=facet, clip=clip, where=filters, labels=labels
+                runs,
+                metric=metric,
+                facet=facet,
+                clip=clip,
+                where=filters,
+                free_axes=free_axes,
+                labels=labels,
             )
         elif chosen == "sweep":
             fig, n = plotting.plot_sweep(
@@ -124,7 +143,13 @@ def plot(
             )
         elif chosen == "scaling":
             fig, n = plotting.plot_scaling(
-                runs, metric=metric, x=x, facet=facet, where=filters, labels=labels
+                runs,
+                metric=metric,
+                x=x,
+                facet=facet,
+                where=filters,
+                free_axes=free_axes,
+                labels=labels,
             )
         else:
             raise _fail(f"unknown view {chosen!r}", 2)

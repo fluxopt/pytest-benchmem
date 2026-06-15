@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     from plotly.graph_objects import Figure
 
 SortMode = Literal["absolute", "relative"]
+FreeAxes = Literal["x", "y", "both"]
 
 #: A plot input: one path or a sequence of them (str or Path).
 Snapshots = str | Path | Sequence[str | Path]
@@ -146,6 +147,23 @@ def _apply_where(df: pd.DataFrame, where: Mapping[str, str] | None) -> pd.DataFr
     return df
 
 
+def _free_facet_axes(fig: Figure, *, faceted: bool, free_axes: FreeAxes | None) -> None:
+    """Give chosen facet axes their own auto-range + ticks (vs plotly's shared default).
+
+    No-op unless the view is faceted and ``free_axes`` is set. Matched axes are the
+    default — good when facets are commensurable. The two cases where matching hurts
+    want *different* axes freed: incommensurable sweeps (``"x"`` — the x dims differ)
+    and facets whose *cost* scales differ (``"y"`` — e.g. one panel per function,
+    where a shared y flattens the cheap panels). ``"both"`` frees each independently.
+    """
+    if not (faceted and free_axes):
+        return
+    if free_axes in ("x", "both"):
+        fig.update_xaxes(matches=None, showticklabels=True)
+    if free_axes in ("y", "both"):
+        fig.update_yaxes(matches=None, showticklabels=True)
+
+
 def plot_compare(
     snapshots: Snapshots,
     *,
@@ -154,15 +172,16 @@ def plot_compare(
     facet: str | None = None,
     clip: float | None = None,
     where: Mapping[str, str] | None = None,
+    free_axes: FreeAxes | None = None,
     labels: Sequence[str] | None = None,
 ) -> tuple[Figure, int]:
     """Bar chart of per-id delta, sorted by the chosen Δ (biggest regressions on top).
 
     ``sort`` picks the bar dimension: ``absolute`` plots ``b - a`` in the native
     unit, ``relative`` plots percent change. ``facet`` splits into subplots by any
-    dim. ``where`` filters rows to matching ``dim=value`` pairs. ``clip`` clamps the
-    colour scale (default symmetric p95). ``labels`` names the two series (defaults
-    to the file stems).
+    dim; ``free_axes`` then gives each its own axes (vs shared). ``where``
+    filters rows to matching ``dim=value`` pairs. ``clip`` clamps the colour scale
+    (default symmetric p95). ``labels`` names the two series (defaults to the stems).
     """
     import sys
 
@@ -228,6 +247,7 @@ def plot_compare(
     )
     if sort == "absolute":
         fig.update_xaxes(**_axis_kwargs(unit))
+    _free_facet_axes(fig, faceted=bool(facet_kwargs), free_axes=free_axes)
     fig.update_traces(textposition="outside", cliponaxis=False)
     fig.update_layout(height=max(500, len(df) * 22), showlegend=False)
     return fig, len(df)
@@ -240,15 +260,16 @@ def plot_scatter(
     facet: str | None = None,
     clip: float | None = None,
     where: Mapping[str, str] | None = None,
+    free_axes: FreeAxes | None = None,
     labels: Sequence[str] | None = None,
 ) -> tuple[Figure, int]:
     """Baseline cost (log-x) vs candidate/baseline ratio (log-y).
 
     Top-right = slow *and* slower (the regressed corner). The first snapshot is
     the baseline; with 3+, the rest animate. Colour encodes absolute Δ; ``clip``
-    clamps it (default p95). ``facet`` splits by any dim; ``where`` filters rows to
-    matching ``dim=value`` pairs. ``labels`` names the snapshots (defaults to the
-    file stems).
+    clamps it (default p95). ``facet`` splits by any dim (``free_axes`` gives each
+    its own axes); ``where`` filters rows to matching ``dim=value`` pairs.
+    ``labels`` names the snapshots (defaults to the file stems).
     """
     import plotly.express as px
 
@@ -305,6 +326,7 @@ def plot_scatter(
         **extra,
     )
     fig.add_hline(y=1.0, line_dash="dash", line_color="grey")
+    _free_facet_axes(fig, faceted="facet_col" in extra, free_axes=free_axes)
     fig.update_traces(marker={"size": 8, "line": {"width": 0.5, "color": "DarkSlateGrey"}})
     fig.update_layout(height=600)
     return fig, int(df["id"].nunique())
@@ -397,14 +419,17 @@ def plot_scaling(
     facet: str | None = None,
     log: bool | Literal["auto"] = "auto",
     where: Mapping[str, str] | None = None,
+    free_axes: FreeAxes | None = None,
     labels: Sequence[str] | None = None,
 ) -> tuple[Figure, int]:
     """Cost vs a numeric dim, coloured/faceted by other dims.
 
     ``x``/``color``/``facet`` default to inference from the dims (the lone numeric
     dim → x); pass them to override. ``where`` filters rows to matching ``dim=value``
-    pairs. ``log="auto"`` log-scales when x is numeric and strictly positive.
-    ``labels`` names the snapshot in the title (defaults to the file stem).
+    pairs. ``free_axes`` (``"x"``/``"y"``/``"both"``) unmatches a faceted axis from
+    the shared default — ``"x"`` for incommensurable sweeps, ``"y"`` when facets
+    have different cost scales (e.g. per function). ``log="auto"`` log-scales when x
+    is numeric and strictly positive. ``labels`` names the snapshot in the title.
     """
     import plotly.express as px
 
@@ -433,6 +458,7 @@ def plot_scaling(
         labels={"value": f"{vlabel} ({unit})", x: x},
         title=f"Scaling: {vlabel} ({unit}) vs {x} ({snap_label})",
     )
+    _free_facet_axes(fig, faceted=facet is not None, free_axes=free_axes)
     n_facets = df[facet].nunique() if facet else 1
     fig.update_layout(height=max(400, ((n_facets + 2) // 3) * 350))
     return fig, len(df)

@@ -201,6 +201,52 @@ def test_scaling_mixed_axes_separable_by_where(tmp_path):
     assert n == 3
 
 
+def _x_axes_matched(fig):
+    """True if every facet x-axis is matched to the shared default (plotly's default)."""
+    axes = [fig.layout[k] for k in fig.layout if k.startswith("xaxis")]
+    secondary = [ax for ax in axes if ax.matches is not None]
+    return bool(secondary) and all(ax.matches for ax in secondary)
+
+
+def _y_axes_matched(fig):
+    axes = [fig.layout[k] for k in fig.layout if k.startswith("yaxis")]
+    secondary = [ax for ax in axes if ax.matches is not None]
+    return bool(secondary) and all(ax.matches for ax in secondary)
+
+
+def test_facet_axes_shared_by_default(tmp_path):
+    p = _run_mixed_axes(tmp_path / "a.json")
+    fig, _n = plotting.plot_scaling(p, x="v", facet="axis")  # no free_axes
+    assert _x_axes_matched(fig)  # plotly's matched default — the squish #49 describes
+
+
+def test_free_axes_x_unmatches_only_x(tmp_path):
+    p = _run_mixed_axes(tmp_path / "a.json")
+    fig, _n = plotting.plot_scaling(p, x="v", facet="axis", free_axes="x")
+    assert not _x_axes_matched(fig)  # x freed → each sweep its own range
+    assert _y_axes_matched(fig)  # y still shared
+
+
+def test_free_axes_y_unmatches_only_y(tmp_path):
+    p = _run_mixed_axes(tmp_path / "a.json")
+    fig, _n = plotting.plot_scaling(p, x="v", facet="axis", free_axes="y")
+    assert _x_axes_matched(fig)
+    assert not _y_axes_matched(fig)  # y freed → per-facet cost scale (the function case)
+
+
+def test_free_axes_both_unmatches_both(tmp_path):
+    p = _run_mixed_axes(tmp_path / "a.json")
+    fig, _n = plotting.plot_scaling(p, x="v", facet="axis", free_axes="both")
+    assert not _x_axes_matched(fig)
+    assert not _y_axes_matched(fig)
+
+
+def test_free_axes_noop_without_facet(tmp_path):
+    # free_axes only acts when faceted; a single-panel plot is unaffected
+    fig, _n = plotting.plot_scaling(_run(tmp_path / "a.json", ROWS_A), free_axes="both")
+    assert _n == 3
+
+
 def test_scaling_without_numeric_dim_raises(tmp_path):
     # dim 'kind' is categorical, so x can't be inferred
     p = tmp_path / "a.json"
