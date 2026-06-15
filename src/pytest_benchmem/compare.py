@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TextIO
 
-from pytest_benchmem.format import byte_unit, fmt_bytes, fmt_count, rank_style
+from pytest_benchmem.format import byte_unit, fmt_bytes, fmt_count, rank_style, signed_pct
 from pytest_benchmem.snapshot import (
     Metric,
     _human_bytes,
@@ -166,7 +166,7 @@ def compare_runs(
             cells.append(Text(fmt(v), style=rank_style(v, best, worst) or ""))
         if len(labels) == 2:  # noqa: PLR2004
             va, vb = vals[0], vals[1]
-            change = f"{(vb - va) / va * 100:+.1f}%" if va and vb and va > 0 else "—"
+            change = signed_pct((vb - va) / va * 100) if va and vb and va > 0 else "—"
             cstyle = "red" if va and vb and vb > va else "green" if va and vb and vb < va else ""
             cells.append(Text(change, style=cstyle))
         table.add_row(*cells)
@@ -205,7 +205,7 @@ class Regression:
         return (
             f"  {self.field:<12} {short}: "
             f"{_fmt_value(self.field, self.base)} → {_fmt_value(self.field, self.head)} "
-            f"({self.pct:+.1f}%)"
+            f"({signed_pct(self.pct)})"
         )
 
 

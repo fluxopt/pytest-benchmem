@@ -452,9 +452,9 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--benchmark-memory-columns",
         action="store",
         default=None,
-        metavar="peak,allocated,allocs",
+        metavar="peak,allocated,allocations",
         help="Which memory metrics the table shows, comma-separated and in order: "
-        "peak, allocated, allocs. Default: peak only.",
+        "peak, allocated, allocations. Default: peak only.",
     )
     group.addoption(
         "--benchmark-memory-stats",

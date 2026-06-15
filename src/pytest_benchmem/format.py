@@ -57,6 +57,13 @@ def rank_style(value: float | None, best: float | None, worst: float | None) -> 
     return None
 
 
+def signed_pct(pct: float) -> str:
+    """A signed percent like ``+22.0%`` / ``-50.0%`` — but a plain ``0.0%`` when it rounds
+    to zero, so sub-threshold noise never shows a misleading ``+0.0%`` / ``-0.0%`` sign.
+    """
+    return "0.0%" if round(pct, 1) == 0 else f"{pct:+.1f}%"
+
+
 def growth(base: float, current: float) -> tuple[str, str | None]:
     """``(Δ%-string, style)`` for ``current`` vs ``base`` — red on growth, green on shrink.
 
@@ -65,4 +72,4 @@ def growth(base: float, current: float) -> tuple[str, str | None]:
     if base <= 0:
         return "—", None
     pct = (current - base) / base * 100
-    return f"{pct:+.1f}%", "red" if current > base else "green" if current < base else None
+    return signed_pct(pct), "red" if current > base else "green" if current < base else None

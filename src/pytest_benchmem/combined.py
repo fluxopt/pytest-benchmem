@@ -3,7 +3,7 @@
 When a run records memory, pytest-benchmem suppresses pytest-benchmark's own table
 and prints this instead: the *same* timing columns, per-group scaling, sort, and
 best/worst colouring pytest-benchmark would show, with ``peak`` / ``allocated`` /
-``allocs`` folded on as extra columns.
+``allocations`` folded on as extra columns.
 
 It does not re-derive any timing maths. It reuses pytest-benchmark's already-computed
 grouping (``bs.groups``), its configured ``columns`` / ``sort``, its ``name_format``,
@@ -177,7 +177,7 @@ def render_combined_tables(
     ``groups`` is ``bs.groups`` (``(group_name, [Metadata, ...])``); ``columns`` /
     ``sort`` / ``name_format`` / ``scale_unit`` are pytest-benchmark's own, so the
     timing side renders identically. Memory columns (``peak`` / ``allocated`` /
-    ``allocs``) are appended for the benchmarks that recorded memory;
+    ``allocations``) are appended for the benchmarks that recorded memory;
     timing-only rows show ``—`` there.
 
     Pass ``baseline`` (an ``{id: blob}`` map from a prior run) to fold the memory
