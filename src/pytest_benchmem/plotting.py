@@ -176,11 +176,20 @@ def plot_compare(
 ) -> tuple[Figure, int]:
     """Bar chart of per-id delta, sorted by the chosen Δ (biggest regressions on top).
 
-    ``sort`` picks the bar dimension: ``absolute`` plots ``b - a`` in the native
-    unit, ``relative`` plots percent change. ``facet`` splits into subplots by any
-    dim; ``free_axes`` then gives each its own axes (vs shared). ``where``
-    filters rows to matching ``dim=value`` pairs. ``clip`` clamps the colour scale
-    (default symmetric p95). ``labels`` names the two series (defaults to the stems).
+    The first two snapshots are compared; the first is the baseline.
+
+    Args:
+        snapshots: Run JSON path(s); only the first two are used.
+        metric: Which metric to plot (``time`` / ``peak`` / ``allocated`` / ``allocations``).
+        sort: ``absolute`` plots ``b - a`` in the native unit; ``relative`` plots percent change.
+        facet: Dim to split into subplots.
+        clip: Clamp the colour scale (default symmetric p95).
+        where: Keep only rows matching these ``dim=value`` pairs.
+        free_axes: Give each facet its own axes instead of sharing.
+        labels: Series names for the two runs (default: file stems).
+
+    Returns:
+        ``(figure, n_ids)`` — the plotly figure and the number of ids plotted.
     """
     import sys
 
@@ -264,11 +273,20 @@ def plot_scatter(
 ) -> tuple[Figure, int]:
     """Baseline cost (log-x) vs candidate/baseline ratio (log-y).
 
-    Top-right = slow *and* slower (the regressed corner). The first snapshot is
-    the baseline; with 3+, the rest animate. Colour encodes absolute Δ; ``clip``
-    clamps it (default p95). ``facet`` splits by any dim (``free_axes`` gives each
-    its own axes); ``where`` filters rows to matching ``dim=value`` pairs.
-    ``labels`` names the snapshots (defaults to the file stems).
+    Top-right = slow *and* slower (the regressed corner). The first snapshot is the
+    baseline; with 3+, the rest animate. Colour encodes the absolute Δ.
+
+    Args:
+        snapshots: Run JSON path(s); the first is the baseline, extras animate.
+        metric: Which metric to plot (``time`` / ``peak`` / ``allocated`` / ``allocations``).
+        facet: Dim to split into subplots.
+        clip: Clamp the colour scale (default p95).
+        where: Keep only rows matching these ``dim=value`` pairs.
+        free_axes: Give each facet its own axes instead of sharing.
+        labels: Series names per run (default: file stems).
+
+    Returns:
+        ``(figure, n_ids)`` — the plotly figure and the number of ids plotted.
     """
     import plotly.express as px
 
@@ -341,8 +359,15 @@ def plot_sweep(
 ) -> tuple[Figure, int]:
     """Heatmap of per-id fold-change (log2 ratio) vs the first snapshot.
 
-    ``where`` filters rows to matching ``dim=value`` pairs. ``labels`` names the
-    version columns (defaults to the file stems).
+    Args:
+        snapshots: Run JSON paths; columns in order, the first is the reference.
+        metric: Which metric to plot (``time`` / ``peak`` / ``allocated`` / ``allocations``).
+        clip: Clamp the colour scale.
+        where: Keep only rows matching these ``dim=value`` pairs.
+        labels: Column (version) names (default: file stems).
+
+    Returns:
+        ``(figure, n_ids)`` — the plotly figure and the number of ids plotted.
     """
     import plotly.express as px
 
@@ -424,11 +449,23 @@ def plot_scaling(
     """Cost vs a numeric dim, coloured/faceted by other dims.
 
     ``x``/``color``/``facet`` default to inference from the dims (the lone numeric
-    dim → x); pass them to override. ``where`` filters rows to matching ``dim=value``
-    pairs. ``free_axes`` (``"x"``/``"y"``/``"both"``) unmatches a faceted axis from
-    the shared default — ``"x"`` for incommensurable sweeps, ``"y"`` when facets
-    have different cost scales (e.g. per function). ``log="auto"`` log-scales when x
-    is numeric and strictly positive. ``labels`` names the snapshot in the title.
+    dim → x); pass them to override.
+
+    Args:
+        snapshots: Run JSON path(s).
+        metric: Which metric to plot (``time`` / ``peak`` / ``allocated`` / ``allocations``).
+        x: Dim for the x-axis (default: the lone numeric dim).
+        color: Dim to colour by (default: inferred).
+        facet: Dim to split into subplots (default: inferred).
+        log: ``"auto"`` log-scales when x is numeric and strictly positive; or force with a bool.
+        where: Keep only rows matching these ``dim=value`` pairs.
+        free_axes: ``"x"`` / ``"y"`` / ``"both"`` — unmatch a faceted axis from the shared
+            default (``"x"`` for incommensurable sweeps, ``"y"`` when facets have different
+            cost scales, e.g. per function).
+        labels: Names the snapshot in the title (default: file stem).
+
+    Returns:
+        ``(figure, n_ids)`` — the plotly figure and the number of ids plotted.
     """
     import plotly.express as px
 

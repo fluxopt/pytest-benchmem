@@ -186,9 +186,16 @@ def from_pytest_benchmark(
 ) -> tuple[str, list[Sample], str]:
     """Read timing out of a pytest-benchmark file → ``(label, samples, "s")``.
 
-    ``metric`` picks the stat (``min`` / ``median`` / …). Dims come from each
-    benchmark's parametrize ``params`` and ``extra_info``, plus the structural
-    ``node.*`` dims (see :func:`_node_dims`).
+    Dims come from each benchmark's parametrize ``params`` and ``extra_info``, plus
+    the structural ``node.*`` dims (see :func:`_node_dims`).
+
+    Args:
+        path: A pytest-benchmark JSON file.
+        metric: Which pytest-benchmark stat to read (``min`` / ``median`` / …).
+
+    Returns:
+        ``(label, samples, unit)`` — the run label, one :class:`Sample` per benchmark,
+        and the unit (``"s"``).
     """
     p, benchmarks = _read_benchmarks(path)
     samples = [
@@ -214,12 +221,21 @@ def memory_from_pytest_benchmark(
 
     The ``benchmark_memory`` fixture stores each run's memory blob under
     ``extra_info["benchmem"]`` (a flat per-repeat series per field), keyed by the same
-    benchmark id pytest-benchmark uses. ``field`` picks which series (``peak_bytes`` →
-    unit ``B``, ``allocations`` → count). Without ``reduce`` the headline scalar is
-    derived (peak = min, allocations/total_bytes = the min-peak run); pass ``reduce`` to
-    compute a distribution stat over the series instead. Benchmarks lacking the blob
-    (timing-only tests) are skipped. Dims come from parametrize ``params`` and
-    ``extra_info``, plus the structural ``node.*`` dims (see :func:`_node_dims`).
+    benchmark id pytest-benchmark uses. Benchmarks lacking the blob (timing-only tests)
+    are skipped. Dims come from parametrize ``params`` and ``extra_info``, plus the
+    structural ``node.*`` dims (see :func:`_node_dims`).
+
+    Args:
+        path: A pytest-benchmark JSON file.
+        field: Which series to read — ``peak_bytes`` (unit ``B``), ``allocations`` (count),
+            or ``total_bytes``.
+        reduce: Reduce the per-repeat series to one scalar. Default (``None``) derives the
+            headline (peak = min, allocations/total_bytes = the min-peak run); pass a
+            callable for a distribution stat over the series instead.
+
+    Returns:
+        ``(label, samples, unit)`` — the run label, one :class:`Sample` per benchmark
+        with the blob, and the unit (``B`` or count).
     """
     from pytest_benchmem.memray import MemoryResult
 
@@ -248,9 +264,18 @@ def load_samples(
 ) -> tuple[str, list[Sample], str]:
     """Read one pytest-benchmark file for the chosen ``metric`` → ``(label, samples, unit)``.
 
-    ``stat`` selects a distribution stat over the metric's per-repeat series (``min`` /
-    ``max`` / ``mean`` / ``median`` / ``stddev``); ``None`` reads the headline scalar.
-    For ``time`` it picks the pytest-benchmark stat (defaulting to ``min``).
+    The unified reader over :func:`from_pytest_benchmark` (timing) and
+    :func:`memory_from_pytest_benchmark` (memory).
+
+    Args:
+        path: A pytest-benchmark JSON file.
+        metric: Which metric to read (``time`` / ``peak`` / ``allocated`` / ``allocations``).
+        stat: Distribution stat over the metric's per-repeat series (``min`` / ``max`` /
+            ``mean`` / ``median`` / ``stddev``); ``None`` reads the headline scalar. For
+            ``time`` it selects the pytest-benchmark stat (default ``min``).
+
+    Returns:
+        ``(label, samples, unit)`` — the run label, its samples, and the metric's unit.
     """
     if metric == "time":
         return from_pytest_benchmark(path, metric=stat or "min")
@@ -266,7 +291,14 @@ def load_samples(
 
 
 def discover_runs(root: str | Path = ".benchmarks") -> list[Path]:
-    """Return pytest-benchmark JSON files under ``root`` (for CLI suggestions)."""
+    """Return pytest-benchmark JSON files under ``root`` (for CLI suggestions).
+
+    Args:
+        root: Directory to search (default: pytest-benchmark's ``.benchmarks`` store).
+
+    Returns:
+        The JSON file paths found under ``root``.
+    """
     base = Path(root)
     return sorted(base.rglob("*.json")) if base.exists() else []
 
@@ -301,8 +333,15 @@ def load_long_df(
     (the series/version label), ``id``, ``value``, then one column per dim key seen
     (missing dims are ``NaN``). Every plot view pivots this frame.
 
-    ``labels`` overrides the ``snapshot`` label per run (one per path, same order),
-    decoupling the display name from the filename; defaults to each file's stem.
+    Args:
+        runs: One path or a sequence of pytest-benchmark JSON files.
+        metric: Which metric to read (``time`` / ``peak`` / ``allocated`` / ``allocations``).
+        stat: Distribution stat over the per-repeat series; ``None`` reads the headline scalar.
+        labels: Overrides the ``snapshot`` label per run (one per path, same order),
+            decoupling the display name from the filename; defaults to each file's stem.
+
+    Returns:
+        ``(df, unit)`` — the long-form frame and the metric's unit.
     """
     import pandas as pd
 
