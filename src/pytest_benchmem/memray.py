@@ -145,15 +145,38 @@ def _compute_statistics() -> Callable[[str], Any]:
     return compute_statistics
 
 
+#: Substring of memray's error when a second ``Tracker`` is started while one is active.
+#: memray raises a bare ``RuntimeError("No more than one Tracker instance can be active
+#: at the same time")``; we match on this to turn it into an actionable message.
+_NESTED_TRACKER_MARKER = "more than one Tracker"
+
+
 def _track_once(action: Action) -> Measurement:
-    """One fresh tracker run → a :class:`Measurement` via memray stats."""
+    """One fresh tracker run → a :class:`Measurement` via memray stats.
+
+    memray allows only one active ``Tracker`` per process, so if one is already
+    running — most often pytest-memray's ``--memray`` profiling the same test — the
+    nested ``Tracker`` raises. We translate that into an actionable error rather than
+    surfacing memray's terse one.
+    """
     import memray
 
     compute_statistics = _compute_statistics()
     with tempfile.TemporaryDirectory(prefix="pytest-benchmem-") as tmp:
         out = Path(tmp) / "track.bin"  # memray must create the file itself
-        with memray.Tracker(out):
-            action()
+        try:
+            with memray.Tracker(out):
+                action()
+        except RuntimeError as exc:
+            if _NESTED_TRACKER_MARKER in str(exc):
+                raise RuntimeError(
+                    "pytest-benchmem couldn't start its memray pass because another memray "
+                    "Tracker is already active — most likely pytest-memray's `--memray` running "
+                    "on the same test. memray allows only one Tracker per process. Run the two "
+                    "on different tests (or different sessions): pytest-memray for whole-test "
+                    "limits/leaks, pytest-benchmem for the benchmarked action's memory."
+                ) from exc
+            raise
         s = compute_statistics(str(out))
         return Measurement(
             peak_bytes=int(s.peak_memory_allocated),

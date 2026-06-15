@@ -175,8 +175,9 @@ directions:
 They coexist in one suite. Reach for **pytest-memray** to assert a ceiling, catch
 a leak, or see which function allocated; reach for **pytest-benchmem** to track a
 measured number over time and gate on a delta. One caveat: memray won't nest two
-trackers, so don't run `pytest --memray` and a benchmem fixture on the *same*
-test.
+trackers, so don't run `pytest --memray` and a benchmem fixture on the *same* test
+— if you do, benchmem fails that test with an actionable error rather than a terse
+memray one.
 
 ## Install
 
