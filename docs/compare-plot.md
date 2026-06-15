@@ -31,6 +31,7 @@ from pathlib import Path
 import plotly.io as pio
 
 os.environ["FORCE_COLOR"] = "1"
+os.environ["PYTEST_ADDOPTS"] = "--benchmark-max-time=0"  # docs build: cap timing rounds (memory output is unaffected)
 os.environ["PATH"] = f"{Path(sys.executable).parent}{os.pathsep}{os.environ['PATH']}"
 pio.renderers.default = "notebook_connected"
 _tmp = Path(tempfile.mkdtemp(prefix="pytest-benchmem-"))

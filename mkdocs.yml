@@ -55,8 +55,16 @@ plugins:
             show_signature_annotations: true
             members_order: source
   - mkdocs-jupyter:
-      execute: true
+      # Notebooks are executed ahead of the build (jupytext --execute, in parallel — see
+      # docs.yaml), so the build just renders the cached outputs instead of re-running them.
+      execute: false
       include: ["*.ipynb"]
+      # Only ever process the pre-converted .ipynb. mkdocs-jupyter otherwise runs
+      # jupytext.read() on every .md to sniff for a notebook kernel — which chokes for
+      # ~30s on api.md's mkdocstrings (:::) syntax. Our .md pages are never notebooks
+      # (the jupytext sources are excluded below), so skip them all. (ignore is checked
+      # before that read, so this also avoids the cost on any future markdown page.)
+      ignore: ["*.md"]
       include_source: true
       remove_tag_config:
         remove_input_tags: ["hide-input"]
