@@ -72,8 +72,8 @@ in only one run show `—`.
 > `pytest-benchmark compare`, `--benchmark-histogram`. pytest-benchmem doesn't
 > reimplement those; it adds the memory-aware, dims-aware views.
 
-Order the rows with `--sort` (`name` | `value` — largest in the last run first — |
-`change`), and write the raw numbers for another tool with `--csv out.csv`:
+Order the rows with `--sort=name|value|change` (`value` puts the largest in the last run
+first), and write the raw numbers for another tool with `--csv out.csv`:
 
 ```bash
 benchmem compare {baseline} {candidate} --metric peak --sort value --csv peak.csv

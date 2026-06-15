@@ -38,9 +38,22 @@ nav:
   - Compare & plot: compare-plot.ipynb
   - Cross-version sweeps: sweeps.md
   - Reference: reference.ipynb
+  - Python API: api.md
 
 plugins:
   - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: sphinx
+            show_source: false
+            show_root_heading: true
+            show_root_full_path: false
+            heading_level: 3
+            separate_signature: true
+            show_signature_annotations: true
+            members_order: source
   - mkdocs-jupyter:
       execute: true
       include: ["*.ipynb"]
