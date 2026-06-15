@@ -58,6 +58,32 @@ def test_build(benchmark_memory):
 | Kwarg | Default | What |
 |---|---|---|
 | `repeats` | `1` | measure this test with `N` memray passes. **Every** pass is kept (the blob stores the whole series); the headline `peak` is the *minimum* across them, and `--stat` reports any other. Overrides the suite-wide `--benchmark-memory-repeats` for this test. |
+| `max_peak` | — | fail the test if the headline `peak` exceeds this **absolute** ceiling. A size string (`"100MiB"`, units `B`/`KiB`/`MiB`/`GiB`) or a bare int (bytes). |
+| `max_allocated` | — | as `max_peak`, on `allocated` (total bytes). |
+| `max_allocations` | — | as above, on the `allocations` *count* — a bare number (no unit). |
+
+### Absolute ceilings — `max_peak` / `max_allocated` / `max_allocations`
+
+```python
+@pytest.mark.benchmem(max_peak="100MiB", max_allocations=5000)
+def test_build(benchmark_memory):
+    benchmark_memory(build_model, 1000)
+```
+
+A baseline-free guardrail: the test **fails** if the measured headline metric exceeds the
+ceiling (`test_build: peak 117 MiB exceeds max_peak 100 MiB`). Thresholds are **absolute
+only** — there's no saved run to take a percent of; for *relative* gating against a prior run
+use `--benchmark-memory-compare-fail` or `benchmem compare --fail-on`. With `repeats > 1` the
+gate reads the **headline min** (the same value the table and JSON report), so it's the
+cleanest floor. The ceiling is enforced wherever memory is measured — the `benchmark_memory`
+fixture *and* the `--benchmark-memory` patch — but a plain `benchmark()` call without
+`--benchmark-memory` measures no memory, so the marker is a no-op there.
+
+> **Scope:** this gates the **benchmarked action only** (the isolated call pytest-benchmem
+> measures), not the whole test. For a *whole-test* limit or leak check, that's
+> [pytest-memray]'s `limit_memory` / `limit_leaks` — see the README's "With pytest-memray".
+
+[pytest-memray]: https://pytest-memray.readthedocs.io
 
 Why once, when timing reruns many times? Peak memory is allocator demand — the bytes
 your code requests for a given code path and inputs — not a wall-clock number, so it's

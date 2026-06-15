@@ -34,13 +34,24 @@ import pytest
 from rich.console import Console
 
 from pytest_benchmem.memray import MemoryResult, measure_memory
-from pytest_benchmem.snapshot import BENCHMEM_KEY
+from pytest_benchmem.snapshot import BENCHMEM_KEY, human_bytes
 
 if TYPE_CHECKING:
     from pytest_benchmark.fixture import BenchmarkFixture
 
 #: Name of the per-test marker: ``@pytest.mark.benchmem(repeats=N)``.
 MARKER = "benchmem"
+
+#: ``max_*`` ceiling kwargs on the marker → (MemoryResult attr, display label, is_bytes).
+#: A measured headline value over its ceiling fails the test. Absolute only — there's no
+#: baseline to take a percent of; bytes take a unit suffix (``"100MiB"``) or a bare int,
+#: ``max_allocations`` a bare count. This is the action-scoped guardrail (vs pytest-memray's
+#: whole-test ``limit_memory``); see #82.
+_LIMIT_FIELDS = {
+    "max_peak": ("peak_bytes", "peak", True),
+    "max_allocated": ("total_bytes", "allocated", True),
+    "max_allocations": ("allocations", "allocations", False),
+}
 
 
 def _global_repeats(config: Any) -> int:
@@ -63,20 +74,98 @@ def _repeats_from_node(node: Any) -> int:
     return _global_repeats(getattr(node, "config", None))
 
 
+def _parse_limit(kwarg: str, value: Any, *, is_bytes: bool) -> float:
+    """Parse one ``max_*`` marker value → an absolute ceiling in base units (bytes or count).
+
+    Accepts an int/float (already base units) or a string with an optional unit
+    (``"100MiB"``), reusing ``compare``'s byte-unit grammar so it matches ``--fail-on``.
+    A bad value raises :class:`ValueError`, which fails the one test whose marker is wrong.
+    """
+    if isinstance(value, bool):  # bool is an int subclass — reject before the numeric branch
+        raise ValueError(f"{MARKER}({kwarg}=...): expected a size or count, not a bool")
+    if isinstance(value, (int, float)):
+        if value < 0:
+            raise ValueError(f"{MARKER}({kwarg}={value!r}): must be non-negative")
+        return float(value)
+    if not isinstance(value, str):
+        raise ValueError(
+            f"{MARKER}({kwarg}=...): expected a number or a string like '100MiB', "
+            f"got {type(value).__name__}"
+        )
+    import re
+
+    from pytest_benchmem.compare import _BYTE_UNITS
+
+    m = re.fullmatch(r"\s*([0-9]*\.?[0-9]+)\s*([A-Za-zµ]*)\s*", value)
+    if m is None:
+        raise ValueError(
+            f"{MARKER}({kwarg}={value!r}): expected a number with an optional unit, e.g. '100MiB'"
+        )
+    num, suffix = float(m.group(1)), m.group(2)
+    if not is_bytes:
+        if suffix:
+            raise ValueError(
+                f"{MARKER}({kwarg}={value!r}): a count takes no unit (drop {suffix!r})"
+            )
+        return num
+    if suffix not in _BYTE_UNITS:
+        known = ", ".join(k for k in _BYTE_UNITS if k)
+        raise ValueError(f"{MARKER}({kwarg}={value!r}): unknown unit {suffix!r} (use {known})")
+    return num * _BYTE_UNITS[suffix]
+
+
+def _limits_from_node(node: Any) -> dict[str, float]:
+    """Resolve a test's ``max_*`` ceilings from ``@pytest.mark.benchmem(...)`` → ``{kwarg:
+    ceiling}`` in base units. Empty when there's no marker or no ``max_*`` kwarg on it.
+    """
+    marker = node.get_closest_marker(MARKER) if node is not None else None
+    if marker is None:
+        return {}
+    return {
+        kwarg: _parse_limit(kwarg, marker.kwargs[kwarg], is_bytes=is_bytes)
+        for kwarg, (_attr, _label, is_bytes) in _LIMIT_FIELDS.items()
+        if kwarg in marker.kwargs
+    }
+
+
+def _enforce_limits(result: MemoryResult, limits: Mapping[str, float], name: str) -> None:
+    """Fail the test if any measured headline metric exceeds its ``max_*`` ceiling.
+
+    Gates on the *headline* value — the min-peak representative the table and JSON report —
+    so with ``repeats > 1`` it's the cleanest floor (a single pass is just that value).
+    Raises the first breach as an ``AssertionError`` (a test failure, not an error).
+    """
+    for kwarg, limit in limits.items():
+        attr, label, is_bytes = _LIMIT_FIELDS[kwarg]
+        actual = float(getattr(result, attr))
+        if actual > limit:
+            shown = human_bytes if is_bytes else (lambda v: f"{v:.0f}")
+            where = f"{name}: " if name else ""
+            raise AssertionError(f"{where}{label} {shown(actual)} exceeds {kwarg} {shown(limit)}")
+
+
 def _record_memory(
-    benchmark: BenchmarkFixture, action: Callable[[], Any], *, repeats: int = 1
+    benchmark: BenchmarkFixture,
+    action: Callable[[], Any],
+    *,
+    repeats: int = 1,
+    limits: Mapping[str, float] | None = None,
 ) -> MemoryResult:
     """Memory-profile ``action`` into ``benchmark.extra_info["benchmem"]``, once.
 
     Idempotent: if a blob is already recorded for this benchmark (e.g. the
     ``--benchmark-memory`` patch and the explicit fixture both fire), reuse it
-    rather than measuring twice.
+    rather than measuring twice. Any ``max_*`` ``limits`` are enforced on the result
+    (whether freshly measured or reused), so a breach fails the test exactly once.
     """
     existing = benchmark.extra_info.get(BENCHMEM_KEY)
     if isinstance(existing, Mapping):
-        return MemoryResult.from_blob(existing)
-    result = measure_memory(action, repeats=repeats)
-    benchmark.extra_info[BENCHMEM_KEY] = result.as_dict()
+        result = MemoryResult.from_blob(existing)
+    else:
+        result = measure_memory(action, repeats=repeats)
+        benchmark.extra_info[BENCHMEM_KEY] = result.as_dict()
+    if limits:
+        _enforce_limits(result, limits, getattr(benchmark, "fullname", "") or "")
     return result
 
 
@@ -89,9 +178,16 @@ class MemoryBenchmark:
     ``extra_info["benchmem"]``.
     """
 
-    def __init__(self, benchmark: BenchmarkFixture, *, repeats: int = 1) -> None:
+    def __init__(
+        self,
+        benchmark: BenchmarkFixture,
+        *,
+        repeats: int = 1,
+        limits: Mapping[str, float] | None = None,
+    ) -> None:
         self._benchmark = benchmark
         self._repeats = repeats
+        self._limits = dict(limits or {})
         self.result: MemoryResult | None = None
 
     @property
@@ -113,7 +209,10 @@ class MemoryBenchmark:
         """Time ``function_to_benchmark(*args, **kwargs)``, then record its peak memory."""
         result = self._benchmark(function_to_benchmark, *args, **kwargs)
         self.result = _record_memory(
-            self._benchmark, lambda: function_to_benchmark(*args, **kwargs), repeats=self._repeats
+            self._benchmark,
+            lambda: function_to_benchmark(*args, **kwargs),
+            repeats=self._repeats,
+            limits=self._limits,
         )
         return result
 
@@ -144,7 +243,10 @@ class MemoryBenchmark:
             iterations=iterations,
         )
         self.result = _record_memory(
-            self._benchmark, _pedantic_action(target, args, kwargs, setup), repeats=self._repeats
+            self._benchmark,
+            _pedantic_action(target, args, kwargs, setup),
+            repeats=self._repeats,
+            limits=self._limits,
         )
         return result
 
@@ -180,7 +282,11 @@ def benchmark_memory(
     kept; the headline peak is the min), overriding ``--benchmark-memory-repeats``.
     For an existing suite, prefer the ``--benchmark-memory`` flag over rewriting tests.
     """
-    return MemoryBenchmark(benchmark, repeats=_repeats_from_node(request.node))
+    return MemoryBenchmark(
+        benchmark,
+        repeats=_repeats_from_node(request.node),
+        limits=_limits_from_node(request.node),
+    )
 
 
 # --- --benchmark-memory: augment the stock `benchmark` fixture --------------------
@@ -234,11 +340,19 @@ def _install_auto_memory() -> None:
     def _repeats(self: BenchmarkFixture) -> int:
         return _repeats_from_node(getattr(self, "_benchmem_node", None))
 
+    def _limits(self: BenchmarkFixture) -> dict[str, float]:
+        return _limits_from_node(getattr(self, "_benchmem_node", None))
+
     def call(
         self: BenchmarkFixture, function_to_benchmark: Callable[..., Any], *a: Any, **k: Any
     ) -> Any:
         result = orig_call(self, function_to_benchmark, *a, **k)  # type: ignore[no-untyped-call]
-        _record_memory(self, lambda: function_to_benchmark(*a, **k), repeats=_repeats(self))
+        _record_memory(
+            self,
+            lambda: function_to_benchmark(*a, **k),
+            repeats=_repeats(self),
+            limits=_limits(self),
+        )
         return result
 
     def pedantic(
@@ -262,7 +376,12 @@ def _install_auto_memory() -> None:
             warmup_rounds=warmup_rounds,
             iterations=iterations,
         )
-        _record_memory(self, _pedantic_action(target, args, kwargs, setup), repeats=_repeats(self))
+        _record_memory(
+            self,
+            _pedantic_action(target, args, kwargs, setup),
+            repeats=_repeats(self),
+            limits=_limits(self),
+        )
         return result
 
     BenchmarkFixture.__init__ = init  # type: ignore[method-assign]
@@ -348,8 +467,11 @@ def pytest_configure(config: pytest.Config) -> None:
     """Register the ``benchmem`` marker; patch ``benchmark`` if ``--benchmark-memory`` is set."""
     config.addinivalue_line(
         "markers",
-        "benchmem(repeats=N): pytest-benchmem peak-memory options — "
-        "repeats sets the number of memray passes (the reported peak is the min).",
+        "benchmem(repeats=N, max_peak=..., max_allocated=..., max_allocations=N): "
+        "pytest-benchmem peak-memory options — repeats sets the number of memray passes "
+        "(the reported peak is the min); max_peak / max_allocated / max_allocations fail the "
+        "test if the measured headline metric exceeds an absolute ceiling (e.g. "
+        "max_peak='100MiB', max_allocations=5000).",
     )
     _memory_column_opts(config)  # validate --benchmark-memory-columns/-stats fail-fast
     if config.getoption("--benchmark-memory"):
