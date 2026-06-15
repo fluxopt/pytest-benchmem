@@ -24,6 +24,9 @@ from pytest_benchmem.snapshot import Metric, discover_runs
 #: Which facet axes to unmatch from the shared default (see ``benchmem plot``).
 FreeAxes = Literal["x", "y", "both"]
 
+#: Scaling-plot spread whiskers (min…max of each point's per-pass series).
+Band = Literal["auto", "minmax", "none"]
+
 app = typer.Typer(help="pytest-benchmem — plot and compare benchmark runs.", no_args_is_help=True)
 
 MetricOpt = Annotated[
@@ -100,6 +103,13 @@ def plot(
         FreeAxes | None,
         typer.Option("--free-axes", help="Free facet axes: x | y | both (needs --facet)."),
     ] = None,
+    band: Annotated[
+        Band,
+        typer.Option(
+            "--band",
+            help="scaling: spread whiskers on memory metrics — auto | minmax | none.",
+        ),
+    ] = "auto",
     label: Annotated[
         list[str] | None,
         typer.Option(
@@ -149,6 +159,7 @@ def plot(
                 metric=metric,
                 x=x,
                 facet=facet,
+                band=band,
                 where=filters,
                 free_axes=free_axes,
                 labels=labels,

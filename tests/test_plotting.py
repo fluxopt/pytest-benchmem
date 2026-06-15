@@ -262,3 +262,64 @@ def test_scaling_without_numeric_dim_raises(tmp_path):
     )
     with pytest.raises(ValueError, match="numeric dim"):
         plotting.plot_scaling([p])
+
+
+def _run_series(path, rows):
+    """Write a memory run where each id carries a multi-pass peak series.
+
+    ``rows`` is ``[(n, [peak_pass1, peak_pass2, ...])]`` (bytes).
+    """
+    benchmarks = [
+        {
+            "fullname": f"test_op[n={n}]",
+            "stats": {"min": float(min(peaks))},
+            "params": {"n": n},
+            "extra_info": {
+                "benchmem": {
+                    "peak_bytes": [int(p) for p in peaks],
+                    "allocations": [0] * len(peaks),
+                    "total_bytes": [int(p) for p in peaks],
+                }
+            },
+        }
+        for n, peaks in rows
+    ]
+    path.write_text(json.dumps({"benchmarks": benchmarks}))
+    return path
+
+
+def _has_whiskers(fig):
+    return any(getattr(tr.error_y, "array", None) is not None for tr in fig.data)
+
+
+def test_scaling_band_shows_spread_whiskers(tmp_path):
+    # multi-pass series with spread (min != max) -> the band draws min..max whiskers
+    p = _run_series(tmp_path / "a.json", [(10, [100, 400]), (100, [200, 900])])
+    fig, _n = plotting.plot_scaling([p], metric="peak")  # band="auto" default
+    assert _has_whiskers(fig)
+
+
+def test_scaling_band_none_suppresses_whiskers(tmp_path):
+    p = _run_series(tmp_path / "a.json", [(10, [100, 400]), (100, [200, 900])])
+    fig, _n = plotting.plot_scaling([p], metric="peak", band="none")
+    assert not _has_whiskers(fig)
+
+
+def test_scaling_band_auto_skips_whiskers_when_no_spread(tmp_path):
+    # deterministic series (every pass identical) -> auto shows nothing to spread
+    p = _run_series(tmp_path / "a.json", [(10, [100, 100]), (100, [200, 200])])
+    fig, _n = plotting.plot_scaling([p], metric="peak")
+    assert not _has_whiskers(fig)
+
+
+def test_scaling_band_minmax_forces_whiskers_even_when_flat(tmp_path):
+    p = _run_series(tmp_path / "a.json", [(10, [100, 100]), (100, [200, 200])])
+    fig, _n = plotting.plot_scaling([p], metric="peak", band="minmax")
+    assert _has_whiskers(fig)  # present (zero-length) so the schema is stable
+
+
+def test_scaling_band_ignored_for_time(tmp_path):
+    # time isn't a memray series; band never applies
+    p = _run(tmp_path / "a.json", ROWS_A)
+    fig, _n = plotting.plot_scaling([p], metric="time", band="minmax")
+    assert not _has_whiskers(fig)
