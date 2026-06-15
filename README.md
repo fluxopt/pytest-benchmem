@@ -147,13 +147,36 @@ covers CI timing.
 | Local timing + A/B compare | **pytest-benchmark** | rides it (timing is its job) |
 | Rigorous perf history across commits | **ASV** | — (heavier, RSS memory) |
 | **Precise local peak memory (numpy/C allocs)** | **memray** | ⭐ the core |
+| Assert a memory limit / catch a leak *in a test* | **[pytest-memray]** | — (use it; see below) |
+| *Which* function allocated (flamegraph) | **[pytest-memray]** or `memray` | — (use them) |
 | Memory *in your pytest-benchmark tests* | — | ⭐ fixture **or** `--benchmark-memory` |
-| Same runs across installed versions | — | ⭐ `sweep` |
+| **Track/compare/plot** memory across inputs, versions, commits | — | ⭐ compare · sweep · plot |
 
 > **Not** a CI dashboard (use [CodSpeed]) and **not** a rigorous perf-history
 > system (use [ASV]). If your core need is *precise local memory* over the
 > benchmarks you already write — timing/sweeps/plots in one vocabulary — that's
 > pytest-benchmem.
+
+### With pytest-memray
+
+[pytest-memray] is the closest neighbor, and the two are **complements, not
+rivals** — both are thin layers over the same memray engine, pointed in opposite
+directions:
+
+- **pytest-memray** is a *guardrail*: `@pytest.mark.limit_memory("100MiB")`,
+  `limit_leaks`, and flamegraphs that fail or diagnose a test. It tracks the
+  **whole test** (fixtures, data construction, teardown) — the right scope for
+  *"did this test use too much / leak?"*.
+- **pytest-benchmem** is a *benchmark*: it measures **only the benchmarked
+  action**, alongside timing under one node id, and lets you **compare, sweep,
+  and plot** that number across inputs, versions, and commits — *"how does memory
+  scale / change?"*. It has no leak detection or flamegraphs, by design.
+
+They coexist in one suite. Reach for **pytest-memray** to assert a ceiling, catch
+a leak, or see which function allocated; reach for **pytest-benchmem** to track a
+measured number over time and gate on a delta. One caveat: memray won't nest two
+trackers, so don't run `pytest --memray` and a benchmem fixture on the *same*
+test.
 
 ## Install
 
@@ -171,5 +194,6 @@ Early. Extracted from the linopy internal benchmark suite, where it's the local
 memory-profiling layer. API may move before 1.0.
 
 [pytest-benchmark]: https://pytest-benchmark.readthedocs.io
+[pytest-memray]: https://pytest-memray.readthedocs.io
 [CodSpeed]: https://codspeed.io
 [ASV]: https://asv.readthedocs.io
