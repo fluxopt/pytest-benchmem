@@ -20,10 +20,8 @@ def test_sort(benchmark, n):
 After a run, `n` is a real, numeric axis your plots and compares group by — `benchmem plot`
 picks it up as the x of a scaling curve with no extra flags:
 
-<!-- termynal -->
-
-```console
-$ benchmem plot run.json --metric peak     # scaling: peak vs n, auto-inferred
+```bash
+benchmem plot run.json --metric peak     # scaling: peak vs n, auto-inferred
 ```
 
 Only **scalars** (`str`/`int`/`float`) become dims; a `list`/`dict`, or an object
@@ -97,10 +95,8 @@ no `extra_info`, no test changes:
 These are most useful when the axis you care about *is* the test — e.g. one function per
 operation. Facet a plot by it directly:
 
-<!-- termynal -->
-
-```console
-$ benchmem plot run.json --metric peak --facet node.func
+```bash
+benchmem plot run.json --metric peak --facet node.func
 ```
 
 They're selectable but never auto-chosen: a plot only splits by a `node.*` dim when you name
