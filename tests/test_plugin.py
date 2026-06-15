@@ -329,6 +329,128 @@ def test_benchmem_marker_is_registered(pytester):
     result.assert_outcomes(passed=1)
 
 
+# --- @pytest.mark.benchmem(max_*=...): action-scoped absolute ceilings -----------
+
+
+@pytest.mark.parametrize(
+    ("value", "is_bytes", "expected"),
+    [
+        ("100MiB", True, 100 * 1024**2),
+        ("2KiB", True, 2048.0),
+        ("512B", True, 512.0),
+        ("1.5GiB", True, int(1.5 * 1024**3)),
+        (1024, True, 1024.0),  # a bare int is already base units
+        (5000, False, 5000.0),  # allocations: a bare count
+        ("5000", False, 5000.0),
+    ],
+)
+def test_parse_limit_accepts_sizes_and_counts(value, is_bytes, expected):
+    assert plugin._parse_limit("max_peak", value, is_bytes=is_bytes) == expected
+
+
+@pytest.mark.parametrize(
+    ("kwarg", "value", "is_bytes", "match"),
+    [
+        ("max_peak", "100ZB", True, "unknown unit"),
+        ("max_peak", "lots", True, "number with an optional unit"),
+        ("max_allocations", "5000B", False, "count takes no unit"),
+        ("max_peak", True, True, "not a bool"),  # bool is an int subclass
+        ("max_peak", -1, True, "non-negative"),
+        ("max_peak", ["x"], True, "expected a number or a string"),
+    ],
+)
+def test_parse_limit_rejects_bad_values(kwarg, value, is_bytes, match):
+    with pytest.raises(ValueError, match=match):
+        plugin._parse_limit(kwarg, value, is_bytes=is_bytes)
+
+
+class _FakeMarker:
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+
+
+class _FakeNode:
+    def __init__(self, marker):
+        self._marker = marker
+
+    def get_closest_marker(self, name):
+        return self._marker
+
+
+def test_limits_from_node_picks_only_max_kwargs():
+    """Only ``max_*`` kwargs become limits; ``repeats`` (and a missing marker) don't."""
+    node = _FakeNode(_FakeMarker(repeats=3, max_peak="2KiB", max_allocations=10))
+    assert plugin._limits_from_node(node) == {"max_peak": 2048.0, "max_allocations": 10.0}
+    assert plugin._limits_from_node(_FakeNode(None)) == {}
+
+
+def _result(peak: int, allocs: int = 1, total: int = 1) -> MemoryResult:
+    return MemoryResult((Measurement(peak_bytes=peak, allocations=allocs, total_bytes=total),))
+
+
+def test_enforce_limits_raises_over_ceiling():
+    with pytest.raises(AssertionError, match=r"test_x: peak .* exceeds max_peak"):
+        plugin._enforce_limits(_result(2_000_000), {"max_peak": 1_000_000}, "test_x")
+
+
+def test_enforce_limits_passes_under_ceiling():
+    plugin._enforce_limits(_result(500), {"max_peak": 1_000_000}, "test_x")  # no raise
+
+
+def test_enforce_limits_counts_use_plain_number_and_no_name_prefix():
+    with pytest.raises(AssertionError, match=r"^allocations 42 exceeds max_allocations 10$"):
+        plugin._enforce_limits(_result(1, allocs=42), {"max_allocations": 10}, "")
+
+
+# A suite that trips a ceiling on the fixture path and one well under it.
+LIMIT_SUITE = """
+import pytest
+
+@pytest.mark.benchmem(max_peak="1KiB")
+def test_over(benchmark_memory):
+    benchmark_memory(lambda: [0] * 200_000)
+
+@pytest.mark.benchmem(max_peak="500MiB")
+def test_under(benchmark_memory):
+    benchmark_memory(lambda: [0] * 200_000)
+"""
+
+
+def test_max_peak_marker_fails_over_passes_under(pytester):
+    """The fixture path: a test over its max_peak fails, one under it passes."""
+    pytester.makepyfile(LIMIT_SUITE)
+    result = pytester.runpytest_subprocess("--benchmark-only", "-p", "no:cacheprovider")
+    result.assert_outcomes(passed=1, failed=1)
+    result.stdout.fnmatch_lines(["*exceeds max_peak 1*KiB*"])
+
+
+def test_max_peak_marker_fires_on_the_benchmark_memory_patch_path(pytester):
+    """The --benchmark-memory patch enforces the ceiling on a plain benchmark() call too."""
+    pytester.makepyfile(
+        "import pytest\n"
+        "@pytest.mark.benchmem(max_peak='1KiB')\n"
+        "def test_over_plain(benchmark):\n"
+        "    benchmark(lambda: [0] * 200_000)\n"
+    )
+    result = pytester.runpytest_subprocess(
+        "--benchmark-only", "--benchmark-memory", "-p", "no:cacheprovider"
+    )
+    result.assert_outcomes(failed=1)
+
+
+def test_max_peak_marker_is_noop_without_memory_measurement(pytester):
+    """A plain benchmark() with the marker but no --benchmark-memory measures nothing,
+    so there's no peak to gate on — the test passes (documented limitation)."""
+    pytester.makepyfile(
+        "import pytest\n"
+        "@pytest.mark.benchmem(max_peak='1KiB')\n"
+        "def test_unmeasured(benchmark):\n"
+        "    benchmark(lambda: [0] * 200_000)\n"
+    )
+    result = pytester.runpytest_subprocess("--benchmark-only", "-p", "no:cacheprovider")
+    result.assert_outcomes(passed=1)
+
+
 # --- inline --benchmark-memory-compare[-fail] ------------------------------------
 
 _SMALL = "def test_m(benchmark_memory):\n    benchmark_memory(lambda: [0] * 100_000)\n"
