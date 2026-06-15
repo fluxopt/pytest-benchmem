@@ -3,6 +3,8 @@ from __future__ import annotations
 import contextlib
 import importlib.util
 import json
+from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -188,10 +190,9 @@ def _patch_sweep(monkeypatch, tmp_path, *, failed=()):
     callback against one fake Venv per version, and the fake subprocess writes the
     JSON the callback expects (so ``produced`` is populated).
     """
-    import pytest_benchmem.cli as climod
     import pytest_benchmem.sweep as sweepmod
 
-    captured: dict = {"cmds": []}
+    captured: dict[str, Any] = {"cmds": []}
 
     def fake_sweep(versions, run, **kw):
         captured["versions"] = list(versions)
@@ -204,7 +205,7 @@ def _patch_sweep(monkeypatch, tmp_path, *, failed=()):
         captured["cmds"].append(cmd)
         for arg in cmd:
             if isinstance(arg, str) and arg.startswith("--benchmark-json="):
-                path = climod.Path(arg.split("=", 1)[1])
+                path = Path(arg.split("=", 1)[1])
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("{}")
 
@@ -214,7 +215,7 @@ def _patch_sweep(monkeypatch, tmp_path, *, failed=()):
         return _Completed()
 
     monkeypatch.setattr(sweepmod, "sweep", fake_sweep)
-    monkeypatch.setattr(climod.subprocess, "run", fake_subprocess_run)
+    monkeypatch.setattr("pytest_benchmem.cli.subprocess.run", fake_subprocess_run)
     return captured
 
 
@@ -224,11 +225,17 @@ def test_sweep_runs_each_version_and_hints_next_step(tmp_path, monkeypatch):
     result = runner.invoke(
         app,
         [
-            "sweep", "mypkg", "1.2.0", "1.3.0",
-            "--suite", "benchmarks/",
-            "--out", str(out),
+            "sweep",
+            "mypkg",
+            "1.2.0",
+            "1.3.0",
+            "--suite",
+            "benchmarks/",
+            "--out",
+            str(out),
             "--memory",  # adds --benchmark-memory
-            "--pytest-arg=-k", "--pytest-arg=build",  # forwarded verbatim
+            "--pytest-arg=-k",
+            "--pytest-arg=build",  # forwarded verbatim
         ],
     )
     assert result.exit_code == 0, _text(result)
