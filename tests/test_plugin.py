@@ -12,6 +12,8 @@ import platform
 
 import pytest
 
+import pytest_benchmem.pytest_plugin as plugin
+from pytest_benchmem.memray import Measurement, MemoryResult
 from pytest_benchmem.snapshot import from_pytest_benchmark, memory_from_pytest_benchmark
 
 pytest.importorskip("memray")
@@ -19,6 +21,52 @@ pytest.importorskip("pytest_benchmark")
 pytestmark = pytest.mark.skipif(
     platform.system() == "Windows", reason="memray unavailable on Windows"
 )
+
+# --- ordering: timing must run before the memray pass (the function is warm by then) ---
+
+
+class _OrderSpyBenchmark:
+    """Stand-in for pytest-benchmark's fixture that logs when the timing pass runs."""
+
+    def __init__(self, events: list[str]) -> None:
+        self.extra_info: dict = {}
+        self._events = events
+
+    def __call__(self, fn, *a, **k):
+        self._events.append("timing")
+        return fn(*a, **k)
+
+    def pedantic(self, target, args=(), kwargs=None, setup=None, **_):
+        self._events.append("timing")
+        return target(*args, **(kwargs or {}))
+
+
+def _spy_measure(events: list[str]):
+    """A measure_memory stand-in that logs when the memray pass runs (no real memray)."""
+
+    def measure(action, repeats=1):
+        events.append("memory")
+        action()
+        return MemoryResult((Measurement(1, 1, 1),))
+
+    return measure
+
+
+def test_timing_runs_before_memory_call(monkeypatch):
+    """Call form: pytest-benchmark times the function first, then the memray pass runs."""
+    events: list[str] = []
+    monkeypatch.setattr(plugin, "measure_memory", _spy_measure(events))
+    plugin.MemoryBenchmark(_OrderSpyBenchmark(events))(lambda: None)
+    assert events == ["timing", "memory"]
+
+
+def test_timing_runs_before_memory_pedantic(monkeypatch):
+    """Pedantic form: same order — timing first, memory second."""
+    events: list[str] = []
+    monkeypatch.setattr(plugin, "measure_memory", _spy_measure(events))
+    plugin.MemoryBenchmark(_OrderSpyBenchmark(events)).pedantic(lambda: None)
+    assert events == ["timing", "memory"]
+
 
 SUITE = """
 def test_alloc(benchmark_memory):

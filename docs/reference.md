@@ -79,6 +79,14 @@ quantify the spread (the `min`/`mean`/`max` columns and `--stat stddev`).
 Depends on pytest-benchmark's `benchmark` fixture; times via pytest-benchmark, then
 measures peak in a separate untimed pass.
 
+**Order — timing first, then memory.** Every call form runs pytest-benchmark's timing
+(calibration + all rounds) *first*, and only then the memray pass — so memory is measured
+on an already-warmed function (imports loaded, caches filled), and the allocator hooks
+never touch the timing numbers. This holds for the fixture's `__call__` and `pedantic`,
+and for the `--benchmark-memory` patch alike. (The standalone `measure_peak` /
+`measure_memory` have no timing phase, so they measure *cold* — warm up first, or use
+`repeats > 1`, if a cold first call would distort the peak.)
+
 **Call form** — times then measures `function(*args, **kwargs)`:
 
 ```python
