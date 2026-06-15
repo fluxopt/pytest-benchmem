@@ -13,20 +13,20 @@ started, metrics, dims, compare & plot, sweeps, and the reference.
 
 ## Quickstart
 
-Write a normal pytest-benchmark test; swap `benchmark` for `benchmark_memory`:
+A **drop-in** for an existing pytest-benchmark suite: add `--benchmark-memory` and every
+`benchmark(...)` call also records peak memory — no test changes.
 
 ```python
 import pytest
 
 
 @pytest.mark.parametrize("n", [10_000, 100_000, 1_000_000])
-def test_sort(benchmark_memory, n):
-    data = list(range(n, 0, -1))
-    benchmark_memory(sorted, data)
+def test_sort(benchmark, n):          # an ordinary pytest-benchmark test, unchanged
+    benchmark(sorted, list(range(n, 0, -1)))
 ```
 
 ```bash
-pytest --benchmark-only   # both metrics, in pytest-benchmark's own table
+pytest --benchmark-only --benchmark-memory   # both metrics, in pytest-benchmark's own table
 ```
 
 ```
@@ -39,31 +39,26 @@ pytest --benchmark-only   # both metrics, in pytest-benchmark's own table
  memory (right of │): a separate, untimed pass, not the timed rounds  •  also available via --benchmark-memory-columns: allocated, allocs
 ```
 
-Left of the divider is pytest-benchmark's timing; right is pytest-benchmem's memory.
-memray measures peak on a separate, untimed call, so it costs the timing nothing. Peak
-shows by default; add `allocated` and `allocs` with `--benchmark-memory-columns`.
+Left of the divider is pytest-benchmark's timing, untouched; right is pytest-benchmem's
+memory. The two never overlap — memray measures peak on a *separate, untimed* call, so the
+allocator hooks cost the timing nothing. It's opt-in at the run level: without the flag, your
+suite runs exactly as before. Peak is the headline, so it shows by default; `allocated` and
+`allocs` are one flag away (`--benchmark-memory-columns`).
 
 Add `--benchmark-json=run.json` and both persist under one node id: timing in `stats`,
 memory in `extra_info.benchmem`. Parametrize `params` become the dims the plots scale by —
 see [Grouping by dims](https://fluxopt.github.io/pytest-benchmem/dims/).
 
-## Already have a pytest-benchmark suite?
+## Memory on specific tests — the `benchmark_memory` fixture
 
-Don't rewrite a thing — add `--benchmark-memory` and every `benchmark(...)` call
-also records peak memory:
+`--benchmark-memory` measures the whole suite. To opt in *per test* instead — no run-level
+flag — swap `benchmark` for the `benchmark_memory` fixture on just those tests; it's always
+measured, and adds a `pedantic` form for explicit control:
 
 ```python
-def test_sort(benchmark):            # unchanged
-    benchmark(sorted, list(range(1_000_000, 0, -1)))
+def test_sort(benchmark_memory):
+    benchmark_memory(sorted, list(range(1_000_000, 0, -1)))
 ```
-
-```bash
-pytest --benchmark-only --benchmark-memory   # timing + memory for the whole suite
-```
-
-It's opt-in at the run level: without the flag, plain `benchmark` tests are untouched.
-Reach for the `benchmark_memory` fixture when you want memory on specific tests only, or
-the `pedantic` control.
 
 Memory is measured once by default. Peak is near-deterministic (it's allocator demand, not
 wall-clock jitter), so one pass usually suffices. Raise it with `--benchmark-memory-repeats=N`
