@@ -14,7 +14,7 @@ kernelspec:
 # Compare & plot
 
 Two (or more) saved runs in, one comparison out — as a table (`benchmem compare`) or an
-interactive view (`benchmem plot`). Both work over `--metric time` or any memory metric, and both
+interactive view (`benchmem plot`). Both take `--metric time` or any memory metric, and
 group by the [dims](dims.ipynb) your tests carry.
 
 ## Setup
@@ -133,8 +133,8 @@ A minimal GitHub Actions job using approach **A**, caching the baseline across r
 - run: benchmem compare main.json pr.json --fail-on peak:10% --fail-on allocations:5%
 ```
 
-`allocations` is the steadiest tripwire — near-deterministic, so a move there is
-almost always a real behaviour change rather than measurement noise.
+For which metric to gate on, see [Picking one for a gate](metrics.ipynb#picking-one-for-a-gate)
+— `allocations` is usually the steadiest tripwire.
 
 ## `benchmem plot` — the interactive views
 
@@ -154,10 +154,10 @@ view by run count — but each view answers a different question, so override wi
 ```
 
 Every view is a `plot_*` function over the same `load_long_df` seam — call it directly
-to render the *same figure* inline, no HTML round-trip. Each takes a `metric`, returns
-`(figure, n_ids)`, and shares three options: **`facet`** (small-multiple by a dim),
-**`labels`** (name the series, defaulting to file stems), and **`clip`** (clamp the
-colour scale so one outlier doesn't wash the rest out).
+to render the same figure inline, no HTML round-trip. Each takes a `metric`, returns
+`(figure, n_ids)`, and shares three options: `facet` (small-multiple by a dim), `labels`
+(name the series, defaulting to file stems), and `clip` (clamp the colour scale so one
+outlier doesn't wash the rest out).
 
 **Scaling** — a single run, cost vs. size. `plot_scaling` auto-infers the x-axis from
 the numeric `n` dim (override with `x=`), and auto-picks log/linear (force with

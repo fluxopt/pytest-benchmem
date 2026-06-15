@@ -104,9 +104,8 @@ def test_solve(benchmark_memory, spec):
     benchmark_memory(solve, spec)
 ```
 
-A scalar *field* (`spec.name`, `spec.n`) makes the best axis — readable label, and a
-numeric one can be the x of a scaling plot. Reach for `str(spec)` only when there's
-no better handle; it's still far better than the dropped object.
+A scalar *field* (`spec.name`, `spec.n`) makes the best axis. Reach for `str(spec)`
+only when there's no better handle; it's still far better than the dropped object.
 
 ## Built-in `node.*` dims
 
@@ -125,8 +124,7 @@ per operation. Facet a plot by it directly:
 benchmem plot run.json --metric peak --facet node.func
 ```
 
-They're **selectable but never auto-chosen**: a plot only splits by a `node.*` dim
-when you name it, so single-function suites and existing plots are unaffected. The
-`node.` namespace can't collide with your `params`/`extra_info`, and an
-`extra_info["node.func"]` you set yourself still wins. For a cleaner label than the
-raw function name (`to_lp` vs `test_to_lp`), set your own `phase` dim as above.
+They're selectable but never auto-chosen: a plot only splits by a `node.*` dim when you
+name it, so single-function suites and existing plots are unaffected. An
+`extra_info["node.func"]` you set yourself still wins. For a cleaner label than the raw
+function name (`to_lp` vs `test_to_lp`), set your own `phase` dim as above.

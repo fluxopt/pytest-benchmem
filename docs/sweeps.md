@@ -1,10 +1,9 @@
 # Cross-version sweeps
 
-To benchmark *across installed versions* of a package — something pytest-benchmark
-has no answer for — `pytest_benchmem.sweep` provisions one fresh `uv` venv per
-version (with import isolation) and calls your `run` callback in each. The callback
-just runs your pytest suite in that venv, writing a per-version JSON. Everything
-package-specific is injected, so it isn't tied to any one library.
+To benchmark across installed versions of a package, `pytest_benchmem.sweep` provisions
+one fresh `uv` venv per version (with import isolation) and calls your `run` callback in
+each. The callback runs your pytest suite in that venv, writing a per-version JSON.
+Everything package-specific is injected, so it isn't tied to any one library.
 
 ```python
 import subprocess

@@ -14,11 +14,10 @@ kernelspec:
 # Reference
 
 Every flag, marker, fixture, CLI command, and public function. The `benchmem` CLI
-options are rendered **live from `--help`** below (typer is the source of truth, so
-they can't drift); everything `--help` can't express — the pytest flags, the marker,
-the fixture, the blob schema, the Python API — is curated here. For the narrative
-versions see [Getting started](getting-started.ipynb), [Metrics](metrics.ipynb),
-[Dims](dims.ipynb), and [Compare & plot](compare-plot.ipynb).
+options are rendered live from `--help` below; everything else — pytest flags, the
+marker, the fixture, the blob schema, the Python API — is curated here. For the
+narrative versions see [Getting started](getting-started.ipynb),
+[Metrics](metrics.ipynb), [Dims](dims.ipynb), and [Compare & plot](compare-plot.ipynb).
 
 ```{code-cell} ipython3
 import os
@@ -42,14 +41,11 @@ The plugin adds these to any pytest run (alongside pytest-benchmark's own flags)
 | `--benchmark-memory-compare[=REF]` | off | compare this run's peak memory against a prior saved run (latest, or a pytest-benchmark storage ref like `0001`); folds `base` + `Δ peak` columns into the combined table. |
 | `--benchmark-memory-compare-fail=FIELD:THRESHOLD` | — | fail the session on a memory regression (repeatable). Implies `--benchmark-memory-compare`. Fields: `peak`, `allocated`, `allocations`. |
 
-Memory rides `--benchmark-only` runs the same as timing. Timing regressions still use
-pytest-benchmark's own `--benchmark-compare` / `--benchmark-compare-fail`; the
-`--benchmark-memory-compare*` flags are the memory mirror.
-
-The baseline the inline flags compare against comes from **pytest-benchmark's
-storage** (under `.benchmarks/`) — save one first with `--benchmark-save=NAME` or
-`--benchmark-autosave`, or the gate finds nothing and passes. See
-[Gate CI on regressions](compare-plot.ipynb#gate-ci-on-regressions) for the full flow.
+Timing regressions still use pytest-benchmark's own `--benchmark-compare` /
+`--benchmark-compare-fail`; the `--benchmark-memory-compare*` flags are the memory
+mirror. Their baseline comes from pytest-benchmark's storage (`.benchmarks/`) — save
+one first with `--benchmark-save=NAME` or `--benchmark-autosave`, or the gate finds
+nothing and passes. See [Gate CI on regressions](compare-plot.ipynb#gate-ci-on-regressions).
 
 ## The `benchmem` marker
 
@@ -63,16 +59,11 @@ def test_build(benchmark_memory):
 |---|---|---|
 | `repeats` | `1` | measure this test with `N` memray passes. **Every** pass is kept (the blob stores the whole series); the headline `peak` is the *minimum* across them, and `--stat` reports any other. Overrides the suite-wide `--benchmark-memory-repeats` for this test. |
 
-Why measure memory once when timing reruns many times? Timing *needs* the reruns — to
-beat timer granularity and average out scheduler / CPU jitter. Peak memory doesn't:
-it's *allocator demand* (the bytes your code requests for a given code path and inputs),
-not a wall-clock measurement, so it's near-deterministic and a single pass is usually
-representative — the more so because the timing phase has already run the function many
-times first, warming away one-time effects (lazy imports, module caches). (memray's
-allocator tracking also makes each pass much heavier than an untimed call, so there's no
-reason to multiply it for free.) Raise `repeats` when the peak *isn't* deterministic —
-hash randomization, GC collection timing, randomized inputs — to settle the min floor and
-quantify the spread (the `min`/`mean`/`max` columns and `--stat stddev`).
+Why once, when timing reruns many times? Peak memory is allocator demand — the bytes
+your code requests for a given code path and inputs — not a wall-clock number, so it's
+near-deterministic and one pass is usually representative. Raise `repeats` when the peak
+*isn't* deterministic (hash randomization, GC timing, randomized inputs) to settle the
+min floor and quantify the spread (the `min`/`mean`/`max` columns and `--stat stddev`).
 
 ## The `benchmark_memory` fixture
 
@@ -80,12 +71,11 @@ Depends on pytest-benchmark's `benchmark` fixture; times via pytest-benchmark, t
 measures peak in a separate untimed pass.
 
 **Order — timing first, then memory.** Every call form runs pytest-benchmark's timing
-(calibration + all rounds) *first*, and only then the memray pass — so memory is measured
-on an already-warmed function (imports loaded, caches filled), and the allocator hooks
-never touch the timing numbers. This holds for the fixture's `__call__` and `pedantic`,
-and for the `--benchmark-memory` patch alike. (The standalone `measure_peak` /
-`measure_memory` have no timing phase, so they measure *cold* — warm up first, or use
-`repeats > 1`, if a cold first call would distort the peak.)
+(calibration + all rounds) first, then the memray pass — so memory is measured on an
+already-warmed function and the allocator hooks never touch the timing. This holds for
+`__call__`, `pedantic`, and the `--benchmark-memory` patch alike. (The standalone
+`measure_peak` / `measure_memory` have no timing phase, so they measure cold — warm up
+first, or use `repeats > 1`, if a cold first call would distort the peak.)
 
 **Call form** — times then measures `function(*args, **kwargs)`:
 
@@ -122,8 +112,8 @@ memory outside pytest, use `measure_peak` / `measure_memory`.
 ## The `extra_info.benchmem` blob
 
 Each measured benchmark stores this dict under `extra_info["benchmem"]` — three flat
-**per-repeat series**, one entry per memray pass. Everything else (the headline `peak` =
-min, the worst peak, the representative churn, any `--stat`) derives from these on read:
+per-repeat series, one entry per memray pass. Every reported number (headline `peak` =
+min, any `--stat`) derives from these on read:
 
 | Key | What |
 |---|---|
