@@ -26,6 +26,7 @@ import tempfile
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 #: A zero-arg callable doing the work that gets memory-tracked.
@@ -182,40 +183,98 @@ def _track_once(action: Action) -> Measurement:
         )
 
 
-def measure_memory(action: Action, repeats: int = 1) -> MemoryResult:
-    """Run ``action()`` under ``memray.Tracker`` ``repeats`` times → :class:`MemoryResult`.
+#: Adaptive-sampling defaults, used when ``repeats`` is ``None`` (the default). memray
+#: gives an *exact* peak per pass — unlike timing, there's no resolution to average out — so
+#: passes exist only to find the floor and quantify spread (this is sequential sampling, not
+#: calibration in pytest-benchmark's timer-resolution sense). Rather than a fixed count that's
+#: wasteful for deterministic code and too few for noisy code, run until the headline min
+#: settles, bounded by these.
+_ADAPTIVE_MIN_PASSES = 2  # always take ≥2 — the 1st pass carries one-time warmup the min sheds
+_ADAPTIVE_MAX_PASSES = 10  # hard ceiling: cost is linear in passes, so cap the noisy case
+_ADAPTIVE_PATIENCE = 2  # stop once this many consecutive passes set no new (lower) min
 
-    Each repeat gets a fresh tracker; the headline peak is the minimum across repeats
-    (see :class:`MemoryResult`), and every repeat's :class:`Measurement` is retained for
-    distribution stats.
+
+def measure_memory(
+    action: Action,
+    repeats: int | None = None,
+    *,
+    max_time: float | None = None,
+    min_passes: int = _ADAPTIVE_MIN_PASSES,
+    max_passes: int = _ADAPTIVE_MAX_PASSES,
+    patience: int = _ADAPTIVE_PATIENCE,
+) -> MemoryResult:
+    """Run ``action()`` under ``memray.Tracker`` → :class:`MemoryResult`, one pass per repeat.
+
+    Each pass gets a fresh tracker; the headline peak is the minimum across them (see
+    :class:`MemoryResult`), and every pass's :class:`Measurement` is retained for spread stats.
+
+    Two modes, by ``repeats``:
+
+    - ``repeats=N`` (an int) — run exactly ``N`` passes. Fixed and reproducible; what CI
+      gating and saved-baseline comparisons want.
+    - ``repeats=None`` (default) — **sample adaptively**: keep running passes until the min
+      stops improving (no new low for ``patience`` passes), bounded by ``min_passes`` (warmup
+      is shed by the min, so always take ≥2), ``max_passes``, and an optional ``max_time``
+      wall-clock budget. Deterministic code settles in a few passes; noisy code runs more,
+      exactly where extra passes pay off.
 
     Args:
         action: The zero-argument callable to measure.
-        repeats: How many memray passes to run (each gets a fresh tracker).
+        repeats: Fixed pass count, or ``None`` to sample adaptively.
+        max_time: Wall-clock budget (seconds) for adaptive sampling; ``None`` = no time bound.
+        min_passes: Minimum passes when sampling adaptively.
+        max_passes: Hard ceiling on passes when sampling adaptively.
+        patience: Stop adaptive sampling after this many consecutive passes with no new min.
 
     Returns:
-        A :class:`MemoryResult` over every repeat.
+        A :class:`MemoryResult` over every pass run.
     """
     _require_memray()
 
+    if repeats is not None:
+        samples = [_run_pass(action) for _ in range(max(1, repeats))]
+        return MemoryResult(tuple(samples))
+
     samples = []
-    for _ in range(max(1, repeats)):
-        samples.append(_track_once(action))
-        gc.collect()
+    best: int | None = None
+    stale = 0
+    cap = max(min_passes, max_passes)
+    start = perf_counter()
+    while True:
+        sample = _run_pass(action)
+        samples.append(sample)
+        if best is None or sample.peak_bytes < best:
+            best, stale = sample.peak_bytes, 0
+        else:
+            stale += 1
+        if len(samples) < min_passes:
+            continue
+        if len(samples) >= cap or stale >= patience:
+            break
+        if max_time is not None and perf_counter() - start >= max_time:
+            break
     return MemoryResult(tuple(samples))
 
 
-def measure_peak(action: Action, repeats: int = 1) -> int:
+def _run_pass(action: Action) -> Measurement:
+    """One tracked pass, then a ``gc.collect()`` so the next pass starts from a clean heap."""
+    sample = _track_once(action)
+    gc.collect()
+    return sample
+
+
+def measure_peak(action: Action, repeats: int | None = None) -> int:
     """Run ``action()`` under ``memray.Tracker`` and return peak **bytes**.
 
     The bare one-liner for a REPL or notebook; :func:`measure_memory` returns the
-    full result (allocation count, spread).
+    full result (allocation count, spread). ``repeats`` behaves as there — ``None``
+    (default) samples adaptively, an int forces a fixed pass count.
 
     Args:
         action: The zero-argument callable to measure.
-        repeats: How many memray passes to run; the peak is the minimum across them.
+        repeats: Fixed pass count, or ``None`` to sample adaptively.
 
     Returns:
-        Peak resident bytes (the headline ``peak`` = min across repeats).
+        Peak resident bytes (the headline ``peak`` = min across passes).
     """
     return measure_memory(action, repeats=repeats).peak_bytes

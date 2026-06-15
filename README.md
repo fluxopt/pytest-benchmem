@@ -60,10 +60,13 @@ def test_sort(benchmark_memory):
     benchmark_memory(sorted, list(range(1_000_000, 0, -1)))
 ```
 
-Memory is measured once by default. Peak is near-deterministic (it's allocator demand, not
-wall-clock jitter), so one pass usually suffices. Raise it with `--benchmark-memory-repeats=N`
-(suite-wide) or `@pytest.mark.benchmem(repeats=N)` (per test) when the peak *isn't*
-deterministic; every pass is kept and the headline is the minimum across them.
+Memory passes are **adaptive** by default. Peak is allocator demand, not wall-clock jitter, so
+each pass is exact; passes exist only to find the floor (this is sequential sampling, not
+calibration). pytest-benchmem runs until the **minimum** peak settles (≥2 passes, so
+the first pass's one-time warmup — lazy imports, arena growth — is discarded; capped at 10),
+then reports that min. Deterministic code settles in a few passes; noisy code runs more, where
+it helps. Force a fixed, reproducible count with `--benchmark-memory-repeats=N` (suite-wide) or
+`@pytest.mark.benchmem(repeats=N)` (per test); every pass is kept and the headline is the min.
 
 > **Your benchmark must be safe to re-run.** memray measures on an extra call, after
 > pytest-benchmark's timing rounds — so a side-effectful action (mutates a fixture, fills a

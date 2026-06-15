@@ -44,7 +44,7 @@ class _OrderSpyBenchmark:
 def _spy_measure(events: list[str]):
     """A measure_memory stand-in that logs when the memray pass runs (no real memray)."""
 
-    def measure(action, repeats=1):
+    def measure(action, repeats=None, **_):
         events.append("memory")
         action()
         return MemoryResult((Measurement(1, 1, 1),))
@@ -97,8 +97,8 @@ def test_combined_table_is_default(pytester):
     result = pytester.runpytest_subprocess("--benchmark-only", "-p", "no:cacheprovider")
     result.assert_outcomes(passed=3)
     out = result.stdout.str()
-    assert "Min" in out and "peak (" in out  # timing + the peak column, one table
-    assert "allocated (" not in out  # allocated/allocations hidden by default (peak only)
+    assert "Min" in out and "peak·min" in out  # timing + the (spread) peak column, one table
+    assert "allocated·" not in out  # allocated/allocations columns hidden by default (peak only)
     assert "also available" in out  # caption hints the hidden metrics exist
     assert "OPS: Operations Per Second" not in out  # pytest-benchmark's own table is suppressed
     assert "│" in out  # divider between timing and memory
@@ -114,7 +114,7 @@ def test_split_table_keeps_native_and_separate_memory(pytester):
     result.assert_outcomes(passed=3)
     out = result.stdout.str()
     assert "OPS: Operations Per Second" in out  # native pytest-benchmark table present
-    assert "peak (" in out and "allocated (" not in out  # our memory table, peak only by default
+    assert "peak·min" in out and "allocated·" not in out  # our memory table, peak only by default
 
 
 def test_memory_columns_flag_adds_opt_in_metrics(pytester):
@@ -125,8 +125,8 @@ def test_memory_columns_flag_adds_opt_in_metrics(pytester):
     )
     result.assert_outcomes(passed=3)
     out = result.stdout.str()
-    assert "peak (" in out and "allocations" in out  # both selected metrics shown
-    assert "allocated (" not in out  # the one left out stays hidden
+    assert "peak·min" in out and "allocations·" in out  # both selected metrics shown
+    assert "allocated·" not in out  # the one left out stays hidden
 
 
 def test_memory_columns_bad_value_is_usage_error(pytester):
@@ -395,6 +395,18 @@ def test_enforce_limits_raises_over_ceiling():
 
 def test_enforce_limits_passes_under_ceiling():
     plugin._enforce_limits(_result(500), {"max_peak": 1_000_000}, "test_x")  # no raise
+
+
+def test_enforce_limits_gates_on_worst_pass_not_min():
+    # A ceiling is a worst-case budget: min peak under it but one pass over it must still fail.
+    res = MemoryResult(
+        (
+            Measurement(peak_bytes=500, allocations=1, total_bytes=1),
+            Measurement(peak_bytes=2_000_000, allocations=1, total_bytes=1),
+        )
+    )
+    with pytest.raises(AssertionError, match=r"peak .* exceeds max_peak"):
+        plugin._enforce_limits(res, {"max_peak": 1_000_000}, "test_x")
 
 
 def test_enforce_limits_counts_use_plain_number_and_no_name_prefix():
