@@ -98,7 +98,7 @@ def test_combined_table_is_default(pytester):
     result.assert_outcomes(passed=3)
     out = result.stdout.str()
     assert "Min" in out and "peak (" in out  # timing + the peak column, one table
-    assert "allocated (" not in out  # allocated/allocs hidden by default (peak only)
+    assert "allocated (" not in out  # allocated/allocations hidden by default (peak only)
     assert "also available" in out  # caption hints the hidden metrics exist
     assert "OPS: Operations Per Second" not in out  # pytest-benchmark's own table is suppressed
     assert "│" in out  # divider between timing and memory
@@ -121,11 +121,11 @@ def test_memory_columns_flag_adds_opt_in_metrics(pytester):
     """--benchmark-memory-columns shows metrics beyond the peak-only default."""
     pytester.makepyfile(SUITE)
     result = pytester.runpytest_subprocess(
-        "--benchmark-only", "--benchmark-memory-columns=peak,allocs", "-p", "no:cacheprovider"
+        "--benchmark-only", "--benchmark-memory-columns=peak,allocations", "-p", "no:cacheprovider"
     )
     result.assert_outcomes(passed=3)
     out = result.stdout.str()
-    assert "peak (" in out and "allocs" in out  # both selected metrics shown
+    assert "peak (" in out and "allocations" in out  # both selected metrics shown
     assert "allocated (" not in out  # the one left out stays hidden
 
 

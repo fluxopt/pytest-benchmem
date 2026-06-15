@@ -4,7 +4,7 @@ from io import StringIO
 
 from rich.console import Console
 
-from pytest_benchmem.format import byte_unit
+from pytest_benchmem.format import byte_unit, signed_pct
 from pytest_benchmem.memray import Measurement, MemoryResult
 from pytest_benchmem.tables import build_run_table, mem_columns
 
@@ -48,7 +48,7 @@ def test_headers_and_short_names():
         "mod.py::test_small": _blob(1024, allocations=5, total_bytes=2048),
     }
     text = _render(build_run_table(blobs))
-    assert "name" in text and "peak" in text and "allocated" in text and "allocs" in text
+    assert "name" in text and "peak" in text and "allocated" in text and "allocations" in text
     assert "test_big" in text and "mod.py" not in text  # node-id prefix stripped
 
 
@@ -71,12 +71,12 @@ def test_multi_repeat_always_spreads_even_when_constant():
     # >1 pass → show the distribution for every metric, even where values coincide — honest,
     # and a stable schema (columns don't appear/vanish on whether the data happened to move).
     text = _render(build_run_table({"t::x": _blob(2048, repeats=3)}))
-    for header in ("peak·min", "peak·mean", "peak·max", "allocs·min", "allocs·max"):
+    for header in ("peak·min", "peak·mean", "peak·max", "allocations·min", "allocations·max"):
         assert header in text
     assert "peak (KiB)" not in text  # no collapsed single column when multi-repeat
 
 
-def test_unit_hoisted_into_header_and_allocs_grouped():
+def test_unit_hoisted_into_header_and_allocations_grouped():
     blobs = {"t::x": _blob(4 * 1024**2, allocations=1234567, total_bytes=2048)}
     text = _render(build_run_table(blobs))
     assert "peak (MiB)" in text and "4.00" in text  # unit in header, bare cell
@@ -130,16 +130,16 @@ def test_mem_columns_multi_sample_spreads_every_metric():
         "allocated·min (B)",
         "allocated·mean",
         "allocated·max",
-        "allocs·min",
-        "allocs·mean",
-        "allocs·max",
+        "allocations·min",
+        "allocations·mean",
+        "allocations·max",
     ]
 
 
 def test_mem_columns_all_constant_single_columns():
     const = MemoryResult((Measurement(1024, 5, 2048),))
     headers = [c.header for c in mem_columns([const])]
-    assert headers == ["peak (KiB)", "allocated (KiB)", "allocs"]
+    assert headers == ["peak (KiB)", "allocated (KiB)", "allocations"]
 
 
 def test_mem_columns_compute_distribution():
@@ -152,8 +152,8 @@ def test_mem_columns_compute_distribution():
 
 def test_mem_columns_metric_selection_keeps_order():
     const = MemoryResult((Measurement(1024, 5, 2048),))
-    headers = [c.header for c in mem_columns([const], metrics=["allocs", "peak"])]
-    assert headers == ["allocs", "peak (KiB)"]
+    headers = [c.header for c in mem_columns([const], metrics=["allocations", "peak"])]
+    assert headers == ["allocations", "peak (KiB)"]
 
 
 def test_mem_columns_stat_selection_adds_stddev_median():
@@ -177,3 +177,12 @@ def test_parse_metrics_and_stats_reject_unknown():
         parse_metrics(["peak", "bogus"])
     with pytest.raises(ValueError, match="unknown memory stat"):
         parse_stats(["min", "p99"])
+
+
+def test_signed_pct_drops_sign_on_rounded_zero():
+    assert signed_pct(22.0) == "+22.0%"
+    assert signed_pct(-50.0) == "-50.0%"
+    # sub-threshold noise must not read as a signed +0.0% / -0.0%
+    assert signed_pct(0.0) == "0.0%"
+    assert signed_pct(0.04) == "0.0%"
+    assert signed_pct(-0.04) == "0.0%"

@@ -27,7 +27,6 @@ from pytest_benchmem.snapshot import (
     RESERVED_COLUMNS,
     Metric,
     _as_paths,
-    _canonical_metric,
     load_long_df,
 )
 
@@ -171,7 +170,7 @@ def plot_compare(
     snapshots = _as_paths(snapshots)
     df_long, unit = load_long_df(snapshots[:2], metric=metric, labels=_labels_head(labels, 2))
     df_long = _apply_where(df_long, where)
-    vlabel = _canonical_metric(metric)
+    vlabel = metric
     labels = df_long["snapshot"].drop_duplicates().tolist()
     if len(labels) < 2:
         raise ValueError(
@@ -258,7 +257,7 @@ def plot_scatter(
 
     df_long, unit = load_long_df(snapshots, metric=metric, labels=labels)
     df_long = _apply_where(df_long, where)
-    vlabel = _canonical_metric(metric)
+    vlabel = metric
     labels = df_long["snapshot"].drop_duplicates().tolist()
     baseline_label = labels[0]
 
@@ -327,7 +326,7 @@ def plot_sweep(
 
     df_long, unit = load_long_df(snapshots, metric=metric, labels=labels)
     df_long = _apply_where(df_long, where)
-    vlabel = _canonical_metric(metric)
+    vlabel = metric
     versions = df_long["snapshot"].drop_duplicates().tolist()
     baseline = versions[0]
 
@@ -413,7 +412,7 @@ def plot_scaling(
     snap_label = head[0] if head else snapshots[0].stem
     df_long, unit = load_long_df(snapshots[:1], metric=metric, labels=head)
     df_long = _apply_where(df_long, where)
-    vlabel = _canonical_metric(metric)
+    vlabel = metric
     x, color, facet = _infer_roles(df_long, x, color, facet)
     df = df_long.dropna(subset=[x]).sort_values([c for c in (facet, color, x) if c])
     if df.empty:

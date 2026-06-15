@@ -33,16 +33,16 @@ Show all three in the table at once with `--benchmark-memory-columns`:
 <!-- termynal -->
 
 ```console
-$ pytest test_churn.py --benchmark-only --benchmark-memory --benchmark-memory-columns=peak,allocated,allocs
- Name (time in ms)        Min      │  peak (MiB)   allocated (MiB)   allocs
- ─────────────────────────────────────────────────────────────────────────
-  test_churn          73.9735      │        1.16            294.07    9,001
+$ pytest test_churn.py --benchmark-only --benchmark-memory --benchmark-memory-columns=peak,allocated,allocations
+ Name (time in ms)        Min      │  peak (MiB)   allocated (MiB)   allocations
+ ──────────────────────────────────────────────────────────────────────────────
+  test_churn          73.9735      │        1.16            294.07         9,001
 
  memory (right of │): a separate, untimed pass, not the timed rounds
 ```
 
 `peak` stays small (one list lives at a time) while `allocated` is far larger (every list
-summed) and `allocs` counts the calls. A peak gate would wave this churn through;
+summed) and `allocations` counts the calls. A peak gate would wave this churn through;
 `allocated` catches it.
 
 ## Where to go next
@@ -77,7 +77,7 @@ Peak is the noisy one (GC timing, page cache); `stddev` tells you how much.
 The terminal table shows the spread too: with `repeats > 1`, every shown metric expands into
 `min` / `mean` / `max` columns (`peak·min`, `peak·mean`, `peak·max`) — always, so the columns
 don't shift between runs; a single pass stays one column. The table shows peak only by
-default; add the rest with `--benchmark-memory-columns=peak,allocated,allocs` and pick the
+default; add the rest with `--benchmark-memory-columns=peak,allocated,allocations` and pick the
 spread stats with `--benchmark-memory-stats=min,stddev`.
 
 ### The raw blob

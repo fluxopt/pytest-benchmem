@@ -126,10 +126,10 @@ def test_allocated_metric_labels_allocated(tmp_path):
     assert "peak" not in fig.layout.title.text.lower()
 
 
-def test_memory_is_alias_for_peak(tmp_path):
+def test_metric_memory_no_longer_accepted(tmp_path):
     a = _run(tmp_path / "a.json", ROWS_A, memory=True)
-    fig, _n = plotting.plot_scaling([a], metric="memory")
-    assert "peak" in fig.layout.title.text.lower()  # normalized to the canonical name
+    with pytest.raises(ValueError, match="metric must be one of"):
+        plotting.plot_scaling([a], metric="memory")  # type: ignore[arg-type]  # dropped alias
 
 
 def test_scatter_needs_two_runs(tmp_path):

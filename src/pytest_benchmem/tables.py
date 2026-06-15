@@ -46,7 +46,7 @@ class MemColumn(NamedTuple):
 _METRIC_SPEC: dict[str, tuple[str, bool]] = {
     "peak": ("peak_bytes", True),
     "allocated": ("total_bytes", True),
-    "allocs": ("allocations", False),
+    "allocations": ("allocations", False),
 }
 #: Every metric, in order — what a direct library render shows.
 ALL_METRICS: tuple[str, ...] = tuple(_METRIC_SPEC)
@@ -115,7 +115,7 @@ def mem_columns(
 ) -> list[MemColumn]:
     """Memory columns for a set of benchmarks.
 
-    ``metrics`` selects which of ``peak`` / ``allocated`` / ``allocs`` appear, in order.
+    ``metrics`` selects which of ``peak`` / ``allocated`` / ``allocations`` appear, in order.
     When any benchmark was measured more than once (``repeats > 1``), every shown metric
     spreads into one column per ``stats`` entry (``min`` / ``mean`` / ``max`` / ``median``
     / ``stddev``) — always, even where the values coincide, so the distribution is honest
