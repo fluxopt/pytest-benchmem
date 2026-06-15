@@ -130,8 +130,3 @@ when you name it, so single-function suites and existing plots are unaffected. T
 `node.` namespace can't collide with your `params`/`extra_info`, and an
 `extra_info["node.func"]` you set yourself still wins. For a cleaner label than the
 raw function name (`to_lp` vs `test_to_lp`), set your own `phase` dim as above.
-
-## Next
-
-- **[Compare & plot](compare-plot.ipynb)** — these dims become the plot axes.
-- **[Reference](reference.ipynb)** — the readers and `load_long_df` in full.

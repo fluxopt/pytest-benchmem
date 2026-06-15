@@ -30,10 +30,10 @@ objects.
 ### Distribution across repeats
 
 With `--benchmark-memory-repeats=N` (suite-wide) or `@pytest.mark.benchmem(repeats=N)`
-(per test), every repeat's peak / allocations / total is kept as a flat series in the blob (`extra_info.benchmem` *is* those three arrays — the
-headline numbers all derive from them). The headline `peak` is the *minimum* (the
-cleanest floor); ask for any other distribution stat over the series with `--stat` —
-e.g. the worst peak is `--stat max`:
+(per test), every repeat's peak / allocations / total is kept as a flat series in the
+blob (`extra_info.benchmem` *is* those three arrays — the headline numbers all derive
+from them). The headline `peak` is the *minimum* (the cleanest floor); ask for any other
+distribution stat over the series with `--stat` — e.g. the worst peak is `--stat max`:
 
 ```bash
 benchmem compare base.json head.json --metric peak --stat stddev   # how noisy is peak?
@@ -114,9 +114,3 @@ a change there is almost always a real change in behaviour, not measurement nois
 gate would miss. You can gate on several at once — see
 [Compare & plot](compare-plot.ipynb) and the
 [reference](reference.ipynb#benchmem-compare).
-
-## Next
-
-- **[Grouping by dims](dims.ipynb)** — the axes plots scale by.
-- **[Compare & plot](compare-plot.ipynb)** — diff two runs on any of these metrics.
-- **[Reference](reference.ipynb)** — every blob key and `--metric` value.
