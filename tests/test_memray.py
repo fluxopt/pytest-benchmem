@@ -21,6 +21,19 @@ def test_measure_peak_returns_positive_bytes():
     assert peak > 1_000_000  # a list of 1e6 ints is several MB; bytes, not MiB
 
 
+def test_nested_tracker_raises_actionable_error(tmp_path):
+    """If a memray Tracker is already active (e.g. pytest-memray's --memray on the same
+    test), benchmem's pass re-raises memray's terse error as an actionable one."""
+    import memray
+
+    # outer Tracker stands in for pytest-memray's --memray; it must be active first
+    with (
+        memray.Tracker(tmp_path / "outer.bin"),
+        pytest.raises(RuntimeError, match="another memray Tracker is already active"),
+    ):
+        measure_memory(lambda: [0] * 1000)
+
+
 def test_repeats_takes_min_of_n():
     # min-of-N: a smaller allocation never reports more than a larger one would.
     small = measure_peak(lambda: [0] * 100_000, repeats=3)
