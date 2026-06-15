@@ -42,18 +42,50 @@ class MemColumn(NamedTuple):
     cell: Callable[[MemoryResult], str]
 
 
-#: ``(label, series field, is_byte)`` per memory metric, in display order.
-_METRICS = (
-    ("peak", "peak_bytes", True),
-    ("allocated", "total_bytes", True),
-    ("allocs", "allocations", False),
-)
-#: The distribution stats a varying metric spreads into.
-_STATS: tuple[tuple[str, Callable[[Sequence[float]], float]], ...] = (
-    ("min", min),
-    ("mean", statistics.fmean),
-    ("max", max),
-)
+#: ``label -> (series field, is_byte)`` per memory metric, in canonical order.
+_METRIC_SPEC: dict[str, tuple[str, bool]] = {
+    "peak": ("peak_bytes", True),
+    "allocated": ("total_bytes", True),
+    "allocs": ("allocations", False),
+}
+#: Every metric, in order — what a direct library render shows.
+ALL_METRICS: tuple[str, ...] = tuple(_METRIC_SPEC)
+#: The default metric shown in a pytest run — peak is the headline; the rest are opt-in.
+DEFAULT_METRICS: tuple[str, ...] = ("peak",)
+#: The distribution stats a multi-repeat metric can spread into.
+_STAT_FNS: dict[str, Callable[[Sequence[float]], float]] = {
+    "min": min,
+    "mean": statistics.fmean,
+    "max": max,
+    "median": statistics.median,
+    "stddev": lambda xs: statistics.stdev(xs) if len(xs) > 1 else 0.0,
+}
+#: Default spread stats shown when a benchmark was measured more than once.
+DEFAULT_STATS: tuple[str, ...] = ("min", "mean", "max")
+
+
+def parse_metrics(spec: Sequence[str] | None) -> tuple[str, ...]:
+    """Validate a memory-metric selection (order preserved); default = peak only."""
+    if not spec:
+        return DEFAULT_METRICS
+    bad = [m for m in spec if m not in _METRIC_SPEC]
+    if bad:
+        raise ValueError(
+            f"unknown memory metric(s): {', '.join(bad)}; choose from {', '.join(ALL_METRICS)}"
+        )
+    return tuple(spec)
+
+
+def parse_stats(spec: Sequence[str] | None) -> tuple[str, ...]:
+    """Validate a spread-stat selection (order preserved); default = min/mean/max."""
+    if not spec:
+        return DEFAULT_STATS
+    bad = [s for s in spec if s not in _STAT_FNS]
+    if bad:
+        raise ValueError(
+            f"unknown memory stat(s): {', '.join(bad)}; choose from {', '.join(_STAT_FNS)}"
+        )
+    return tuple(spec)
 
 
 def _formatter(*, is_byte: bool, factor: float) -> Callable[[float], str]:
@@ -71,29 +103,40 @@ def _spread_cell(
 
 
 def _single_cell(field: str, fmt: Callable[[float], str]) -> Callable[[MemoryResult], str]:
-    """A cell for a metric that's constant across repeats — just the value."""
+    """A cell for a single-pass metric — just the one measured value."""
     return lambda r: fmt(float(r.series(field)[0]))
 
 
-def mem_columns(results: Sequence[MemoryResult]) -> list[MemColumn]:
-    """Adaptive memory columns for a set of benchmarks.
+def mem_columns(
+    results: Sequence[MemoryResult],
+    *,
+    metrics: Sequence[str] = ALL_METRICS,
+    stats: Sequence[str] = DEFAULT_STATS,
+) -> list[MemColumn]:
+    """Memory columns for a set of benchmarks.
 
-    A metric whose per-repeat series *varies* (across any benchmark) spreads into
-    ``min`` / ``mean`` / ``max`` columns; a constant metric stays one column. Byte
-    metrics hoist one unit into the header (on the first column of a spread group).
+    ``metrics`` selects which of ``peak`` / ``allocated`` / ``allocs`` appear, in order.
+    When any benchmark was measured more than once (``repeats > 1``), every shown metric
+    spreads into one column per ``stats`` entry (``min`` / ``mean`` / ``max`` / ``median``
+    / ``stddev``) — always, even where the values coincide, so the distribution is honest
+    and the table schema is stable. A single-pass run stays one column per metric (there
+    is nothing to distribute). Byte metrics hoist one unit into the header (on the first
+    column of a spread group). Selections are validated upstream by :func:`parse_metrics`
+    / :func:`parse_stats`.
     """
     cols: list[MemColumn] = []
-    for label, field, is_byte in _METRICS:
+    for label in metrics:
+        field, is_byte = _METRIC_SPEC[label]
         per_series = [[float(v) for v in r.series(field)] for r in results]
         all_values = [v for series in per_series for v in series]
         if not all_values:
             continue
         unit, factor = byte_unit(max(all_values)) if is_byte else ("", 1.0)
         fmt = _formatter(is_byte=is_byte, factor=factor)
-        if any(min(s) != max(s) for s in per_series):  # varies across repeats → spread it
-            for i, (stat_name, reduce) in enumerate(_STATS):
+        if any(len(s) > 1 for s in per_series):  # measured more than once → show the spread
+            for i, stat_name in enumerate(stats):
                 header = f"{label}·{stat_name}" + (f" ({unit})" if is_byte and i == 0 else "")
-                cols.append(MemColumn(header, _spread_cell(field, reduce, fmt)))
+                cols.append(MemColumn(header, _spread_cell(field, _STAT_FNS[stat_name], fmt)))
         else:
             header = f"{label} ({unit})" if is_byte else label
             cols.append(MemColumn(header, _single_cell(field, fmt)))
@@ -107,6 +150,14 @@ def peak_scale(*result_groups: Iterable[MemoryResult]) -> tuple[str, float]:
     """
     peaks = [r.peak_bytes for group in result_groups for r in group]
     return byte_unit(max(peaks)) if peaks else ("B", 1.0)
+
+
+def hidden_metrics_hint(metrics: Sequence[str]) -> str | None:
+    """Caption note naming the metrics *not* shown, or ``None`` when all are shown."""
+    hidden = [m for m in ALL_METRICS if m not in metrics]
+    if not hidden:
+        return None
+    return f"also available via --benchmark-memory-columns: {', '.join(hidden)}"
 
 
 def _row_style(rank: int, total: int) -> str | None:
@@ -139,6 +190,8 @@ def _baseline_delta(
 def build_run_table(
     blobs: Mapping[str, Mapping[str, Any]],
     *,
+    metrics: Sequence[str] = ALL_METRICS,
+    stats: Sequence[str] = DEFAULT_STATS,
     baseline: Mapping[str, Mapping[str, Any]] | None = None,
     baseline_label: str | None = None,
     title: str = "Memory",
@@ -146,8 +199,8 @@ def build_run_table(
     """A rich table of this run's memory — biggest peak first, or ``None`` if empty.
 
     ``blobs`` maps benchmark id → its ``extra_info["benchmem"]`` blob (per-repeat
-    series). A metric that varies across repeats spreads into min/mean/max columns;
-    rows sort by the headline peak (min) descending.
+    series). ``metrics`` selects which columns appear; with ``repeats > 1`` each spreads
+    into the ``stats`` columns. Rows sort by the headline peak (min) descending.
 
     Pass ``baseline`` (an ``{id: blob}`` map for a prior run) to fold the comparison
     into the *same* table: ``base`` peak + ``change`` columns, rows tinted by regression
@@ -166,7 +219,7 @@ def build_run_table(
         if baseline is not None
         else None
     )
-    cols = mem_columns(list(results.values()))
+    cols = mem_columns(list(results.values()), metrics=metrics, stats=stats)
     order = sorted(results, key=lambda i: results[i].peak_bytes, reverse=True)
     comparing = base_results is not None
 
@@ -175,7 +228,14 @@ def build_run_table(
         if comparing
         else f"{title} — {len(results)} benchmark(s)"
     )
-    table = Table(title=heading, box=box.SIMPLE, title_justify="left")
+    table = Table(
+        title=heading,
+        caption=hidden_metrics_hint(metrics),
+        box=box.SIMPLE,
+        title_justify="left",
+        caption_justify="left",
+        caption_style="dim",
+    )
     table.add_column("name", justify="left", no_wrap=True)
     for col in cols:
         table.add_column(col.header, justify="right")

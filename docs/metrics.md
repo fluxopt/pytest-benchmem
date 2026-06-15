@@ -29,11 +29,11 @@ objects.
 
 ### Distribution across repeats
 
-With `@pytest.mark.benchmem(repeats=N)`, every repeat's peak / allocations / total is
-kept as a flat series in the blob (`extra_info.benchmem` *is* those three arrays — the
-headline numbers all derive from them). The headline `peak` is the *minimum* (the
-cleanest floor); ask for any other distribution stat over the series with `--stat` —
-e.g. the worst peak is `--stat max`:
+With `--benchmark-memory-repeats=N` (suite-wide) or `@pytest.mark.benchmem(repeats=N)`
+(per test), every repeat's peak / allocations / total is kept as a flat series in the
+blob (`extra_info.benchmem` *is* those three arrays — the headline numbers all derive
+from them). The headline `peak` is the *minimum* (the cleanest floor); ask for any other
+distribution stat over the series with `--stat` — e.g. the worst peak is `--stat max`:
 
 ```bash
 benchmem compare base.json head.json --metric peak --stat stddev   # how noisy is peak?
@@ -44,10 +44,13 @@ benchmem compare v1.json v2.json --metric allocated --stat mean
 `allocated`, or `allocations`. Peak is the noisy one (GC timing, page cache); `stddev`
 tells you how much. Without `--stat` you get the headline value.
 
-The **terminal table** spreads it automatically: with `repeats > 1`, a metric that
-*varies* across the passes expands into `min` / `mean` / `max` columns (`peak·min`,
-`peak·mean`, `peak·max`), while a constant one (a deterministic allocation count) stays
-a single column — so you see the spread only where there is one.
+The **terminal table** shows the distribution too: with `repeats > 1`, every shown
+metric expands into `min` / `mean` / `max` columns (`peak·min`, `peak·mean`, `peak·max`)
+— always, even where the values coincide, so the spread is honest and the columns don't
+shift around between runs. A single pass stays one column (nothing to distribute). The
+table shows **peak only by default**; add the others with
+`--benchmark-memory-columns=peak,allocated,allocs`, and pick the spread stats (including
+`median` / `stddev`) with `--benchmark-memory-stats=min,stddev`.
 
 ## Setup
 

@@ -57,9 +57,7 @@ _NUMBER_FMT = "{0:,.4f}"
 #: Visual break between the timing distribution and the memory columns, with a caption
 #: spelling out that memory is a separate measurement — not part of the timed rounds.
 _DIVIDER = "│"
-_MEMORY_CAPTION = (
-    "memory (right of │): a separate, untimed pass — single shot, not the timed rounds"
-)
+_MEMORY_CAPTION = "memory (right of │): a separate, untimed pass, not the timed rounds"
 
 #: Scale hook: ``(unit, benchmarks, best, worst, sort) -> (unit_str, adjustment)``.
 ScaleUnit = Callable[..., tuple[str, float]]
@@ -169,6 +167,8 @@ def render_combined_tables(
     sort: str,
     name_format: Callable[[Any], str],
     scale_unit: ScaleUnit,
+    metrics: Sequence[str] | None = None,
+    stats: Sequence[str] | None = None,
     baseline: Mapping[str, Mapping[str, Any]] | None = None,
     baseline_label: str | None = None,
 ) -> None:
@@ -189,8 +189,16 @@ def render_combined_tables(
     from rich.table import Table
 
     from pytest_benchmem.memray import MemoryResult
-    from pytest_benchmem.tables import mem_columns, peak_scale
+    from pytest_benchmem.tables import (
+        ALL_METRICS,
+        DEFAULT_STATS,
+        hidden_metrics_hint,
+        mem_columns,
+        peak_scale,
+    )
 
+    metrics = ALL_METRICS if metrics is None else metrics
+    stats = DEFAULT_STATS if stats is None else stats
     console = Console(width=_WIDE)
     base_results = (
         {i: MemoryResult.from_blob(b) for i, b in baseline.items()}
@@ -209,18 +217,23 @@ def render_combined_tables(
         )
 
         results = {b["fullname"]: r for b in benchmarks if (r := _result_of(b)) is not None}
-        mem_cols = mem_columns(list(results.values()))
+        mem_cols = mem_columns(list(results.values()), metrics=metrics, stats=stats)
         comparing = base_results is not None and bool(mem_cols)
         peak_factor = 1.0
         if comparing and base_results is not None:
             base_unit, peak_factor = peak_scale(results.values(), base_results.values())
 
         title = f"benchmark{'' if group is None else f' {group!r}'}: {len(benchmarks)} tests"
-        # The memory columns come from a separate, untimed pass — say so, and divide them
-        # off the timing distribution so peak isn't read as "over those rounds".
-        caption = _MEMORY_CAPTION if mem_cols else None
-        if comparing and caption:
-            caption += f"; Δ peak vs {baseline_label or 'baseline'}"
+        # The memory columns come from a separate, untimed pass — say so, divide them off
+        # the timing distribution, and note any metrics hidden by the column selection.
+        caption = None
+        if mem_cols:
+            parts = [_MEMORY_CAPTION]
+            if hint := hidden_metrics_hint(metrics):
+                parts.append(hint)
+            if comparing:
+                parts.append(f"Δ peak vs {baseline_label or 'baseline'}")
+            caption = "  •  ".join(parts)
         table = Table(
             title=title,
             caption=caption,

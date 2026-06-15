@@ -12,6 +12,8 @@ import platform
 
 import pytest
 
+import pytest_benchmem.pytest_plugin as plugin
+from pytest_benchmem.memray import Measurement, MemoryResult
 from pytest_benchmem.snapshot import from_pytest_benchmark, memory_from_pytest_benchmark
 
 pytest.importorskip("memray")
@@ -19,6 +21,52 @@ pytest.importorskip("pytest_benchmark")
 pytestmark = pytest.mark.skipif(
     platform.system() == "Windows", reason="memray unavailable on Windows"
 )
+
+# --- ordering: timing must run before the memray pass (the function is warm by then) ---
+
+
+class _OrderSpyBenchmark:
+    """Stand-in for pytest-benchmark's fixture that logs when the timing pass runs."""
+
+    def __init__(self, events: list[str]) -> None:
+        self.extra_info: dict[str, object] = {}
+        self._events = events
+
+    def __call__(self, fn, *a, **k):
+        self._events.append("timing")
+        return fn(*a, **k)
+
+    def pedantic(self, target, args=(), kwargs=None, setup=None, **_):
+        self._events.append("timing")
+        return target(*args, **(kwargs or {}))
+
+
+def _spy_measure(events: list[str]):
+    """A measure_memory stand-in that logs when the memray pass runs (no real memray)."""
+
+    def measure(action, repeats=1):
+        events.append("memory")
+        action()
+        return MemoryResult((Measurement(1, 1, 1),))
+
+    return measure
+
+
+def test_timing_runs_before_memory_call(monkeypatch):
+    """Call form: pytest-benchmark times the function first, then the memray pass runs."""
+    events: list[str] = []
+    monkeypatch.setattr(plugin, "measure_memory", _spy_measure(events))
+    plugin.MemoryBenchmark(_OrderSpyBenchmark(events))(lambda: None)  # type: ignore[arg-type]
+    assert events == ["timing", "memory"]
+
+
+def test_timing_runs_before_memory_pedantic(monkeypatch):
+    """Pedantic form: same order — timing first, memory second."""
+    events: list[str] = []
+    monkeypatch.setattr(plugin, "measure_memory", _spy_measure(events))
+    plugin.MemoryBenchmark(_OrderSpyBenchmark(events)).pedantic(lambda: None)  # type: ignore[arg-type]
+    assert events == ["timing", "memory"]
+
 
 SUITE = """
 def test_alloc(benchmark_memory):
@@ -44,12 +92,14 @@ def _run_suite(pytester):
 
 
 def test_combined_table_is_default(pytester):
-    """By default a memory run prints ONE table: timing columns + memory, no native table."""
+    """By default a memory run prints ONE table: timing columns + peak only, no native table."""
     pytester.makepyfile(SUITE)
     result = pytester.runpytest_subprocess("--benchmark-only", "-p", "no:cacheprovider")
     result.assert_outcomes(passed=3)
     out = result.stdout.str()
-    assert "Min" in out and "peak" in out and "allocs" in out  # timing + memory, one table
+    assert "Min" in out and "peak (" in out  # timing + the peak column, one table
+    assert "allocated (" not in out  # allocated/allocs hidden by default (peak only)
+    assert "also available" in out  # caption hints the hidden metrics exist
     assert "OPS: Operations Per Second" not in out  # pytest-benchmark's own table is suppressed
     assert "│" in out  # divider between timing and memory
     assert "separate, untimed pass" in out  # caption flags memory's distinct provenance
@@ -64,7 +114,39 @@ def test_split_table_keeps_native_and_separate_memory(pytester):
     result.assert_outcomes(passed=3)
     out = result.stdout.str()
     assert "OPS: Operations Per Second" in out  # native pytest-benchmark table present
-    assert "peak" in out and "allocs" in out  # our separate memory table present
+    assert "peak (" in out and "allocated (" not in out  # our memory table, peak only by default
+
+
+def test_memory_columns_flag_adds_opt_in_metrics(pytester):
+    """--benchmark-memory-columns shows metrics beyond the peak-only default."""
+    pytester.makepyfile(SUITE)
+    result = pytester.runpytest_subprocess(
+        "--benchmark-only", "--benchmark-memory-columns=peak,allocs", "-p", "no:cacheprovider"
+    )
+    result.assert_outcomes(passed=3)
+    out = result.stdout.str()
+    assert "peak (" in out and "allocs" in out  # both selected metrics shown
+    assert "allocated (" not in out  # the one left out stays hidden
+
+
+def test_memory_columns_bad_value_is_usage_error(pytester):
+    """An unknown metric name fails fast as a clean usage error, not a traceback."""
+    pytester.makepyfile(SUITE)
+    result = pytester.runpytest_subprocess(
+        "--benchmark-only", "--benchmark-memory-columns=bogus", "-p", "no:cacheprovider"
+    )
+    assert result.ret != 0
+    assert "unknown memory metric" in (result.stderr.str() + result.stdout.str())
+
+
+def test_memory_stats_bad_value_is_usage_error(pytester):
+    """An unknown stat name fails fast as a clean usage error too."""
+    pytester.makepyfile(SUITE)
+    result = pytester.runpytest_subprocess(
+        "--benchmark-only", "--benchmark-memory-stats=p99", "-p", "no:cacheprovider"
+    )
+    assert result.ret != 0
+    assert "unknown memory stat" in (result.stderr.str() + result.stdout.str())
 
 
 def test_combined_table_respects_grouping(pytester):
@@ -185,6 +267,52 @@ def test_benchmem_marker_sets_repeats(pytester):
     by_name = {b["name"]: b for b in json.loads(out.read_text())["benchmarks"]}
     assert len(by_name["test_marked_fixture"]["extra_info"]["benchmem"]["peak_bytes"]) == 3
     assert len(by_name["test_marked_plain"]["extra_info"]["benchmem"]["peak_bytes"]) == 4
+
+
+# A suite mixing a marked test with an unmarked one, to check flag/marker precedence.
+GLOBAL_REPEATS_SUITE = """
+import pytest
+
+def test_unmarked(benchmark_memory):
+    benchmark_memory(lambda: [0] * 200_000)
+
+@pytest.mark.benchmem(repeats=2)
+def test_marked(benchmark_memory):
+    benchmark_memory(lambda: [0] * 200_000)
+"""
+
+
+def test_global_repeats_flag_sets_default(pytester):
+    """--benchmark-memory-repeats sets repeats suite-wide, with no per-test marker."""
+    pytester.makepyfile(SUITE)
+    out = pytester.path / "bench.json"
+    result = pytester.runpytest_subprocess(
+        "--benchmark-only",
+        "--benchmark-memory-repeats=3",
+        f"--benchmark-json={out}",
+        "-p",
+        "no:cacheprovider",
+    )
+    result.assert_outcomes(passed=3)
+    by_name = {b["name"]: b for b in json.loads(out.read_text())["benchmarks"]}
+    assert len(by_name["test_alloc"]["extra_info"]["benchmem"]["peak_bytes"]) == 3
+
+
+def test_marker_overrides_global_repeats(pytester):
+    """A per-test marker wins over the suite-wide --benchmark-memory-repeats default."""
+    pytester.makepyfile(GLOBAL_REPEATS_SUITE)
+    out = pytester.path / "bench.json"
+    result = pytester.runpytest_subprocess(
+        "--benchmark-only",
+        "--benchmark-memory-repeats=5",
+        f"--benchmark-json={out}",
+        "-p",
+        "no:cacheprovider",
+    )
+    result.assert_outcomes(passed=2)
+    by_name = {b["name"]: b for b in json.loads(out.read_text())["benchmarks"]}
+    assert len(by_name["test_unmarked"]["extra_info"]["benchmem"]["peak_bytes"]) == 5
+    assert len(by_name["test_marked"]["extra_info"]["benchmem"]["peak_bytes"]) == 2
 
 
 def test_benchmem_marker_is_registered(pytester):

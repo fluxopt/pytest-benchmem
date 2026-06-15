@@ -36,6 +36,9 @@ The plugin adds these to any pytest run (alongside pytest-benchmark's own flags)
 | Flag | Default | What |
 |---|---|---|
 | `--benchmark-memory` | off | record peak memory for **every** `benchmark()` call, no test changes. (The `benchmark_memory` fixture is always measured, with or without this flag.) |
+| `--benchmark-memory-repeats=N` | `1` | default memray passes per benchmark, suite-wide (reported peak is the min). Per-test `@pytest.mark.benchmem(repeats=N)` overrides it. |
+| `--benchmark-memory-columns=…` | `peak` | which memory metrics the table shows, comma-separated and in order: `peak`, `allocated`, `allocs`. Default is peak only; the table captions the rest as available. |
+| `--benchmark-memory-stats=…` | `min,mean,max` | when a benchmark is measured more than once (`repeats > 1`), the stats each shown metric spreads into: `min`, `mean`, `max`, `median`, `stddev`. A single pass stays one column. |
 | `--benchmark-memory-compare[=REF]` | off | compare this run's peak memory against a prior saved run (latest, or a pytest-benchmark storage ref like `0001`); folds `base` + `Δ peak` columns into the combined table. |
 | `--benchmark-memory-compare-fail=FIELD:THRESHOLD` | — | fail the session on a memory regression (repeatable). Implies `--benchmark-memory-compare`. Fields: `peak`, `allocated`, `allocations`. |
 
@@ -58,12 +61,31 @@ def test_build(benchmark_memory):
 
 | Kwarg | Default | What |
 |---|---|---|
-| `repeats` | `1` | run `N` memray passes and keep the **min** — peak memory is noisy (GC timing, lazy imports, page cache), so min-of-N is the cleanest floor. |
+| `repeats` | `1` | measure this test with `N` memray passes. **Every** pass is kept (the blob stores the whole series); the headline `peak` is the *minimum* across them, and `--stat` reports any other. Overrides the suite-wide `--benchmark-memory-repeats` for this test. |
+
+Why measure memory once when timing reruns many times? Timing *needs* the reruns — to
+beat timer granularity and average out scheduler / CPU jitter. Peak memory doesn't:
+it's *allocator demand* (the bytes your code requests for a given code path and inputs),
+not a wall-clock measurement, so it's near-deterministic and a single pass is usually
+representative — the more so because the timing phase has already run the function many
+times first, warming away one-time effects (lazy imports, module caches). (memray's
+allocator tracking also makes each pass much heavier than an untimed call, so there's no
+reason to multiply it for free.) Raise `repeats` when the peak *isn't* deterministic —
+hash randomization, GC collection timing, randomized inputs — to settle the min floor and
+quantify the spread (the `min`/`mean`/`max` columns and `--stat stddev`).
 
 ## The `benchmark_memory` fixture
 
 Depends on pytest-benchmark's `benchmark` fixture; times via pytest-benchmark, then
 measures peak in a separate untimed pass.
+
+**Order — timing first, then memory.** Every call form runs pytest-benchmark's timing
+(calibration + all rounds) *first*, and only then the memray pass — so memory is measured
+on an already-warmed function (imports loaded, caches filled), and the allocator hooks
+never touch the timing numbers. This holds for the fixture's `__call__` and `pedantic`,
+and for the `--benchmark-memory` patch alike. (The standalone `measure_peak` /
+`measure_memory` have no timing phase, so they measure *cold* — warm up first, or use
+`repeats > 1`, if a cold first call would distort the peak.)
 
 **Call form** — times then measures `function(*args, **kwargs)`:
 
@@ -83,6 +105,11 @@ benchmark_memory.pedantic(target, args=(), kwargs=None, setup=None,
   `(args, kwargs)`, those supply the call's arguments. Use it to rebuild fresh state
   each round, essential for side-effectful workloads.
 - `rounds`, `warmup_rounds`, `iterations` — as in pytest-benchmark.
+
+**Mostly memory, little timing?** There's no memory-only switch — the entry rides
+pytest-benchmark's timing. To trim it: `--benchmark-min-rounds=1 --benchmark-max-time=0`
+(no test changes), or `pedantic(rounds=1, warmup_rounds=0)` for a single call. For pure
+memory outside pytest, use `measure_peak` / `measure_memory`.
 
 **Attributes** (available after a call):
 
