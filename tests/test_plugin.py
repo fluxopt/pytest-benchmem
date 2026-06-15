@@ -29,7 +29,7 @@ class _OrderSpyBenchmark:
     """Stand-in for pytest-benchmark's fixture that logs when the timing pass runs."""
 
     def __init__(self, events: list[str]) -> None:
-        self.extra_info: dict = {}
+        self.extra_info: dict[str, object] = {}
         self._events = events
 
     def __call__(self, fn, *a, **k):
@@ -56,7 +56,7 @@ def test_timing_runs_before_memory_call(monkeypatch):
     """Call form: pytest-benchmark times the function first, then the memray pass runs."""
     events: list[str] = []
     monkeypatch.setattr(plugin, "measure_memory", _spy_measure(events))
-    plugin.MemoryBenchmark(_OrderSpyBenchmark(events))(lambda: None)
+    plugin.MemoryBenchmark(_OrderSpyBenchmark(events))(lambda: None)  # type: ignore[arg-type]
     assert events == ["timing", "memory"]
 
 
@@ -64,7 +64,7 @@ def test_timing_runs_before_memory_pedantic(monkeypatch):
     """Pedantic form: same order — timing first, memory second."""
     events: list[str] = []
     monkeypatch.setattr(plugin, "measure_memory", _spy_measure(events))
-    plugin.MemoryBenchmark(_OrderSpyBenchmark(events)).pedantic(lambda: None)
+    plugin.MemoryBenchmark(_OrderSpyBenchmark(events)).pedantic(lambda: None)  # type: ignore[arg-type]
     assert events == ["timing", "memory"]
 
 
