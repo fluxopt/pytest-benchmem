@@ -46,9 +46,7 @@ suite runs exactly as before. Peak is the headline, so it shows by default; `all
 `allocs` are one flag away (`--benchmark-memory-columns`).
 
 Add `--benchmark-json=run.json` and both persist under one node id: timing in `stats`,
-memory in `extra_info.benchmem` (per-repeat `peak_bytes` / `total_bytes` / `allocations` —
-the source for every `--metric` and `--stat`). Parametrize `params` become the analysis
-dims the plots scale by; for an axis `params` can't carry, set a scalar on `extra_info` —
+memory in `extra_info.benchmem`. Parametrize `params` become the dims the plots scale by —
 see [Grouping by dims](https://fluxopt.github.io/pytest-benchmem/dims/).
 
 ## Memory on specific tests — the `benchmark_memory` fixture
@@ -62,21 +60,16 @@ def test_sort(benchmark_memory):
     benchmark_memory(sorted, list(range(1_000_000, 0, -1)))
 ```
 
-Either way, set `--benchmark-memory-repeats=N` (suite-wide) or
-`@pytest.mark.benchmem(repeats=N)` (per test) to measure `N` times: every pass is kept and
-the headline peak is the *minimum* across them. The default is one pass — unlike timing, peak
-memory is near-deterministic (it's allocator demand, not wall-clock jitter), and the function
-is already warm from the timing phase, so one pass usually suffices. Raise it when the peak
-*isn't* deterministic (hash randomization, GC timing) to settle the floor and see the spread.
+Memory is measured once by default. Peak is near-deterministic (it's allocator demand, not
+wall-clock jitter), so one pass usually suffices. Raise it with `--benchmark-memory-repeats=N`
+(suite-wide) or `@pytest.mark.benchmem(repeats=N)` (per test) when the peak *isn't*
+deterministic; every pass is kept and the headline is the minimum across them.
 
-> **Your benchmark must be safe to re-run.** Memory is measured on an *extra,
-> separate* invocation, after pytest-benchmark has already called your function
-> many times for timing — the memray pass is effectively the next call, not the
-> first. So if the benchmarked code has side effects (mutates a shared fixture,
-> fills a cache, drains an iterator, writes a file), the recorded peak reflects
-> that already-warmed state, not a cold run — silently. Benchmark a pure call,
-> or use the `benchmark_memory` fixture's `pedantic` form with a `setup` that
-> rebuilds fresh state before each measured call.
+> **Your benchmark must be safe to re-run.** memray measures on an extra call, after
+> pytest-benchmark's timing rounds — so a side-effectful action (mutates a fixture, fills a
+> cache, drains an iterator, writes a file) records its already-warmed state, not a cold
+> run, silently. Benchmark a pure call, or use the fixture's `pedantic` form with a `setup`
+> that rebuilds fresh state each round.
 
 ## Reading it back
 
@@ -112,9 +105,9 @@ pytest --benchmark-only --benchmark-memory \
        --benchmark-memory-compare --benchmark-memory-compare-fail=peak:10%
 ```
 
-Thresholds are percent (`peak:10%`) or absolute (`peak:5MiB`), on `peak`,
-`allocated` (total bytes — catches churn peak hides), or `allocations` (count,
-near-deterministic — often a better tripwire than peak bytes).
+Thresholds are percent (`peak:10%`) or absolute (`peak:5MiB`), on `peak`, `allocated`
+(total bytes, catches churn peak hides), or `allocations` (count, near-deterministic and
+often a better tripwire than peak bytes).
 
 Or pull the numbers into your own analysis:
 
@@ -147,10 +140,8 @@ covers CI timing.
 | Memory *in your pytest-benchmark tests* | — | ⭐ fixture **or** `--benchmark-memory` |
 | **Track/compare/plot** memory across inputs, versions, commits | — | ⭐ compare · sweep · plot |
 
-> **Not** a CI dashboard (use [CodSpeed]) and **not** a rigorous perf-history
-> system (use [ASV]). If your core need is *precise local memory* over the
-> benchmarks you already write — timing/sweeps/plots in one vocabulary — that's
-> pytest-benchmem.
+In short: if your core need is *precise local memory* over the benchmarks you already
+write — timing, sweeps, and plots in one vocabulary — that's pytest-benchmem.
 
 ### With pytest-memray
 
@@ -167,11 +158,8 @@ directions:
   and plot** that number across inputs, versions, and commits — *"how does memory
   scale / change?"*. It has no leak detection or flamegraphs, by design.
 
-They coexist in one suite. Reach for **pytest-memray** to assert a ceiling, catch
-a leak, or see which function allocated; reach for **pytest-benchmem** to track a
-measured number over time and gate on a delta. One caveat: memray won't nest two
-trackers, so don't run `pytest --memray` and a benchmem fixture on the *same*
-test.
+They coexist in one suite. One caveat: memray won't nest two trackers, so don't run
+`pytest --memray` and a benchmem fixture on the *same* test.
 
 ## Install
 

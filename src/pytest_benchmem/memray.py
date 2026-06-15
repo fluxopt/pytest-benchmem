@@ -52,10 +52,7 @@ class MemoryResult:
     """A memory measurement across ``repeats`` passes, derived from the per-repeat samples.
 
     The per-repeat :attr:`samples` are the single source of truth — that's all the blob
-    stores (the ``series``). Unlike pytest-benchmark, which keeps a denormalized summary
-    and gates the raw rounds behind ``--benchmark-save-data`` *because they number in the
-    thousands*, our series is a handful of (expensive) memray passes, so storing it whole
-    and deriving on read is both lossless and free.
+    stores (the ``series``); everything else is derived from them on read.
 
     Peak memory is noisier than expected (GC timing, lazy imports, page cache), so the
     headline :attr:`peak_bytes` is the *minimum* peak — the cleanest "floor this can hit" —
@@ -145,15 +142,38 @@ def _compute_statistics() -> Callable[[str], Any]:
     return compute_statistics
 
 
+#: Substring of memray's error when a second ``Tracker`` is started while one is active.
+#: memray raises a bare ``RuntimeError("No more than one Tracker instance can be active
+#: at the same time")``; we match on this to turn it into an actionable message.
+_NESTED_TRACKER_MARKER = "more than one Tracker"
+
+
 def _track_once(action: Action) -> Measurement:
-    """One fresh tracker run → a :class:`Measurement` via memray stats."""
+    """One fresh tracker run → a :class:`Measurement` via memray stats.
+
+    memray allows only one active ``Tracker`` per process, so if one is already
+    running — most often pytest-memray's ``--memray`` profiling the same test — the
+    nested ``Tracker`` raises. We translate that into an actionable error rather than
+    surfacing memray's terse one.
+    """
     import memray
 
     compute_statistics = _compute_statistics()
     with tempfile.TemporaryDirectory(prefix="pytest-benchmem-") as tmp:
         out = Path(tmp) / "track.bin"  # memray must create the file itself
-        with memray.Tracker(out):
-            action()
+        try:
+            with memray.Tracker(out):
+                action()
+        except RuntimeError as exc:
+            if _NESTED_TRACKER_MARKER in str(exc):
+                raise RuntimeError(
+                    "pytest-benchmem couldn't start its memray pass because another memray "
+                    "Tracker is already active — most likely pytest-memray's `--memray` running "
+                    "on the same test. memray allows only one Tracker per process. Run the two "
+                    "on different tests (or different sessions): pytest-memray for whole-test "
+                    "limits/leaks, pytest-benchmem for the benchmarked action's memory."
+                ) from exc
+            raise
         s = compute_statistics(str(out))
         return Measurement(
             peak_bytes=int(s.peak_memory_allocated),
