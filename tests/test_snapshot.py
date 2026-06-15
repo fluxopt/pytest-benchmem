@@ -6,9 +6,9 @@ from pathlib import Path
 import pytest
 
 from pytest_benchmem.snapshot import (
+    _human_bytes,
     _node_dims,
     from_pytest_benchmark,
-    human_bytes,
     load_long_df,
     load_samples,
     memory_from_pytest_benchmark,
@@ -27,7 +27,7 @@ from pytest_benchmem.snapshot import (
     ],
 )
 def test_human_bytes_scales(n, expected):
-    assert human_bytes(n) == expected
+    assert _human_bytes(n) == expected
 
 
 def _pb_file(tmp_path, benchmarks):

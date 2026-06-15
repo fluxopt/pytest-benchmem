@@ -109,10 +109,14 @@ def test_no_baseline_omits_compare_columns():
 # --- the shared mem_columns logic ------------------------------------------------
 
 
-def test_byte_unit_picks_from_largest():
-    assert byte_unit(0) == ("B", 1.0)
-    assert byte_unit(2048)[0] == "KiB"
-    assert byte_unit(5 * 1024**2)[0] == "MiB"
+def test_byte_unit_anchors_on_smallest_positive():
+    assert byte_unit([0]) == ("B", 1.0)  # no positive value → bytes
+    assert byte_unit([2048])[0] == "KiB"
+    assert byte_unit([5 * 1024**2])[0] == "MiB"
+    # one unit for the whole column, anchored on the smallest so it stays readable
+    assert byte_unit([2048, 5 * 1024**3])[0] == "KiB"
+    # zeros are ignored when a positive value is present
+    assert byte_unit([0, 3 * 1024**2])[0] == "MiB"
 
 
 def test_mem_columns_multi_sample_spreads_every_metric():

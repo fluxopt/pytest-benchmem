@@ -19,8 +19,8 @@ from typing import Any, TextIO
 from pytest_benchmem.format import byte_unit, fmt_bytes, fmt_count, rank_style
 from pytest_benchmem.snapshot import (
     Metric,
+    _human_bytes,
     from_pytest_benchmark,
-    human_bytes,
     load_long_df,
     memory_from_pytest_benchmark,
 )
@@ -45,7 +45,7 @@ def _fmt_value(field: str, value: float) -> str:
     """Format a value in its field's unit: ``4.1 MiB``, ``1.2e-05s``, ``40``."""
     unit = _FIELD[field][2]
     if unit == "B":
-        return human_bytes(value)
+        return _human_bytes(value)
     return f"{value:.4g}{unit}"
 
 
@@ -137,7 +137,7 @@ def compare_runs(
     wide = df.pivot(index="id", columns="snapshot", values="value")
 
     is_bytes = unit == "B"
-    unit_name, factor = byte_unit(float(wide.max().max())) if is_bytes else (unit, 1.0)
+    unit_name, factor = byte_unit(wide.stack().tolist()) if is_bytes else (unit, 1.0)
     fmt = _scaled_cell_fmt(unit, factor, is_bytes=is_bytes)
 
     def at(test_id: str, label: str) -> float | None:

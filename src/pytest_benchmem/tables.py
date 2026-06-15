@@ -131,7 +131,7 @@ def mem_columns(
         all_values = [v for series in per_series for v in series]
         if not all_values:
             continue
-        unit, factor = byte_unit(max(all_values)) if is_byte else ("", 1.0)
+        unit, factor = byte_unit(all_values) if is_byte else ("", 1.0)
         fmt = _formatter(is_byte=is_byte, factor=factor)
         if any(len(s) > 1 for s in per_series):  # measured more than once → show the spread
             for i, stat_name in enumerate(stats):
@@ -149,7 +149,7 @@ def peak_scale(*result_groups: Iterable[MemoryResult]) -> tuple[str, float]:
     cell and the headline ``peak`` cell read on the same unit.
     """
     peaks = [r.peak_bytes for group in result_groups for r in group]
-    return byte_unit(max(peaks)) if peaks else ("B", 1.0)
+    return byte_unit(peaks) if peaks else ("B", 1.0)
 
 
 def hidden_metrics_hint(metrics: Sequence[str]) -> str | None:
