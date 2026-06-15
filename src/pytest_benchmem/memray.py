@@ -188,6 +188,13 @@ def measure_memory(action: Action, repeats: int = 1) -> MemoryResult:
     Each repeat gets a fresh tracker; the headline peak is the minimum across repeats
     (see :class:`MemoryResult`), and every repeat's :class:`Measurement` is retained for
     distribution stats.
+
+    Args:
+        action: The zero-argument callable to measure.
+        repeats: How many memray passes to run (each gets a fresh tracker).
+
+    Returns:
+        A :class:`MemoryResult` over every repeat.
     """
     _require_memray()
 
@@ -203,5 +210,12 @@ def measure_peak(action: Action, repeats: int = 1) -> int:
 
     The bare one-liner for a REPL or notebook; :func:`measure_memory` returns the
     full result (allocation count, spread).
+
+    Args:
+        action: The zero-argument callable to measure.
+        repeats: How many memray passes to run; the peak is the minimum across them.
+
+    Returns:
+        Peak resident bytes (the headline ``peak`` = min across repeats).
     """
     return measure_memory(action, repeats=repeats).peak_bytes
