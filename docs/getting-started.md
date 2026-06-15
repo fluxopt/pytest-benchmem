@@ -84,12 +84,13 @@ baseline = _tmp / "baseline.json"
 !pytest {suite} --benchmark-only --benchmark-json={baseline} --benchmark-columns=min,median -q -p no:cacheprovider
 ```
 
-Look at the run output above: whenever a run records memory, pytest-benchmem folds
-`peak`, `allocated`, and `allocs` into **pytest-benchmark's own table** — same timing
-columns, same scaling and sort, with the memory columns appended on the right. One
-table, both metrics, no flag needed. (Prefer the two tables separate? Pass
-`--benchmark-memory-table=split` to keep pytest-benchmark's table and print a memory
-table of its own below it.)
+Look at the run output above: whenever a run records memory, pytest-benchmem folds the
+`peak` column into **pytest-benchmark's own table** — same timing columns, same scaling
+and sort, with peak appended on the right. One table, both metrics, no flag needed. Peak
+is the headline, so it shows by default; add `allocated` and `allocs` with
+`--benchmark-memory-columns=peak,allocated,allocs` (the table captions them as
+available). (Prefer the two tables separate? Pass `--benchmark-memory-table=split` to
+keep pytest-benchmark's table and print a memory table of its own below it.)
 
 That standalone memory table is also available programmatically — `build_run_table`
 turns the recorded blobs into a rich table, biggest peak first, heaviest consumer

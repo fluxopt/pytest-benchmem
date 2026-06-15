@@ -62,19 +62,18 @@ def test_sorted_by_peak_descending():
     assert names == ["b_huge", "c_mid", "a_small"]
 
 
-def test_constant_metric_stays_one_column():
-    text = _render(build_run_table({"t::x": _blob(2048, repeats=3)}))  # constant across repeats
-    assert "peak (KiB)" in text and "peak·min" not in text  # one column, not spread
+def test_single_pass_is_one_column_per_metric():
+    text = _render(build_run_table({"t::x": _blob(2048)}))  # repeats=1 → nothing to distribute
+    assert "peak (KiB)" in text and "peak·min" not in text
 
 
-def test_varying_metric_spreads_into_min_mean_max():
-    blobs = {
-        "t::flat": _blob(2048, repeats=1),
-        "t::noisy": _blob(2048, peak_max=4096),  # peak varies across repeats
-    }
-    text = _render(build_run_table(blobs))
-    assert "peak·min" in text and "peak·mean" in text and "peak·max" in text  # spread
-    assert "allocs" in text and "allocs·min" not in text  # constant metric stays one column
+def test_multi_repeat_always_spreads_even_when_constant():
+    # >1 pass → show the distribution for every metric, even where values coincide — honest,
+    # and a stable schema (columns don't appear/vanish on whether the data happened to move).
+    text = _render(build_run_table({"t::x": _blob(2048, repeats=3)}))
+    for header in ("peak·min", "peak·mean", "peak·max", "allocs·min", "allocs·max"):
+        assert header in text
+    assert "peak (KiB)" not in text  # no collapsed single column when multi-repeat
 
 
 def test_unit_hoisted_into_header_and_allocs_grouped():
@@ -116,10 +115,21 @@ def test_byte_unit_picks_from_largest():
     assert byte_unit(5 * 1024**2)[0] == "MiB"
 
 
-def test_mem_columns_spreads_only_varying_metrics():
-    varying = MemoryResult((Measurement(1024, 1, 10), Measurement(4096, 1, 10)))  # only peak varies
-    headers = [c.header for c in mem_columns([varying])]
-    assert headers == ["peak·min (KiB)", "peak·mean", "peak·max", "allocated (B)", "allocs"]
+def test_mem_columns_multi_sample_spreads_every_metric():
+    # Two samples → every metric spreads, even the deterministic ones (constant ≠ hidden).
+    res = MemoryResult((Measurement(1024, 1, 10), Measurement(4096, 1, 10)))
+    headers = [c.header for c in mem_columns([res])]
+    assert headers == [
+        "peak·min (KiB)",
+        "peak·mean",
+        "peak·max",
+        "allocated·min (B)",
+        "allocated·mean",
+        "allocated·max",
+        "allocs·min",
+        "allocs·mean",
+        "allocs·max",
+    ]
 
 
 def test_mem_columns_all_constant_single_columns():
@@ -134,3 +144,32 @@ def test_mem_columns_compute_distribution():
     assert cols["peak·min (KiB)"](res) == "1.00"  # min / 1024
     assert cols["peak·max"](res) == "4.00"
     assert cols["peak·mean"](res) == "2.33"  # (1024+2048+4096)/3 / 1024
+
+
+def test_mem_columns_metric_selection_keeps_order():
+    const = MemoryResult((Measurement(1024, 5, 2048),))
+    headers = [c.header for c in mem_columns([const], metrics=["allocs", "peak"])]
+    assert headers == ["allocs", "peak (KiB)"]
+
+
+def test_mem_columns_stat_selection_adds_stddev_median():
+    res = MemoryResult((Measurement(100, 1, 1), Measurement(200, 1, 1), Measurement(300, 1, 1)))
+    cols = {
+        c.header: c.cell for c in mem_columns([res], metrics=["peak"], stats=["median", "stddev"])
+    }
+    assert set(cols) == {"peak·median (B)", "peak·stddev"}
+    assert cols["peak·median (B)"](res) == "200"  # median of 100/200/300
+    assert cols["peak·stddev"](res) == "100"  # sample stdev of the three
+
+
+def test_parse_metrics_and_stats_reject_unknown():
+    import pytest
+
+    from pytest_benchmem.tables import parse_metrics, parse_stats
+
+    assert parse_metrics(None) == ("peak",)  # peak-only default
+    assert parse_stats(None) == ("min", "mean", "max")
+    with pytest.raises(ValueError, match="unknown memory metric"):
+        parse_metrics(["peak", "bogus"])
+    with pytest.raises(ValueError, match="unknown memory stat"):
+        parse_stats(["min", "p99"])

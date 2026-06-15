@@ -36,6 +36,9 @@ The plugin adds these to any pytest run (alongside pytest-benchmark's own flags)
 | Flag | Default | What |
 |---|---|---|
 | `--benchmark-memory` | off | record peak memory for **every** `benchmark()` call, no test changes. (The `benchmark_memory` fixture is always measured, with or without this flag.) |
+| `--benchmark-memory-repeats=N` | `1` | default memray passes per benchmark, suite-wide (reported peak is the min). Per-test `@pytest.mark.benchmem(repeats=N)` overrides it. |
+| `--benchmark-memory-columns=…` | `peak` | which memory metrics the table shows, comma-separated and in order: `peak`, `allocated`, `allocs`. Default is peak only; the table captions the rest as available. |
+| `--benchmark-memory-stats=…` | `min,mean,max` | when a benchmark is measured more than once (`repeats > 1`), the stats each shown metric spreads into: `min`, `mean`, `max`, `median`, `stddev`. A single pass stays one column. |
 | `--benchmark-memory-compare[=REF]` | off | compare this run's peak memory against a prior saved run (latest, or a pytest-benchmark storage ref like `0001`); folds `base` + `Δ peak` columns into the combined table. |
 | `--benchmark-memory-compare-fail=FIELD:THRESHOLD` | — | fail the session on a memory regression (repeatable). Implies `--benchmark-memory-compare`. Fields: `peak`, `allocated`, `allocations`. |
 
@@ -58,7 +61,7 @@ def test_build(benchmark_memory):
 
 | Kwarg | Default | What |
 |---|---|---|
-| `repeats` | `1` | run `N` memray passes and keep the **min** — peak memory is noisy (GC timing, lazy imports, page cache), so min-of-N is the cleanest floor. |
+| `repeats` | `1` | run `N` memray passes and keep the **min** — peak memory is noisy (GC timing, lazy imports, page cache), so min-of-N is the cleanest floor. Overrides the suite-wide `--benchmark-memory-repeats` for this test. |
 
 ## The `benchmark_memory` fixture
 

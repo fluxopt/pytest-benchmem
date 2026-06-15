@@ -27,7 +27,7 @@ Registered via the ``pytest11`` entry point — installing pytest-benchmem is en
 from __future__ import annotations
 
 import inspect
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -43,12 +43,24 @@ if TYPE_CHECKING:
 MARKER = "benchmem"
 
 
-def _repeats_from_node(node: Any, default: int = 1) -> int:
-    """Read ``repeats`` off a test's ``@pytest.mark.benchmem`` marker, if present."""
+def _global_repeats(config: Any) -> int:
+    """Suite-wide default repeats from ``--benchmark-memory-repeats`` (``>= 1``)."""
+    if config is None:
+        return 1
+    try:
+        return max(1, int(config.getoption("--benchmark-memory-repeats")))
+    except (ValueError, TypeError):
+        return 1
+
+
+def _repeats_from_node(node: Any) -> int:
+    """Resolve a test's memray repeats: ``@pytest.mark.benchmem(repeats=N)`` wins,
+    else the suite-wide ``--benchmark-memory-repeats``, else ``1``.
+    """
     marker = node.get_closest_marker(MARKER) if node is not None else None
     if marker is not None and "repeats" in marker.kwargs:
         return max(1, int(marker.kwargs["repeats"]))
-    return default
+    return _global_repeats(getattr(node, "config", None))
 
 
 def _record_memory(
@@ -279,6 +291,15 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "not only benchmark_memory — no test changes needed.",
     )
     group.addoption(
+        "--benchmark-memory-repeats",
+        action="store",
+        type=int,
+        default=1,
+        metavar="N",
+        help="Default memray passes per benchmark; the reported peak is the min. "
+        "Per-test @pytest.mark.benchmem(repeats=N) overrides it. Default: 1.",
+    )
+    group.addoption(
         "--benchmark-memory-compare",
         action="store",
         nargs="?",
@@ -304,6 +325,22 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         help="combined (default): fold memory into pytest-benchmark's timing table as "
         "one table. split: leave pytest-benchmark's table and print memory separately.",
     )
+    group.addoption(
+        "--benchmark-memory-columns",
+        action="store",
+        default=None,
+        metavar="peak,allocated,allocs",
+        help="Which memory metrics to show in the table, comma-separated, in order "
+        "(peak, allocated, allocs). Default: peak.",
+    )
+    group.addoption(
+        "--benchmark-memory-stats",
+        action="store",
+        default=None,
+        metavar="min,mean,max",
+        help="When a benchmark is measured more than once (repeats > 1), the stats each "
+        "metric spreads into (min, mean, max, median, stddev). Default: min,mean,max.",
+    )
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -313,6 +350,7 @@ def pytest_configure(config: pytest.Config) -> None:
         "benchmem(repeats=N): pytest-benchmem peak-memory options — "
         "repeats sets the number of memray passes (the reported peak is the min).",
     )
+    _memory_column_opts(config)  # validate --benchmark-memory-columns/-stats fail-fast
     if config.getoption("--benchmark-memory"):
         _install_auto_memory()
 
@@ -424,10 +462,30 @@ def _parse_memory_thresholds(fail_exprs: list[str]) -> list[Any]:
     return thresholds
 
 
+def _memory_column_opts(config: pytest.Config) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Parse + validate ``--benchmark-memory-columns`` / ``-stats`` → ``(metrics, stats)``.
+
+    A bad metric or stat name is a :class:`pytest.UsageError`, not a traceback.
+    """
+    from pytest_benchmem.tables import parse_metrics, parse_stats
+
+    def _split(raw: object) -> list[str] | None:
+        return [tok.strip() for tok in str(raw).split(",") if tok.strip()] if raw else None
+
+    try:
+        metrics = parse_metrics(_split(config.getoption("--benchmark-memory-columns")))
+        stats = parse_stats(_split(config.getoption("--benchmark-memory-stats")))
+    except ValueError as exc:
+        raise pytest.UsageError(str(exc)) from exc
+    return metrics, stats
+
+
 def _render_combined(
     config: pytest.Config,
     bs: Any,
     *,
+    metrics: Sequence[str],
+    stats: Sequence[str],
     baseline: dict[str, dict[str, Any]] | None = None,
     baseline_label: str | None = None,
 ) -> None:
@@ -442,6 +500,8 @@ def _render_combined(
         sort=bs.sort,
         name_format=bs.name_format,
         scale_unit=partial(config.hook.pytest_benchmark_scale_unit, config=config),
+        metrics=metrics,
+        stats=stats,
         baseline=baseline,
         baseline_label=baseline_label,
     )
@@ -453,6 +513,8 @@ def _print_memory_table(
     current: dict[str, dict[str, Any]],
     *,
     combined: bool,
+    metrics: Sequence[str],
+    stats: Sequence[str],
     baseline: dict[str, dict[str, Any]] | None = None,
     baseline_label: str | None = None,
 ) -> None:
@@ -462,11 +524,26 @@ def _print_memory_table(
     path renders nothing when no memory was recorded this run.
     """
     if combined:
-        _render_combined(config, bs, baseline=baseline, baseline_label=baseline_label)
+        _render_combined(
+            config,
+            bs,
+            metrics=metrics,
+            stats=stats,
+            baseline=baseline,
+            baseline_label=baseline_label,
+        )
     elif current:
         from pytest_benchmem.tables import build_run_table
 
-        Console().print(build_run_table(current, baseline=baseline, baseline_label=baseline_label))
+        Console().print(
+            build_run_table(
+                current,
+                metrics=metrics,
+                stats=stats,
+                baseline=baseline,
+                baseline_label=baseline_label,
+            )
+        )
 
 
 def pytest_terminal_summary(terminalreporter: Any, config: pytest.Config) -> None:
@@ -479,10 +556,11 @@ def pytest_terminal_summary(terminalreporter: Any, config: pytest.Config) -> Non
     compare, fail_exprs = _compare_requested(config)
     comparing = compare is not False or bool(fail_exprs)
     thresholds = _parse_memory_thresholds(fail_exprs)  # validate up front, any mode
+    metrics, stats = _memory_column_opts(config)  # validate column selection up front
 
     if not comparing:
         # No comparison requested: just the table, like pytest-benchmark's own.
-        _print_memory_table(config, bs, current, combined=combined)
+        _print_memory_table(config, bs, current, combined=combined, metrics=metrics, stats=stats)
         return
 
     default: tuple[str | None, dict[str, dict[str, Any]]] = (None, {})
@@ -497,7 +575,14 @@ def pytest_terminal_summary(terminalreporter: Any, config: pytest.Config) -> Non
 
     # Render once — the baseline (if any) folds into the same table.
     _print_memory_table(
-        config, bs, current, combined=combined, baseline=baseline or None, baseline_label=label
+        config,
+        bs,
+        current,
+        combined=combined,
+        metrics=metrics,
+        stats=stats,
+        baseline=baseline or None,
+        baseline_label=label,
     )
 
     if not baseline:
