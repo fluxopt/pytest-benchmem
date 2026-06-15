@@ -13,15 +13,9 @@ kernelspec:
 
 # Getting started
 
-pytest-benchmem is the **memory companion to pytest-benchmark**: you write ordinary
-pytest-benchmark tests, swap the `benchmark` fixture for `benchmark_memory`, and get
-a memray **peak-memory** number recorded right next to the timing — same test, same
-run, same JSON file. This page runs that end to end: write a benchmark, execute it,
-and read both metrics back.
-
-The fixture and memray ship with the core install; the plots and CLI need
-`pytest-benchmem[plot]`. Memory measurement is Linux/macOS only (timing works
-everywhere).
+This page runs pytest-benchmem end to end: write a benchmark, execute it, read both
+metrics back. The fixture and memray ship with the core install; the plots and CLI
+need `pytest-benchmem[plot]`, and memory measurement is Linux/macOS only.
 
 ## Setup
 
@@ -42,12 +36,10 @@ print(f"tempdir: {_tmp}")
 
 ## A memory benchmark — the `benchmark_memory` fixture
 
-`benchmark_memory` depends on pytest-benchmark's `benchmark` fixture, so timing
-rides pytest-benchmark exactly as usual. On top, it runs the action once more under
-`memray.Tracker` — a **separate, untimed pass**, so the allocator hooks never touch
-the timing — and stashes the memory blob in `extra_info.benchmem`. One node id, one
-JSON entry, both metrics. Parametrize `params` become the analysis `dims` the plots
-scale by, for free.
+`benchmark_memory` wraps pytest-benchmark's `benchmark`, so timing works as usual; it
+then runs the action once more under `memray.Tracker` — a separate, untimed pass — and
+stashes the result in `extra_info.benchmem`. Parametrize `params` become the analysis
+`dims` the plots scale by, for free.
 
 Here's a tiny suite — `sorted` over a range of input sizes:
 
@@ -64,12 +56,12 @@ def test_sort(benchmark_memory, n):
 print(suite.read_text())
 ```
 
-> **Your benchmark must be safe to re-run.** Memory rides a *separate* invocation,
-> after pytest-benchmark has already called your function many times for timing — so
-> a side-effectful call (mutates a fixture, fills a cache, drains an iterator)
-> records its already-warmed state, not a cold one, silently. Benchmark a pure call,
-> or use the [`pedantic` form](reference.ipynb#the-benchmark_memory-fixture) with a
-> `setup` that rebuilds fresh state each round.
+> **Your benchmark must be safe to re-run.** Memory rides a separate invocation, after
+> pytest-benchmark has already called your function many times — so a side-effectful
+> call (mutates a fixture, fills a cache, drains an iterator) silently records its
+> warmed state, not a cold one. Benchmark a pure call, or use the
+> [`pedantic` form](reference.ipynb#the-benchmark_memory-fixture) with a `setup` that
+> rebuilds fresh state each round.
 
 ## Run it — one command, both metrics
 
@@ -82,24 +74,20 @@ baseline = _tmp / "baseline.json"
 !pytest {suite} --benchmark-only --benchmark-json={baseline} --benchmark-columns=min,median -q -p no:cacheprovider
 ```
 
-In the output above, pytest-benchmem folds the `peak` column into **pytest-benchmark's
-own table** — same columns, scaling, and sort, with peak appended on the right. One table,
-both metrics, no flag needed. Peak is the headline, so it shows by default; add `allocated`
-/ `allocs` with `--benchmark-memory-columns` (the table captions them as available).
-(Prefer them separate? `--benchmark-memory-table=split` prints a memory table of its own
-below.)
+pytest-benchmem appends `peak` to pytest-benchmark's own table — no flag needed. Add
+`allocated` / `allocs` with `--benchmark-memory-columns`, or split memory into its own
+table with `--benchmark-memory-table=split`.
 
-> **Already have a `benchmark` suite?** Don't swap the fixture — add `--benchmark-memory`
-> to the run and every `benchmark(...)` call records memory too, no test changes. Reach for
-> the `benchmark_memory` fixture when you want memory on *specific* tests only, or the
-> `pedantic` control.
+> **Already have a `benchmark` suite?** Add `--benchmark-memory` and every
+> `benchmark(...)` call records memory too, no test changes. Reach for the
+> `benchmark_memory` fixture when you want memory on specific tests, or the `pedantic`
+> control.
 
 ## Read both metrics back
 
-pytest-benchmem reads that one file *per metric*: `from_pytest_benchmark` pulls
-timing (seconds, from `stats`), `memory_from_pytest_benchmark` pulls peak memory
-(bytes, from `extra_info.benchmem`). Dims default to the parametrize `params`, so
-each sample knows its `n` without anyone parsing the id.
+pytest-benchmem reads that file per metric: `from_pytest_benchmark` pulls timing (from
+`stats`), `memory_from_pytest_benchmark` pulls peak memory (from `extra_info.benchmem`).
+Dims default to the parametrize `params`, so each sample knows its `n`.
 
 ```{code-cell} ipython3
 from pytest_benchmem import from_pytest_benchmark, memory_from_pytest_benchmark

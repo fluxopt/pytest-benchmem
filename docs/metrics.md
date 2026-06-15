@@ -23,34 +23,28 @@ is the default, but `allocated` and `allocations` often catch what `peak` hides.
 | `allocated` | `total_bytes` | sum of *every* allocation over the run | churn / temporary spikes `peak` smooths over |
 | `allocations` | `allocations` | count of allocation calls | a near-deterministic, low-noise tripwire |
 
-All three are memray's **allocator demand** — what your code *requested*, in-process and
-byte-exact, so they see native (numpy / C-extension) allocations, not just Python
-objects.
+All three are memray's allocator demand — what your code *requested*, in-process and
+byte-exact, so they see native (numpy / C-extension) allocations, not just Python objects.
 
 ### Distribution across repeats
 
 With `--benchmark-memory-repeats=N` (suite-wide) or `@pytest.mark.benchmem(repeats=N)`
-(per test), every repeat's peak / allocations / total is kept as a flat series in the
-blob (`extra_info.benchmem` *is* those three arrays — the headline numbers all derive
-from them). The headline `peak` is the *minimum* (the cleanest floor); ask for any other
-distribution stat over the series with `--stat` — e.g. the worst peak is `--stat max`:
+(per test), every repeat is kept as a flat series in the blob. The headline `peak` is
+the *minimum* (the cleanest floor); ask for any other stat over the series with `--stat`:
 
 ```bash
 benchmem compare base.json head.json --metric peak --stat stddev   # how noisy is peak?
 benchmem compare v1.json v2.json --metric allocated --stat mean
 ```
 
-`--stat` takes `min` / `max` / `mean` / `median` / `stddev` and applies to `peak`,
-`allocated`, or `allocations`. Peak is the noisy one (GC timing, page cache); `stddev`
-tells you how much. Without `--stat` you get the headline value.
+`--stat` takes `min` / `max` / `mean` / `median` / `stddev` and applies to any metric.
+Peak is the noisy one (GC timing, page cache); `stddev` tells you how much.
 
-The **terminal table** shows the distribution too: with `repeats > 1`, every shown
-metric expands into `min` / `mean` / `max` columns (`peak·min`, `peak·mean`, `peak·max`)
-— always, even where the values coincide, so the spread is honest and the columns don't
-shift around between runs. A single pass stays one column (nothing to distribute). The
-table shows **peak only by default**; add the others with
-`--benchmark-memory-columns=peak,allocated,allocs`, and pick the spread stats (including
-`median` / `stddev`) with `--benchmark-memory-stats=min,stddev`.
+The terminal table shows the spread too: with `repeats > 1`, every shown metric expands
+into `min` / `mean` / `max` columns (`peak·min`, `peak·mean`, `peak·max`) — always, so
+the columns don't shift between runs; a single pass stays one column. The table shows
+peak only by default; add the rest with `--benchmark-memory-columns=peak,allocated,allocs`
+and pick the spread stats with `--benchmark-memory-stats=min,stddev`.
 
 ## Setup
 
