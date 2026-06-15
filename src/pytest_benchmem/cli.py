@@ -33,6 +33,9 @@ MetricOpt = Annotated[
     ),
 ]
 
+#: ``compare``'s ``--metric`` also accepts ``both`` (shorthand for ``--columns time,peak``).
+CompareMetric = Literal["time", "peak", "allocated", "allocations", "both"]
+
 
 def _fail(msg: str, code: int = 1) -> typer.Exit:
     """Print ``msg`` in red to stderr; return a :class:`typer.Exit` for the caller to raise."""
@@ -169,7 +172,27 @@ def compare(
         list[Path],
         typer.Argument(help="Two or more pytest-benchmark runs, oldest → newest (a sweep is N)."),
     ],
-    metric: MetricOpt = "time",
+    metric: Annotated[
+        CompareMetric,
+        typer.Option(
+            help="Metric column(s): time | peak | allocated | allocations | both "
+            "(both = time,peak). Overridden by --columns."
+        ),
+    ] = "time",
+    columns: Annotated[
+        str | None,
+        typer.Option(
+            "--columns", help="Comma list of metric columns (e.g. time,peak); overrides --metric."
+        ),
+    ] = None,
+    group_by: Annotated[
+        str,
+        typer.Option(
+            "--group-by",
+            help="Group rows into sub-tables: fullname | name | func | group | module | class | "
+            "param:NAME (comma-composable).",
+        ),
+    ] = "fullname",
     stat: Annotated[
         str | None,
         typer.Option(
@@ -202,7 +225,9 @@ def compare(
     from pytest_benchmem.compare import compare_runs, find_regressions, parse_threshold
 
     with _exit_on_value_error():
-        compare_runs(runs, metric=metric, stat=stat, sort=sort, csv=csv)
+        compare_runs(
+            runs, metric=metric, columns=columns, group_by=group_by, stat=stat, sort=sort, csv=csv
+        )
 
     if not fail_on:
         return
