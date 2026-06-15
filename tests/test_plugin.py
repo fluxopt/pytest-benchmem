@@ -397,6 +397,16 @@ def test_enforce_limits_passes_under_ceiling():
     plugin._enforce_limits(_result(500), {"max_peak": 1_000_000}, "test_x")  # no raise
 
 
+def test_enforce_limits_gates_on_worst_pass_not_min():
+    # A ceiling is a worst-case budget: min peak under it but one pass over it must still fail.
+    res = MemoryResult((
+        Measurement(peak_bytes=500, allocations=1, total_bytes=1),
+        Measurement(peak_bytes=2_000_000, allocations=1, total_bytes=1),
+    ))
+    with pytest.raises(AssertionError, match=r"peak .* exceeds max_peak"):
+        plugin._enforce_limits(res, {"max_peak": 1_000_000}, "test_x")
+
+
 def test_enforce_limits_counts_use_plain_number_and_no_name_prefix():
     with pytest.raises(AssertionError, match=r"^allocations 42 exceeds max_allocations 10$"):
         plugin._enforce_limits(_result(1, allocs=42), {"max_allocations": 10}, "")

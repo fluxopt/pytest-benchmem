@@ -42,10 +42,10 @@ if TYPE_CHECKING:
 #: Name of the per-test marker: ``@pytest.mark.benchmem(repeats=N)``.
 MARKER = "benchmem"
 
-#: ``max_*`` ceiling kwargs on the marker → (MemoryResult attr, display label, is_bytes).
-#: A measured headline value over its ceiling fails the test. Absolute only — there's no
-#: baseline to take a percent of; bytes take a unit suffix (``"100MiB"``) or a bare int,
-#: ``max_allocations`` a bare count. This is the action-scoped guardrail (vs pytest-memray's
+#: ``max_*`` ceiling kwargs on the marker → (per-repeat series field, display label, is_bytes).
+#: The worst pass over its ceiling fails the test (it's a worst-case budget). Absolute only —
+#: there's no baseline to take a percent of; bytes take a unit suffix (``"100MiB"``) or a bare
+#: int, ``max_allocations`` a bare count. This is the action-scoped guardrail (vs pytest-memray's
 #: whole-test ``limit_memory``); see #82.
 _LIMIT_FIELDS = {
     "max_peak": ("peak_bytes", "peak", True),
@@ -152,15 +152,17 @@ def _limits_from_node(node: Any) -> dict[str, float]:
 
 
 def _enforce_limits(result: MemoryResult, limits: Mapping[str, float], name: str) -> None:
-    """Fail the test if any measured headline metric exceeds its ``max_*`` ceiling.
+    """Fail the test if any metric's *worst* pass exceeds its ``max_*`` ceiling.
 
-    Gates on the *headline* value — the min-peak representative the table and JSON report —
-    so with ``repeats > 1`` it's the cleanest floor (a single pass is just that value).
-    Raises the first breach as an ``AssertionError`` (a test failure, not an error).
+    A ``max_*`` ceiling is a worst-case guardrail — the budget you must never exceed (e.g. to
+    stay clear of OOM) — so it gates on the **maximum** across repeats, not the headline min.
+    Gating the floor against a ceiling would pass even when most passes breach it; the max is
+    the conservative, OOM-relevant reading. With a single pass the two coincide. Raises the
+    first breach as an ``AssertionError`` (a test failure, not an error).
     """
     for kwarg, limit in limits.items():
         attr, label, is_bytes = _LIMIT_FIELDS[kwarg]
-        actual = float(getattr(result, attr))
+        actual = float(max(result.series(attr)))
         if actual > limit:
             shown = _human_bytes if is_bytes else (lambda v: f"{v:.0f}")
             where = f"{name}: " if name else ""
@@ -524,7 +526,7 @@ def pytest_configure(config: pytest.Config) -> None:
         "pytest-benchmem peak-memory options — repeats forces a fixed number of memray passes "
         "(the reported peak is the min; default auto-calibrates the count); max_peak / "
         "max_allocated / max_allocations fail the "
-        "test if the measured headline metric exceeds an absolute ceiling (e.g. "
+        "test if the worst measured pass exceeds an absolute ceiling (e.g. "
         "max_peak='100MiB', max_allocations=5000).",
     )
     _memory_column_opts(config)  # validate --benchmark-memory-columns/-stats fail-fast
