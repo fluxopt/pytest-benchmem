@@ -110,7 +110,10 @@ pytest --benchmark-only --benchmark-memory \
 
 Thresholds are percent (`peak:10%`) or absolute (`peak:5MiB`), on `peak`, `allocated`
 (total bytes, catches churn peak hides), or `allocations` (count, near-deterministic and
-often a better tripwire than peak bytes).
+often a better tripwire than peak bytes). Add `--benchmark-memory-profile DIR` to the inline
+gate to keep the memray profile (`DIR/<id>.bin`) for each *regressing* id — render the call
+paths behind the delta with `memray flamegraph` (the run prints the exact command), so a
+failed gate is debuggable, not just red.
 
 Or pull the numbers into your own analysis:
 
@@ -139,7 +142,8 @@ covers CI timing.
 | Rigorous perf history across commits | **ASV** | — (heavier, RSS memory) |
 | **Precise local peak memory (numpy/C allocs)** | **memray** | ⭐ the core |
 | Assert a memory limit / catch a leak *in a test* | **[pytest-memray]** | — (use it; see below) |
-| *Which* function allocated (flamegraph) | **[pytest-memray]** or `memray` | — (use them) |
+| *Which* function allocated, any test (flamegraph) | **[pytest-memray]** or `memray` | — (use them) |
+| *Where* a benchmark's memory **regressed** | — | ⭐ `--benchmark-memory-profile` (keeps the `.bin`) |
 | Memory *in your pytest-benchmark tests* | — | ⭐ fixture **or** `--benchmark-memory` |
 | **Track/compare/plot** memory across inputs, versions, commits | — | ⭐ compare · sweep · plot |
 
@@ -159,7 +163,9 @@ directions:
 - **pytest-benchmem** is a *benchmark*: it measures **only the benchmarked
   action**, alongside timing under one node id, and lets you **compare, sweep,
   and plot** that number across inputs, versions, and commits — *"how does memory
-  scale / change?"*. It has no leak detection or flamegraphs, by design.
+  scale / change?"*. It has no leak detection by design — but when a memory gate
+  flags a regression, `--benchmark-memory-profile` keeps the offending ids' memray
+  `.bin`s, so *which* allocation grew is a `memray flamegraph` away.
 
 They coexist in one suite. One caveat: memray won't nest two trackers, so don't run
 `pytest --memray` and a benchmem fixture on the *same* test.

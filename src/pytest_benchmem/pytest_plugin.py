@@ -27,7 +27,12 @@ Registered via the ``pytest11`` entry point — installing pytest-benchmem is en
 from __future__ import annotations
 
 import inspect
+import re
+import shutil
+import tempfile
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -38,6 +43,60 @@ from pytest_benchmem.snapshot import BENCHMEM_KEY, _human_bytes
 
 if TYPE_CHECKING:
     from pytest_benchmark.fixture import BenchmarkFixture
+
+
+@dataclass
+class _ProfileState:
+    """Session state for ``--benchmark-memory-profile``: the output dir for the kept ``.bin``s,
+    the temp dir staging each measured benchmark's profile, and the ``{fullname: staged}`` map.
+    """
+
+    out_dir: Path
+    staging: tempfile.TemporaryDirectory[str]
+    bins: dict[str, Path] = field(default_factory=dict)
+
+
+#: Active memory-profile state for the session, or ``None`` when the flag is off.
+_PROFILE: _ProfileState | None = None
+
+
+def _sanitize_id(fullname: str) -> str:
+    """A filesystem-safe stem for a benchmark id (``pkg/t.py::test_x[1]`` → ``..._test_x_1_``)."""
+    return re.sub(r"[^A-Za-z0-9._-]", "_", fullname)
+
+
+def _profile_bin(fullname: str) -> Path | None:
+    """Staged ``.bin`` path for ``fullname`` while profiling is on, registered for keeping."""
+    if _PROFILE is None:
+        return None
+    binp = Path(_PROFILE.staging.name) / f"{_sanitize_id(fullname)}.bin"
+    _PROFILE.bins[fullname] = binp
+    return binp
+
+
+def _save_profiles(write: Callable[[str], None], ids: Sequence[str] | None = None) -> None:
+    """Copy staged ``.bin`` profiles into the output dir — ``ids``, or all measured if ``None``.
+
+    Prints a ready-to-paste ``memray flamegraph`` line per saved profile (the same ``.bin``
+    also feeds ``memray tree`` / ``summary`` / ``stats``).
+    """
+    st = _PROFILE
+    if st is None:
+        return
+    saved: list[Path] = []
+    for fid in st.bins if ids is None else ids:
+        src = st.bins.get(fid)
+        if src is None or not src.exists():
+            continue
+        dest = st.out_dir / f"{_sanitize_id(fid)}.bin"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(src, dest)
+        saved.append(dest)
+    if saved:
+        write(f"benchmem: saved {len(saved)} memory profile(s) to {st.out_dir} — render with:")
+        for dest in saved:
+            write(f"    memray flamegraph {dest}")
+
 
 #: Name of the per-test marker: ``@pytest.mark.benchmem(repeats=N)``.
 MARKER = "benchmem"
@@ -189,7 +248,8 @@ def _record_memory(
     if isinstance(existing, Mapping):
         result = MemoryResult.from_blob(existing)
     else:
-        result = measure_memory(action, repeats=repeats, max_time=max_time)
+        keep_bin = _profile_bin(getattr(benchmark, "fullname", "") or "")
+        result = measure_memory(action, repeats=repeats, max_time=max_time, keep_bin=keep_bin)
         benchmark.extra_info[BENCHMEM_KEY] = result.as_dict()
     if limits:
         _enforce_limits(result, limits, getattr(benchmark, "fullname", "") or "")
@@ -492,6 +552,15 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "Implies --benchmark-memory-compare.",
     )
     group.addoption(
+        "--benchmark-memory-profile",
+        action="store",
+        default=None,
+        metavar="DIR",
+        help="Save the memray profile (<id>.bin) into DIR for memory regressions, to render "
+        "later with `memray flamegraph` (or tree/summary). With --benchmark-memory-compare-fail, "
+        "only the offending ids; otherwise every measured benchmark. Off by default (disk cost).",
+    )
+    group.addoption(
         "--benchmark-memory-table",
         action="store",
         choices=["combined", "split"],
@@ -532,11 +601,28 @@ def pytest_configure(config: pytest.Config) -> None:
     _memory_column_opts(config)  # validate --benchmark-memory-columns/-stats fail-fast
     if config.getoption("--benchmark-memory"):
         _install_auto_memory()
+    _configure_profiles(config)
+
+
+def _configure_profiles(config: pytest.Config) -> None:
+    """Arm ``--benchmark-memory-profile``: open a staging dir for the retained ``.bin``s."""
+    global _PROFILE
+    out = config.getoption("--benchmark-memory-profile")
+    if out is None:
+        return
+    _PROFILE = _ProfileState(
+        out_dir=Path(out),
+        staging=tempfile.TemporaryDirectory(prefix="pytest-benchmem-profile-"),
+    )
 
 
 def pytest_unconfigure(config: pytest.Config) -> None:
-    """Restore the stock ``benchmark`` fixture after the session."""
+    """Restore the stock ``benchmark`` fixture and drop the profile staging dir."""
+    global _PROFILE
     _remove_auto_memory()
+    if _PROFILE is not None:
+        _PROFILE.staging.cleanup()
+        _PROFILE = None
 
 
 # --- --benchmark-memory-compare[-fail]: inline memory gating ---------------------
@@ -740,6 +826,7 @@ def pytest_terminal_summary(terminalreporter: Any, config: pytest.Config) -> Non
     if not comparing:
         # No comparison requested: just the table, like pytest-benchmark's own.
         _print_memory_table(config, bs, current, combined=combined, metrics=metrics, stats=stats)
+        _save_profiles(write)  # no gate → every measured benchmark
         return
 
     default: tuple[str | None, dict[str, dict[str, Any]]] = (None, {})
@@ -766,6 +853,8 @@ def pytest_terminal_summary(terminalreporter: Any, config: pytest.Config) -> Non
 
     if not baseline:
         write("benchmem-compare: no prior run with memory to compare against.")
+        if not thresholds:  # no gate → profile every measured benchmark
+            _save_profiles(write)
         return
     if thresholds:
         from pytest_benchmem.compare import Regression, memory_regressions
@@ -775,4 +864,7 @@ def pytest_terminal_summary(terminalreporter: Any, config: pytest.Config) -> Non
             write("Memory regressions over threshold:")
             for reg in regressions:
                 write(reg.format())
+            _save_profiles(write, [reg.id for reg in regressions])  # offenders only
             raise MemoryRegression(f"{len(regressions)} memory regression(s) over threshold.")
+        return
+    _save_profiles(write)  # --compare without a fail-gate → every measured benchmark
