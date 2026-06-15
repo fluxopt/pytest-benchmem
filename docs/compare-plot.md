@@ -198,16 +198,24 @@ A minimal GitHub Actions job using the two-file approach, caching the baseline a
 | 3+ | `sweep` | fold-change across versions, one cell per (id, run) |
 
 `--facet` splits any view into small multiples by a [dim](dims.md) (including `node.*`),
-`--where` keeps only rows matching a `dim=value` filter (repeatable, AND-combined), and
-`--label`/`-l` names the series per run (defaulting to the file stems):
+`--where` keeps only rows matching a `dim=value` filter (repeatable, AND-combined),
+`--free-axes` unmatches a faceted axis from the shared default, and `--label`/`-l` names
+the series per run (defaulting to the file stems):
 
 ```bash
-benchmem plot run.json --metric peak --facet node.func        # one panel per operation
-benchmem plot run.json --where axis=n                         # one sweep at a time
-benchmem plot v1.json v2.json v3.json -l 0.6 -l 0.7 -l 0.8     # name series, not file stems
+benchmem plot run.json --metric peak --facet node.func             # one panel per operation
+benchmem plot run.json --facet node.func --free-axes y             # ...each on its own cost scale
+benchmem plot run.json --where axis=n                              # one sweep at a time
+benchmem plot v1.json v2.json v3.json -l 0.6 -l 0.7 -l 0.8         # name series, not file stems
 ```
 
-`--where` is the lever when a single run mixes two incommensurable sweeps (say sizes
-`n` and a 0–100 `severity`) under one numeric dim: `scaling` would otherwise put both on
-one x-axis and squish them. Filter to one (`--where axis=n`), or `--facet axis` to scale
-each in its own panel.
+Faceted panels **share axes by default** — right when they're commensurable (the same `n`
+grid across functions). Two cases want them unmatched, and they free *different* axes:
+
+- **Different cost scales** — `--facet node.func` where one function is far costlier flattens
+  the cheap panels on a shared y. `--free-axes y` gives each its own cost range.
+- **Incommensurable sweeps** — a run mixing sizes `n` (10–10⁴) and a 0–100 `severity` under one
+  numeric dim squishes both onto one x. `--free-axes x` (or filter to one with `--where axis=n`).
+
+`--free-axes both` frees each panel entirely. `--where` is the cleaner reach when you only
+care about one slice — it drops the rest rather than just rescaling.

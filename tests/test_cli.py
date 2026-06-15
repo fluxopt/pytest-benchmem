@@ -161,6 +161,28 @@ def test_plot_where_parses_into_dict(tmp_path, monkeypatch):
     assert captured["where"] == {"axis": "n", "solver": "glpk"}
 
 
+def test_plot_free_axes_threads_through(tmp_path, monkeypatch):
+    captured = {}
+
+    def _stub(*a, **k):
+        captured.update(k)
+        return _FakeFig(), 3
+
+    monkeypatch.setattr(plotting, "plot_scaling", _stub)
+    r = _run(tmp_path, "r.json", [_bm("x")])
+    out = str(tmp_path / "o.html")
+    result = runner.invoke(app, ["plot", str(r), "--free-axes", "y", "-o", out])
+    assert result.exit_code == 0, _text(result)
+    assert captured["free_axes"] == "y"  # str-enum value, matches the Literal
+
+
+def test_plot_free_axes_rejects_bad_choice(tmp_path):
+    r = _run(tmp_path, "r.json", [_bm("x")])
+    out = str(tmp_path / "o.html")
+    result = runner.invoke(app, ["plot", str(r), "--free-axes", "diagonal", "-o", out])
+    assert result.exit_code == 2  # typer rejects an out-of-choice value
+
+
 def test_plot_where_malformed_exits_2(tmp_path):
     r = _run(tmp_path, "r.json", [_bm("x")])
     out = str(tmp_path / "o.html")
