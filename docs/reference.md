@@ -106,25 +106,10 @@ benchmark_memory.pedantic(target, args=(), kwargs=None, setup=None,
   each round, essential for side-effectful workloads.
 - `rounds`, `warmup_rounds`, `iterations` — as in pytest-benchmark.
 
-**Mostly memory, little timing?** There's no in-pytest "memory-only" switch — the node id
-and JSON entry come from pytest-benchmark's timing run, so memory rides it. Two ways to
-trim the timing cost:
-
-- **No test changes** — use pytest-benchmark's own flags: `--benchmark-min-rounds=1` plus
-  a small `--benchmark-max-time` cut the plain `benchmark_memory(...)` call form to the
-  fewest rounds (warmup is off by default). Calibration still runs, though — negligible
-  for a slow function, but a *fast* one is still called many times to size iterations.
-- **A single bare call** — `pedantic(rounds=1, warmup_rounds=0, iterations=1)` runs the
-  function exactly once (pedantic skips calibration entirely), then the memray pass(es)
-  follow. This is the only way to guarantee one call.
-
-For *pure* memory with no pytest-benchmark entry at all, use the standalone `measure_peak`
-/ `measure_memory` (see the Public Python API below) outside pytest.
-
-```bash
-# no test changes — trim timing for the whole run:
-pytest --benchmark-only --benchmark-min-rounds=1 --benchmark-max-time=0
-```
+**Mostly memory, little timing?** There's no memory-only switch — the entry rides
+pytest-benchmark's timing. To trim it: `--benchmark-min-rounds=1 --benchmark-max-time=0`
+(no test changes), or `pedantic(rounds=1, warmup_rounds=0)` for a single call. For pure
+memory outside pytest, use `measure_peak` / `measure_memory`.
 
 **Attributes** (available after a call):
 
