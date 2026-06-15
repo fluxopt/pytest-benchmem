@@ -9,6 +9,8 @@ from __future__ import annotations
 
 
 def define_env(env):
+    """Register mkdocs-macros macros (called by the plugin at build time)."""
+
     @env.macro
     def pytest_flags_table() -> str:
         """Render the pytest-benchmem CLI flags table from ``pytest_addoption``'s help text."""
