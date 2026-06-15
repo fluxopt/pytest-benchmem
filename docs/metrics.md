@@ -60,10 +60,10 @@ summed) and `allocations` counts the calls. A peak gate would wave this churn th
     question; `allocated` catches churn regressions a peak gate would miss. You can gate on
     several at once — see [Compare & gate CI](compare-plot.ipynb).
 
-### Repeats & auto-calibration
+### Repeats & adaptive sampling
 
 Each benchmark is memory-profiled more than once, and the headline `peak` is the **minimum**
-across those passes — the cleanest floor. How many passes run is **auto-calibrated** by default:
+across those passes — the cleanest floor. How many passes run is **adaptive** by default:
 pytest-benchmem keeps measuring until that floor settles, then stops.
 
 #### Why the minimum?
@@ -90,14 +90,15 @@ The loop runs a pass, then asks whether to run another:
 In practice: **deterministic code settles in ~3 passes**; **noisy code runs more**, up to the cap
 — exactly where extra passes pay off.
 
-!!! note "Why calibrate at all, instead of just measuring once or a fixed N?"
-    This mirrors how pytest-benchmark auto-tunes its *timing* rounds — but for a different reason.
-    pytest-benchmark runs the function many times because each timing sample is imprecise (the
-    clock is coarse). memray has no such problem: a single pass gives the **exact** peak for that
-    run. Passes therefore exist only to *find the floor and measure its spread*, not to fight
-    measurement error — which is why the minimum is 2, not pytest-benchmark's `min_rounds=5`. A
-    fixed count would be simultaneously too many for deterministic code (every pass identical →
-    wasted runtime) and too few for noisy code (a rare floor needs many tries to catch).
+!!! note "Adaptive sampling, not calibration"
+    The UX echoes pytest-benchmark — you don't pick a count — but the mechanism is different, so
+    it's worth being precise. pytest-benchmark *calibrates*: it runs the function many times to
+    tune its measurement against the timer's coarse resolution. memray has no such problem — a
+    single pass gives the **exact** peak for that run. So passes here aren't fighting measurement
+    error; they're **sequential sampling** to *find the floor and measure its spread*. That's why
+    the minimum is just 2, not pytest-benchmark's `min_rounds=5`. A fixed count would be
+    simultaneously too many for deterministic code (every pass identical → wasted runtime) and too
+    few for noisy code (a rare floor needs many tries to catch) — hence: adapt.
 
 #### Forcing a fixed count
 
@@ -114,16 +115,16 @@ def test_build(benchmark_memory):
     ...
 ```
 
-An explicit count runs *exactly* that many passes — no calibration, no cap, no time budget.
+An explicit count runs *exactly* that many passes — no adaptation, no cap, no time budget.
 
 #### Bounding cost
 
-Auto-calibration runs the action up to 10 times, so its cost is up to 10× the action's runtime.
+Adaptive sampling runs the action up to 10 times, so its cost is up to 10× the action's runtime.
 For a benchmark that's both **slow and noisy** (so it never settles and keeps hitting the cap),
 cap the wall-clock instead:
 
 ```bash
-pytest --benchmark-memory --benchmark-memory-max-time=3    # ≤3 s of calibration per benchmark
+pytest --benchmark-memory --benchmark-memory-max-time=3    # ≤3 s of adaptive sampling per benchmark
 ```
 
 !!! tip "Noisy peak? Remove the noise, don't average it"

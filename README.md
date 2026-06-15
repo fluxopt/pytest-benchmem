@@ -60,9 +60,9 @@ def test_sort(benchmark_memory):
     benchmark_memory(sorted, list(range(1_000_000, 0, -1)))
 ```
 
-Memory passes **auto-calibrate** by default — like pytest-benchmark auto-tuning its timing
-rounds. Peak is allocator demand, not wall-clock jitter, so each pass is exact; passes exist
-only to find the floor. pytest-benchmem runs until the **minimum** peak settles (≥2 passes, so
+Memory passes are **adaptive** by default. Peak is allocator demand, not wall-clock jitter, so
+each pass is exact; passes exist only to find the floor (this is sequential sampling, not
+calibration). pytest-benchmem runs until the **minimum** peak settles (≥2 passes, so
 the first pass's one-time warmup — lazy imports, arena growth — is discarded; capped at 10),
 then reports that min. Deterministic code settles in a few passes; noisy code runs more, where
 it helps. Force a fixed, reproducible count with `--benchmark-memory-repeats=N` (suite-wide) or

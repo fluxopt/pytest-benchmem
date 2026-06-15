@@ -183,11 +183,12 @@ def _track_once(action: Action) -> Measurement:
         )
 
 
-#: Adaptive-calibration defaults, used when ``repeats`` is ``None`` (the default). memray
+#: Adaptive-sampling defaults, used when ``repeats`` is ``None`` (the default). memray
 #: gives an *exact* peak per pass — unlike timing, there's no resolution to average out — so
-#: passes exist only to find the floor and quantify spread. Rather than a fixed count that's
+#: passes exist only to find the floor and quantify spread (this is sequential sampling, not
+#: calibration in pytest-benchmark's timer-resolution sense). Rather than a fixed count that's
 #: wasteful for deterministic code and too few for noisy code, run until the headline min
-#: settles (mirrors pytest-benchmark auto-tuning its timing rounds), bounded by these.
+#: settles, bounded by these.
 _ADAPTIVE_MIN_PASSES = 2  # always take ≥2 — the 1st pass carries one-time warmup the min sheds
 _ADAPTIVE_MAX_PASSES = 10  # hard ceiling: cost is linear in passes, so cap the noisy case
 _ADAPTIVE_PATIENCE = 2  # stop once this many consecutive passes set no new (lower) min
@@ -211,19 +212,19 @@ def measure_memory(
 
     - ``repeats=N`` (an int) — run exactly ``N`` passes. Fixed and reproducible; what CI
       gating and saved-baseline comparisons want.
-    - ``repeats=None`` (default) — **auto-calibrate**: keep running passes until the min stops
-      improving (no new low for ``patience`` passes), bounded by ``min_passes`` (warmup is
-      shed by the min, so always take ≥2), ``max_passes``, and an optional ``max_time``
+    - ``repeats=None`` (default) — **sample adaptively**: keep running passes until the min
+      stops improving (no new low for ``patience`` passes), bounded by ``min_passes`` (warmup
+      is shed by the min, so always take ≥2), ``max_passes``, and an optional ``max_time``
       wall-clock budget. Deterministic code settles in a few passes; noisy code runs more,
       exactly where extra passes pay off.
 
     Args:
         action: The zero-argument callable to measure.
-        repeats: Fixed pass count, or ``None`` to auto-calibrate.
-        max_time: Wall-clock budget (seconds) for auto-calibration; ``None`` = no time bound.
-        min_passes: Minimum passes when auto-calibrating.
-        max_passes: Hard ceiling on passes when auto-calibrating.
-        patience: Stop auto-calibration after this many consecutive passes with no new min.
+        repeats: Fixed pass count, or ``None`` to sample adaptively.
+        max_time: Wall-clock budget (seconds) for adaptive sampling; ``None`` = no time bound.
+        min_passes: Minimum passes when sampling adaptively.
+        max_passes: Hard ceiling on passes when sampling adaptively.
+        patience: Stop adaptive sampling after this many consecutive passes with no new min.
 
     Returns:
         A :class:`MemoryResult` over every pass run.
@@ -267,11 +268,11 @@ def measure_peak(action: Action, repeats: int | None = None) -> int:
 
     The bare one-liner for a REPL or notebook; :func:`measure_memory` returns the
     full result (allocation count, spread). ``repeats`` behaves as there — ``None``
-    (default) auto-calibrates, an int forces a fixed pass count.
+    (default) samples adaptively, an int forces a fixed pass count.
 
     Args:
         action: The zero-argument callable to measure.
-        repeats: Fixed pass count, or ``None`` to auto-calibrate.
+        repeats: Fixed pass count, or ``None`` to sample adaptively.
 
     Returns:
         Peak resident bytes (the headline ``peak`` = min across passes).

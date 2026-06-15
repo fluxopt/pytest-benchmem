@@ -29,7 +29,7 @@ def test_build(benchmark_memory):
 
 | Kwarg | Default | What |
 |---|---|---|
-| `repeats` | *auto* | force a fixed `N` memray passes for this test (default: auto-calibrate — see below). **Every** pass is kept (the blob stores the whole series); the headline `peak` is the *minimum* across them, and `--stat` reports any other. Overrides the suite-wide `--benchmark-memory-repeats`. |
+| `repeats` | *auto* | force a fixed `N` memray passes for this test (default: adaptive — see below). **Every** pass is kept (the blob stores the whole series); the headline `peak` is the *minimum* across them, and `--stat` reports any other. Overrides the suite-wide `--benchmark-memory-repeats`. |
 | `max_peak` | — | fail the test if the headline `peak` exceeds this **absolute** ceiling. A size string (`"100MiB"`, units `B`/`KiB`/`MiB`/`GiB`) or a bare int (bytes). |
 | `max_allocated` | — | as `max_peak`, on `allocated` (total bytes). |
 | `max_allocations` | — | as above, on the `allocations` *count* — a bare number (no unit). |
@@ -46,7 +46,7 @@ A baseline-free guardrail: the test **fails** if the measured metric exceeds the
 ceiling (`test_build: peak 117 MiB exceeds max_peak 100 MiB`). Thresholds are **absolute
 only** — there's no saved run to take a percent of; for *relative* gating against a prior run
 use `--benchmark-memory-compare-fail` or `benchmem compare --fail-on`. A ceiling is a
-worst-case budget, so with `repeats > 1` (including auto-calibration) the gate reads the
+worst-case budget, so with `repeats > 1` (including adaptive sampling) the gate reads the
 **worst pass** — not the headline min — and fails if *any* pass breaches it; the two coincide
 for a single pass. The ceiling is enforced wherever memory is measured — the `benchmark_memory`
 fixture *and* the `--benchmark-memory` patch — but a plain `benchmark()` call without
@@ -58,12 +58,12 @@ fixture *and* the `--benchmark-memory` patch — but a plain `benchmark()` call 
     [pytest-memray](https://pytest-memray.readthedocs.io)'s `limit_memory` / `limit_leaks`
     — see the README's "With pytest-memray".
 
-How many passes? By default pytest-benchmem **auto-calibrates** — it runs the memray pass until
-the headline `min` floor settles (≥2 passes, so warmup is shed; capped at 10, or a
+How many passes? By default pytest-benchmem **samples adaptively** — it runs the memray pass
+until the headline `min` floor settles (≥2 passes, so warmup is shed; capped at 10, or a
 `--benchmark-memory-max-time` budget). Deterministic code settles in ~3 passes; noisy code runs
 more. Set `repeats=N` (marker) or `--benchmark-memory-repeats=N` (suite) to force a fixed,
 reproducible count — what CI gating against a saved baseline wants. Full rationale and the
-noisy-workload guidance are in the guide: [Repeats & auto-calibration](metrics.md#repeats-auto-calibration).
+noisy-workload guidance are in the guide: [Repeats & adaptive sampling](metrics.md#repeats-adaptive-sampling).
 
 ## The `benchmark_memory` fixture
 
@@ -75,7 +75,7 @@ measures peak in a separate untimed pass.
     the memray pass — so memory is measured on an already-warmed function and the allocator
     hooks never touch the timing. This holds for `__call__`, `pedantic`, and the
     `--benchmark-memory` patch alike. (The standalone `measure_peak` / `measure_memory`
-    have no timing phase, so the first pass is cold — but they auto-calibrate the same way
+    have no timing phase, so the first pass is cold — but they sample adaptively the same way
     by default, taking ≥2 passes so the min discards that cold pass; pass `repeats=N` to
     force a fixed count instead.)
 
