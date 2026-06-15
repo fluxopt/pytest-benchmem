@@ -144,6 +144,63 @@ def test_compare_no_common_ids_raises(tmp_path):
         plotting.plot_compare([a, b])
 
 
+def _run_mixed_axes(path):
+    """One run with two incommensurable sweeps sharing a numeric dim, split by ``axis``."""
+    benchmarks = [
+        {
+            "fullname": f"t[axis={axis}-v={v}]",
+            "stats": {"min": float(v)},
+            "params": {"v": v, "axis": axis},
+        }
+        for axis, vals in (("n", [10, 100, 1000]), ("severity", [0, 50, 100]))
+        for v in vals
+    ]
+    path.write_text(json.dumps({"benchmarks": benchmarks}))
+    return path
+
+
+def test_where_filters_rows_to_matching_dim(tmp_path):
+    p = _run_mixed_axes(tmp_path / "a.json")
+    fig, n = plotting.plot_scaling(p, x="v", where={"axis": "n"})
+    assert n == 3  # only the three n-sweep points survive
+
+
+def test_where_numeric_value_matches(tmp_path):
+    fig, n = plotting.plot_scaling(_run(tmp_path / "a.json", ROWS_A), where={"n": "100"})
+    assert n == 1  # "100" matches the numeric dim 100
+
+
+def test_where_unknown_key_raises(tmp_path):
+    with pytest.raises(ValueError, match="not a dim"):
+        plotting.plot_scaling(_run(tmp_path / "a.json", ROWS_A), where={"nope": "1"})
+
+
+def test_where_no_match_raises(tmp_path):
+    with pytest.raises(ValueError, match="no rows match"):
+        plotting.plot_scaling(_run(tmp_path / "a.json", ROWS_A), where={"n": "99999"})
+
+
+def test_where_applies_to_all_views(tmp_path):
+    runs = [_run(tmp_path / f"{i}.json", ROWS_A) for i in range(3)]
+    # sweep (imshow) filters identically at the long-frame level
+    _fig, n = plotting.plot_sweep(runs, where={"n": "1000"})
+    assert n == 1
+
+
+def test_scaling_mixed_axes_separable_by_facet(tmp_path):
+    # mixed incommensurable sweeps (n vs severity) share dim 'v'; facet= is the way out
+    p = _run_mixed_axes(tmp_path / "a.json")
+    fig, n = plotting.plot_scaling(p, x="v", facet="axis")
+    assert n == 6  # both sweeps rendered, each in its own facet
+
+
+def test_scaling_mixed_axes_separable_by_where(tmp_path):
+    # ...or filter to one sweep at a time
+    p = _run_mixed_axes(tmp_path / "a.json")
+    fig, n = plotting.plot_scaling(p, x="v", where={"axis": "severity"})
+    assert n == 3
+
+
 def test_scaling_without_numeric_dim_raises(tmp_path):
     # dim 'kind' is categorical, so x can't be inferred
     p = tmp_path / "a.json"

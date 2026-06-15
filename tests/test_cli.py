@@ -143,6 +143,32 @@ def test_plot_label_option_threads_through(tmp_path, monkeypatch):
     assert captured["labels"] == ["0.6", "0.7", "0.8"]
 
 
+def test_plot_where_parses_into_dict(tmp_path, monkeypatch):
+    captured = {}
+
+    def _stub(*a, **k):
+        captured.update(k)
+        return _FakeFig(), 3
+
+    monkeypatch.setattr(plotting, "plot_scaling", _stub)
+    r = _run(tmp_path, "r.json", [_bm("x")])
+    out = str(tmp_path / "o.html")
+    result = runner.invoke(
+        app,
+        ["plot", str(r), "--where", "axis=n", "--where", "solver=glpk", "-o", out],
+    )
+    assert result.exit_code == 0, _text(result)
+    assert captured["where"] == {"axis": "n", "solver": "glpk"}
+
+
+def test_plot_where_malformed_exits_2(tmp_path):
+    r = _run(tmp_path, "r.json", [_bm("x")])
+    out = str(tmp_path / "o.html")
+    result = runner.invoke(app, ["plot", str(r), "--where", "noequals", "-o", out])
+    assert result.exit_code == 2
+    assert "KEY=VALUE" in _text(result)
+
+
 def test_plot_unknown_view_exits_2(tmp_path):
     r = _run(tmp_path, "r.json", [_bm("x")])
     result = runner.invoke(app, ["plot", str(r), "--view", "bogus", "-o", str(tmp_path / "o.html")])

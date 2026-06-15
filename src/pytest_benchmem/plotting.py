@@ -16,7 +16,7 @@ The sweep/scatter/compare views key on the opaque ``id``; only ``scaling`` reads
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
@@ -117,6 +117,35 @@ def _dim_columns(df: pd.DataFrame) -> list[str]:
     return [c for c in _carry_dims(df) if not c.startswith(NODE_DIM_PREFIX)]
 
 
+def _apply_where(df: pd.DataFrame, where: Mapping[str, str] | None) -> pd.DataFrame:
+    """Keep rows matching every ``key=value`` in ``where`` (AND-combined).
+
+    Applied to the long frame *before* any view-specific logic, so it behaves
+    identically across all plot types. Each value matches by string form, with a
+    numeric fallback so ``size=1000`` matches a ``1000`` / ``1000.0`` dim. Keys must
+    name a real dim; an empty result is an error (the filter selected nothing).
+    """
+    if not where:
+        return df
+    import pandas as pd
+
+    dims = _carry_dims(df)
+    for key, val in where.items():
+        if key not in dims:
+            raise ValueError(f"--where key {key!r} is not a dim; available dims: {sorted(dims)}")
+        mask = df[key].astype(str) == str(val)
+        try:
+            numeric_val = float(val)
+        except ValueError:
+            pass  # non-numeric value → string match only
+        else:
+            mask = mask | (pd.to_numeric(df[key], errors="coerce") == numeric_val)
+        df = df[mask]
+    if df.empty:
+        raise ValueError(f"no rows match --where {dict(where)}")
+    return df
+
+
 def plot_compare(
     snapshots: Snapshots,
     *,
@@ -124,14 +153,16 @@ def plot_compare(
     sort: SortMode = "absolute",
     facet: str | None = None,
     clip: float | None = None,
+    where: Mapping[str, str] | None = None,
     labels: Sequence[str] | None = None,
 ) -> tuple[Figure, int]:
     """Bar chart of per-id delta, sorted by the chosen Δ (biggest regressions on top).
 
     ``sort`` picks the bar dimension: ``absolute`` plots ``b - a`` in the native
     unit, ``relative`` plots percent change. ``facet`` splits into subplots by any
-    dim. ``clip`` clamps the colour scale (default symmetric p95). ``labels`` names
-    the two series (defaults to the file stems).
+    dim. ``where`` filters rows to matching ``dim=value`` pairs. ``clip`` clamps the
+    colour scale (default symmetric p95). ``labels`` names the two series (defaults
+    to the file stems).
     """
     import sys
 
@@ -139,6 +170,7 @@ def plot_compare(
 
     snapshots = _as_paths(snapshots)
     df_long, unit = load_long_df(snapshots[:2], metric=metric, labels=_labels_head(labels, 2))
+    df_long = _apply_where(df_long, where)
     vlabel = _canonical_metric(metric)
     labels = df_long["snapshot"].drop_duplicates().tolist()
     if len(labels) < 2:
@@ -207,14 +239,16 @@ def plot_scatter(
     metric: Metric = "time",
     facet: str | None = None,
     clip: float | None = None,
+    where: Mapping[str, str] | None = None,
     labels: Sequence[str] | None = None,
 ) -> tuple[Figure, int]:
     """Baseline cost (log-x) vs candidate/baseline ratio (log-y).
 
     Top-right = slow *and* slower (the regressed corner). The first snapshot is
     the baseline; with 3+, the rest animate. Colour encodes absolute Δ; ``clip``
-    clamps it (default p95). ``facet`` splits by any dim. ``labels`` names the
-    snapshots (defaults to the file stems).
+    clamps it (default p95). ``facet`` splits by any dim; ``where`` filters rows to
+    matching ``dim=value`` pairs. ``labels`` names the snapshots (defaults to the
+    file stems).
     """
     import plotly.express as px
 
@@ -223,6 +257,7 @@ def plot_scatter(
         raise ValueError("scatter needs at least 2 snapshots (baseline + 1)")
 
     df_long, unit = load_long_df(snapshots, metric=metric, labels=labels)
+    df_long = _apply_where(df_long, where)
     vlabel = _canonical_metric(metric)
     labels = df_long["snapshot"].drop_duplicates().tolist()
     baseline_label = labels[0]
@@ -280,15 +315,18 @@ def plot_sweep(
     *,
     metric: Metric = "time",
     clip: float | None = None,
+    where: Mapping[str, str] | None = None,
     labels: Sequence[str] | None = None,
 ) -> tuple[Figure, int]:
     """Heatmap of per-id fold-change (log2 ratio) vs the first snapshot.
 
-    ``labels`` names the version columns (defaults to the file stems).
+    ``where`` filters rows to matching ``dim=value`` pairs. ``labels`` names the
+    version columns (defaults to the file stems).
     """
     import plotly.express as px
 
     df_long, unit = load_long_df(snapshots, metric=metric, labels=labels)
+    df_long = _apply_where(df_long, where)
     vlabel = _canonical_metric(metric)
     versions = df_long["snapshot"].drop_duplicates().tolist()
     baseline = versions[0]
@@ -358,14 +396,15 @@ def plot_scaling(
     color: str | None = None,
     facet: str | None = None,
     log: bool | Literal["auto"] = "auto",
+    where: Mapping[str, str] | None = None,
     labels: Sequence[str] | None = None,
 ) -> tuple[Figure, int]:
     """Cost vs a numeric dim, coloured/faceted by other dims.
 
     ``x``/``color``/``facet`` default to inference from the dims (the lone numeric
-    dim → x); pass them to override. ``log="auto"`` log-scales when x is numeric
-    and strictly positive. ``labels`` names the snapshot in the title (defaults to
-    the file stem).
+    dim → x); pass them to override. ``where`` filters rows to matching ``dim=value``
+    pairs. ``log="auto"`` log-scales when x is numeric and strictly positive.
+    ``labels`` names the snapshot in the title (defaults to the file stem).
     """
     import plotly.express as px
 
@@ -373,6 +412,7 @@ def plot_scaling(
     head = _labels_head(labels, 1)
     snap_label = head[0] if head else snapshots[0].stem
     df_long, unit = load_long_df(snapshots[:1], metric=metric, labels=head)
+    df_long = _apply_where(df_long, where)
     vlabel = _canonical_metric(metric)
     x, color, facet = _infer_roles(df_long, x, color, facet)
     df = df_long.dropna(subset=[x]).sort_values([c for c in (facet, color, x) if c])

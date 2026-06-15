@@ -63,6 +63,19 @@ def _need_plotly() -> None:
         raise _fail("plotting needs extras: pip install 'pytest-benchmem[plot]'", 2)
 
 
+def _parse_where(items: list[str] | None) -> dict[str, str] | None:
+    """Parse repeatable ``KEY=VALUE`` filters into a dict; Exit(2) on a malformed entry."""
+    if not items:
+        return None
+    where: dict[str, str] = {}
+    for item in items:
+        key, sep, val = item.partition("=")
+        if not sep or not key:
+            raise _fail(f"--where expects KEY=VALUE, got {item!r}", 2)
+        where[key] = val
+    return where
+
+
 @app.command()
 def plot(
     runs: Annotated[list[Path], typer.Argument(help="pytest-benchmark JSON file(s).")],
@@ -74,6 +87,10 @@ def plot(
     facet: Annotated[str | None, typer.Option(help="Dim to facet by.")] = None,
     x: Annotated[str | None, typer.Option(help="scaling: dim for the x-axis.")] = None,
     clip: Annotated[float | None, typer.Option(help="Clamp the colour scale.")] = None,
+    where: Annotated[
+        list[str] | None,
+        typer.Option("--where", help="Filter rows by dim: KEY=VALUE (repeatable, AND-combined)."),
+    ] = None,
     label: Annotated[
         list[str] | None,
         typer.Option(
@@ -91,19 +108,24 @@ def plot(
     from pytest_benchmem import plotting
 
     labels = label or None
+    filters = _parse_where(where)
     with _exit_on_value_error():
         if chosen == "compare":
             fig, n = plotting.plot_compare(
-                runs, metric=metric, facet=facet, clip=clip, labels=labels
+                runs, metric=metric, facet=facet, clip=clip, where=filters, labels=labels
             )
         elif chosen == "scatter":
             fig, n = plotting.plot_scatter(
-                runs, metric=metric, facet=facet, clip=clip, labels=labels
+                runs, metric=metric, facet=facet, clip=clip, where=filters, labels=labels
             )
         elif chosen == "sweep":
-            fig, n = plotting.plot_sweep(runs, metric=metric, clip=clip, labels=labels)
+            fig, n = plotting.plot_sweep(
+                runs, metric=metric, clip=clip, where=filters, labels=labels
+            )
         elif chosen == "scaling":
-            fig, n = plotting.plot_scaling(runs, metric=metric, x=x, facet=facet, labels=labels)
+            fig, n = plotting.plot_scaling(
+                runs, metric=metric, x=x, facet=facet, where=filters, labels=labels
+            )
         else:
             raise _fail(f"unknown view {chosen!r}", 2)
 
