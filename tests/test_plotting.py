@@ -323,3 +323,34 @@ def test_scaling_band_ignored_for_time(tmp_path):
     p = _run(tmp_path / "a.json", ROWS_A)
     fig, _n = plotting.plot_scaling([p], metric="time", band="minmax")
     assert not _has_whiskers(fig)
+
+
+def _run_series_grouped(path):
+    """Multi-pass memory run with a colour dim (impl) and a facet dim (func)."""
+    bms = [
+        {
+            "fullname": f"pkg/test_{func}.py::test_{func}[impl={impl}-n={n}]",
+            "stats": {"min": float(min(peaks))},
+            "params": {"n": n, "impl": impl},
+            "extra_info": {
+                "benchmem": {
+                    "peak_bytes": [int(x) for x in peaks],
+                    "allocations": [0] * len(peaks),
+                    "total_bytes": [int(x) for x in peaks],
+                }
+            },
+        }
+        for impl in ("a", "b")
+        for func in ("build", "solve")
+        for n, peaks in [(10, [100, 400]), (100, [200, 900])]
+    ]
+    path.write_text(json.dumps({"benchmarks": bms}))
+    return path
+
+
+def test_scaling_band_whiskers_survive_color_and_facet(tmp_path):
+    # the band must attach per-trace once px splits by colour/facet, not just on a lone series
+    p = _run_series_grouped(tmp_path / "a.json")
+    fig, _n = plotting.plot_scaling([p], metric="peak", color="impl", facet="node.func")
+    assert len(fig.data) > 1  # split into colour × facet traces
+    assert all(tr.error_y.array is not None for tr in fig.data)  # every trace keeps its whiskers
