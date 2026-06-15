@@ -60,26 +60,99 @@ summed) and `allocations` counts the calls. A peak gate would wave this churn th
     question; `allocated` catches churn regressions a peak gate would miss. You can gate on
     several at once — see [Compare & gate CI](compare-plot.ipynb).
 
-### Distribution across repeats
+### Repeats & auto-calibration
 
-Memory passes auto-calibrate by default (run until the min floor settles), and every pass is
-kept as a flat series in the blob — or force a fixed count with `--benchmark-memory-repeats=N`
-(suite-wide) or `@pytest.mark.benchmem(repeats=N)` (per test). The headline `peak` is the
-*minimum* (the cleanest floor); ask for any other stat over the series with `--stat`:
+Each benchmark is memory-profiled more than once, and the headline `peak` is the **minimum**
+across those passes — the cleanest floor. How many passes run is **auto-calibrated** by default:
+pytest-benchmem keeps measuring until that floor settles, then stops.
+
+#### Why the minimum?
+
+Peak memory is allocator *demand* — the bytes a code path requests for given inputs — so it has a
+real, irreducible floor. What varies run-to-run is **upward**: GC timing, page cache, lazy
+imports, and short-lived temporaries whose high-water mark depends on scheduling. The minimum
+strips that transient inflation and recovers the floor — the least memory the operation can
+complete in. It's also the most reproducible summary, which is why it's what `--fail-on` gates
+and the JSON reports. The `mean` / `max` are kept too (they tell you the *worst-case headroom*),
+but they wander; the `min` doesn't.
+
+#### How it decides
+
+The loop runs a pass, then asks whether to run another:
+
+- **Always take at least 2.** The first pass carries one-time warmup — lazy imports, allocator
+  arena growth — that the `min` discards. One pass would report exactly that contaminated number.
+- **Stop when the floor settles** — once 2 consecutive passes set no new low, the min has
+  converged and more passes won't lower it.
+- **Never exceed 10 passes** (a hard cap), or an optional `--benchmark-memory-max-time` wall-clock
+  budget, whichever comes first.
+
+In practice: **deterministic code settles in ~3 passes**; **noisy code runs more**, up to the cap
+— exactly where extra passes pay off.
+
+!!! note "Why calibrate at all, instead of just measuring once or a fixed N?"
+    This mirrors how pytest-benchmark auto-tunes its *timing* rounds — but for a different reason.
+    pytest-benchmark runs the function many times because each timing sample is imprecise (the
+    clock is coarse). memray has no such problem: a single pass gives the **exact** peak for that
+    run. Passes therefore exist only to *find the floor and measure its spread*, not to fight
+    measurement error — which is why the minimum is 2, not pytest-benchmark's `min_rounds=5`. A
+    fixed count would be simultaneously too many for deterministic code (every pass identical →
+    wasted runtime) and too few for noisy code (a rare floor needs many tries to catch).
+
+#### Forcing a fixed count
+
+For **reproducible** numbers — CI gating against a saved baseline, where the pass count must not
+vary run-to-run — pin it:
+
+```bash
+pytest --benchmark-memory --benchmark-memory-repeats=5     # suite-wide, exactly 5 passes
+```
+
+```python
+@pytest.mark.benchmem(repeats=5)        # per test; overrides the suite-wide flag
+def test_build(benchmark_memory):
+    ...
+```
+
+An explicit count runs *exactly* that many passes — no calibration, no cap, no time budget.
+
+#### Bounding cost
+
+Auto-calibration runs the action up to 10 times, so its cost is up to 10× the action's runtime.
+For a benchmark that's both **slow and noisy** (so it never settles and keeps hitting the cap),
+cap the wall-clock instead:
+
+```bash
+pytest --benchmark-memory --benchmark-memory-max-time=3    # ≤3 s of calibration per benchmark
+```
+
+!!! tip "Noisy peak? Remove the noise, don't average it"
+    A wide `peak·min`…`peak·max` spread usually means the workload allocates many short-lived
+    temporaries whose high-water mark depends on timing — classic with **multithreaded
+    allocators** (e.g. a library that builds output through `polars`, whose worker pool holds a
+    varying number of buffers at once). Pinning the source of non-determinism
+    (`POLARS_MAX_THREADS=1`) collapses the spread far more effectively, and more honestly, than
+    piling on repeats. Extra passes only sharpen the `min`; they can't make a genuinely bursty
+    workload reproducible.
+
+#### Reading the distribution
+
+Every pass is kept as a flat series in the [blob](#the-raw-blob), so any stat is available after
+the fact. Ask for one over the series with `--stat`:
 
 ```bash
 benchmem compare base.json head.json --metric peak --stat stddev   # how noisy is peak?
 benchmem compare v1.json v2.json --metric allocated --stat mean
 ```
 
-`--stat` takes `min` / `max` / `mean` / `median` / `stddev` and applies to any metric.
-Peak is the noisy one (GC timing, page cache); `stddev` tells you how much.
+`--stat` takes `min` / `max` / `mean` / `median` / `stddev` and applies to any metric. Peak is
+the noisy one (GC timing, page cache); `stddev` tells you how much.
 
-The terminal table shows the spread too: with `repeats > 1`, every shown metric expands into
-`min` / `mean` / `max` columns (`peak·min`, `peak·mean`, `peak·max`) — always, so the columns
-don't shift between runs; a single pass stays one column. The table shows peak only by
-default; add the rest with `--benchmark-memory-columns=peak,allocated,allocations` and pick the
-spread stats with `--benchmark-memory-stats=min,stddev`.
+The terminal table shows the spread too: when a benchmark ran more than once, every shown metric
+expands into `min` / `mean` / `max` columns (`peak·min`, `peak·mean`, `peak·max`) — always, so the
+columns don't shift between runs; a single (forced) pass stays one column. The table shows peak
+only by default; add the rest with `--benchmark-memory-columns=peak,allocated,allocations` and
+pick the spread stats with `--benchmark-memory-stats=min,stddev`.
 
 ### The raw blob
 
