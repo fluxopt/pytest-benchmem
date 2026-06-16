@@ -1,7 +1,7 @@
 # pytest-benchmem
 
 [![PyPI](https://img.shields.io/pypi/v/pytest-benchmem)](https://pypi.org/project/pytest-benchmem/)
-[![Python versions](https://img.shields.io/pypi/pyversions/pytest-benchmem)](https://pypi.org/project/pytest-benchmem/)
+[![Python versions](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue)](https://pypi.org/project/pytest-benchmem/)
 [![CI](https://github.com/fluxopt/pytest-benchmem/actions/workflows/ci.yaml/badge.svg)](https://github.com/fluxopt/pytest-benchmem/actions/workflows/ci.yaml)
 [![Docs](https://img.shields.io/badge/docs-mkdocs-blue)](https://fluxopt.github.io/pytest-benchmem/)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
@@ -19,22 +19,23 @@ A **drop-in** for an existing pytest-benchmark suite: add `--benchmark-memory` a
 `benchmark(...)` call also records peak memory — no test changes.
 
 ```bash
-pytest --benchmark-only --benchmark-memory
+pytest --benchmark-only --benchmark-memory --benchmark-columns=min,mean,median
 ```
 
 ```
- Name (time in us)              Min                  Median         │  peak (MiB)
- ──────────────────────────────────────────────────────────────────────────────
-  test_sort[10000]           32.5830 (1.0)         41.2080 (1.0)    │       0.08
-  test_sort[100000]         321.2080 (9.86)       419.9160 (10.19)  │       0.76
-  test_sort[1000000]      3,669.2920 (112.61)   4,331.5421 (105.11) │       7.63
-
- memory (right of │): a separate, untimed pass  •  more via --benchmark-memory-columns: allocated, allocations
+  Name (time in us)                    Min                  Mean                Median   │   peak·min (KiB)   peak·mean   peak·max
+ ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  test_sort[10000]           30.2079 (1.0)         37.3511 (1.0)         38.6250 (1.0)   │            78.12       78.12      78.12
+  test_sort[100000]        299.2500 (9.91)      404.0027 (10.82)      408.5415 (10.58)   │           781.25      781.25     781.25
+  test_sort[1000000]   3,667.6250 (121.41)   4,427.5485 (118.54)   4,361.7500 (112.93)   │         7,812.50    7,812.50   7,812.50
 ```
 
-Timing on the left is pytest-benchmark's, untouched; memory on the right is a *separate,
-untimed* memray pass. Add `--benchmark-json=run.json` to persist both under one id; for memory
-on only a few tests, use the `benchmark_memory` fixture instead of the flag.
+Your pytest-benchmark timing table — full default `Min/Max/Mean/StdDev/Median/IQR/Outliers/OPS/
+Rounds/Iterations`, trimmed here with `--benchmark-columns` — untouched, with the memory pass
+folded in right of the `│`: `peak` spreads into `min`/`mean`/`max` (and `allocated` /
+`allocations` via `--benchmark-memory-columns`). That pass is *separate and untimed*, so the
+allocator hooks cost the timing nothing. Add `--benchmark-json=run.json` to persist both under
+one id; for memory on only a few tests, use the `benchmark_memory` fixture instead of the flag.
 → [Getting started](https://fluxopt.github.io/pytest-benchmem/getting-started/) ·
 [Metrics & `--stat`](https://fluxopt.github.io/pytest-benchmem/metrics/)
 
