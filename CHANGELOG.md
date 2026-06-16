@@ -1,5 +1,61 @@
 # Changelog
 
+## [0.3.0](https://github.com/fluxopt/pytest-benchmem/compare/v0.2.1...v0.3.0) (2026-06-16)
+
+This release reshapes how a memory measurement is taken, stored, and reported. Each
+`benchmark_memory` run now **samples adaptively** and keeps its **full per-repeat series**
+instead of a single number — so you can ask how noisy a metric is (`--stat
+min|mean|max|median|stddev`) — and the terminal prints **one combined timing + memory
+table**. `benchmem compare` is **rebuilt on pytest-benchmark's table model** (rows per
+benchmark × run, a metric × stat column grid, relative `(×)` multipliers, `--group-by` /
+`--columns`). Plus a `benchmem sweep` CLI for cross-version runs, `--where` / `--free-axes`
+plot controls, action-scoped memory ceilings (`@pytest.mark.benchmem(max_peak=...)`), and
+`--benchmark-memory-profile` to keep a memray `.bin` for regressions.
+
+Consolidating the metric surface around the per-repeat series retired a few redundant
+knobs — see the migration notes below.
+
+### ⚠ BREAKING CHANGES
+
+Pre-1.0 changes vs 0.2.1, each quick to migrate:
+
+* **Saved memory JSON from 0.2.x no longer loads.** The blob under
+  `extra_info["benchmem"]` is now three flat per-repeat arrays (`peak_bytes` /
+  `allocations` / `total_bytes`), with the headline derived on read; the old denormalized
+  shape is not parsed. **Migrate:** re-run the suite with `--benchmark-memory` to
+  regenerate the runs. Timing-only pytest-benchmark files are unaffected. ([#75](https://github.com/fluxopt/pytest-benchmem/issues/75))
+* **The `peak_max` metric is removed** — it was `peak` reduced by max (a stat of a stat), so
+  it couldn't itself take a `--stat`. **Migrate:** `--metric peak --stat max`. ([#75](https://github.com/fluxopt/pytest-benchmem/issues/75))
+* **The `memory` alias for `peak` is removed** — it read like a category, not a synonym.
+  **Migrate:** `--metric peak`. ([#75](https://github.com/fluxopt/pytest-benchmem/issues/75))
+* **The `gross` metric and the per-blob `mode` tag are removed** — both were leftovers of the
+  reverted RSS engine (`gross` had no producer and always errored; `mode` was a constant).
+  Reading a legacy blob ignores a stray `mode` key, so **no migration is needed**. ([#67](https://github.com/fluxopt/pytest-benchmem/issues/67))
+
+### Features
+
+**Memory measurement**
+* **Adaptive sampling** — passes run until the peak floor settles instead of a fixed count; `--benchmark-memory-repeats` still forces a fixed count for reproducible gating. ([#97](https://github.com/fluxopt/pytest-benchmem/issues/97), [#79](https://github.com/fluxopt/pytest-benchmem/issues/79))
+* **Per-repeat series** with `--stat` distributions, min/mean/max spread columns, and `--benchmark-memory-columns` / `-stats` selection. ([#72](https://github.com/fluxopt/pytest-benchmem/issues/72), [#76](https://github.com/fluxopt/pytest-benchmem/issues/76))
+* **Action-scoped absolute ceilings** via `@pytest.mark.benchmem(max_peak=…, max_allocated=…, max_allocations=…)`. ([#86](https://github.com/fluxopt/pytest-benchmem/issues/86))
+* **`--benchmark-memory-profile DIR`** keeps the memray `.bin` for regressions (or every measured benchmark), to render with `memray flamegraph`. ([#100](https://github.com/fluxopt/pytest-benchmem/issues/100), closes [#24](https://github.com/fluxopt/pytest-benchmem/issues/24))
+* Actionable error when a memray `Tracker` is already active (e.g. pytest-memray on the same test). ([#89](https://github.com/fluxopt/pytest-benchmem/issues/89))
+
+**Tables & compare**
+* **One combined timing + memory table** by default. ([#65](https://github.com/fluxopt/pytest-benchmem/issues/65), [#68](https://github.com/fluxopt/pytest-benchmem/issues/68))
+* **`benchmem compare` rebuilt on pytest-benchmark's table model** — rows per (benchmark × run), a metric × stat column grid with `--columns` / `--group-by` / `--metric both`, relative `(×)` multipliers, plus `--csv` / `--sort`. ([#98](https://github.com/fluxopt/pytest-benchmem/issues/98), [#101](https://github.com/fluxopt/pytest-benchmem/issues/101), [#74](https://github.com/fluxopt/pytest-benchmem/issues/74))
+
+**Plotting**
+* **`--where KEY=VALUE`** row filter, **`--free-axes x|y|both`** for faceted views, and min…max spread whiskers on scaling plots. ([#93](https://github.com/fluxopt/pytest-benchmem/issues/93), [#95](https://github.com/fluxopt/pytest-benchmem/issues/95), [#99](https://github.com/fluxopt/pytest-benchmem/issues/99))
+
+**CLI**
+* **`benchmem sweep`** — cross-version sweeps without a harness. ([#87](https://github.com/fluxopt/pytest-benchmem/issues/87))
+* Caller-labelled snapshots, decoupling series names from filenames. ([#57](https://github.com/fluxopt/pytest-benchmem/issues/57))
+
+### Bug Fixes
+
+* `compare` no longer crashes when two runs share a file stem. ([#64](https://github.com/fluxopt/pytest-benchmem/issues/64))
+
 ## [0.2.1](https://github.com/fluxopt/pytest-benchmem/compare/v0.2.0...v0.2.1) (2026-06-13)
 
 
