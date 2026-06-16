@@ -434,6 +434,22 @@ def _infer_roles(
     return x, color, facet
 
 
+def _envelope_by_id(
+    snapshots: Sequence[Path], metric: Metric, labels: Sequence[str] | None
+) -> tuple[dict[str, float], dict[str, float]]:
+    """Per-id ``(min, max)`` of the metric's per-pass series — the spread envelope.
+
+    Reads the same run twice through the ``min`` / ``max`` stat reducers; benchmarks
+    measured once collapse to ``min == max`` (no spread, so no band).
+    """
+    lo_df, _ = load_long_df(snapshots, metric=metric, stat="min", labels=labels)
+    hi_df, _ = load_long_df(snapshots, metric=metric, stat="max", labels=labels)
+    return (
+        dict(zip(lo_df["id"], lo_df["value"], strict=True)),
+        dict(zip(hi_df["id"], hi_df["value"], strict=True)),
+    )
+
+
 def plot_scaling(
     snapshots: Snapshots,
     *,
@@ -442,6 +458,7 @@ def plot_scaling(
     color: str | None = None,
     facet: str | None = None,
     log: bool | Literal["auto"] = "auto",
+    band: Literal["auto", "minmax", "none"] = "auto",
     where: Mapping[str, str] | None = None,
     free_axes: FreeAxes | None = None,
     labels: Sequence[str] | None = None,
@@ -458,6 +475,10 @@ def plot_scaling(
         color: Dim to colour by (default: inferred).
         facet: Dim to split into subplots (default: inferred).
         log: ``"auto"`` log-scales when x is numeric and strictly positive; or force with a bool.
+        band: Spread whiskers (``min``…``max`` of each point's per-pass series) on memory
+            metrics — ``"auto"`` shows them where there's spread, ``"minmax"`` forces them on,
+            ``"none"`` off. The line stays the headline (the min floor); whiskers reach up to
+            the worst pass. Ignored for ``time``.
         where: Keep only rows matching these ``dim=value`` pairs.
         free_axes: ``"x"`` / ``"y"`` / ``"both"`` — unmatch a faceted axis from the shared
             default (``"x"`` for incommensurable sweeps, ``"y"`` when facets have different
@@ -480,6 +501,16 @@ def plot_scaling(
     if df.empty:
         raise ValueError("no rows with the x dim set")
 
+    err: dict[str, str] = {}
+    if band != "none" and metric != "time":
+        lo_by_id, hi_by_id = _envelope_by_id(snapshots[:1], metric, head)
+        df = df.assign(
+            _err_hi=(df["id"].map(hi_by_id) - df["value"]).clip(lower=0).fillna(0.0),
+            _err_lo=(df["value"] - df["id"].map(lo_by_id)).clip(lower=0).fillna(0.0),
+        )
+        if band == "minmax" or bool(((df["_err_hi"] + df["_err_lo"]) > 0).any()):
+            err = {"error_y": "_err_hi", "error_y_minus": "_err_lo"}
+
     use_log = bool((df[x] > 0).all()) if log == "auto" else bool(log)
     fig = px.line(
         df,
@@ -493,6 +524,7 @@ def plot_scaling(
         markers=True,
         labels={"value": f"{vlabel} ({unit})", x: x},
         title=f"Scaling: {vlabel} ({unit}) vs {x} ({snap_label})",
+        **err,
     )
     _free_facet_axes(fig, faceted=facet is not None, free_axes=free_axes)
     n_facets = df[facet].nunique() if facet else 1

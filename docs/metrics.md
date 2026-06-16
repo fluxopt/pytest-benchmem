@@ -155,6 +155,11 @@ columns don't shift between runs; a single (forced) pass stays one column. The t
 only by default; add the rest with `--benchmark-memory-columns=peak,allocated,allocations` and
 pick the spread stats with `--benchmark-memory-stats=min,stddev`.
 
+Scaling plots show the spread too: `benchmem plot --view scaling` draws each point at the
+headline (the min floor) with `min`…`max` whiskers up to the worst pass, so a noisy series is
+visible at a glance. It's on where there's spread; `--band minmax` forces it, `--band none`
+hides it.
+
 ### The raw blob
 
 Each measured benchmark stores all three as flat per-repeat series under
