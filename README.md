@@ -1,7 +1,7 @@
 # pytest-benchmem
 
 [![PyPI](https://img.shields.io/pypi/v/pytest-benchmem)](https://pypi.org/project/pytest-benchmem/)
-[![Python versions](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue)](https://pypi.org/project/pytest-benchmem/)
+[![Python versions](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue)](https://pypi.org/project/pytest-benchmem/)
 [![CI](https://github.com/fluxopt/pytest-benchmem/actions/workflows/ci.yaml/badge.svg)](https://github.com/fluxopt/pytest-benchmem/actions/workflows/ci.yaml)
 [![Docs](https://img.shields.io/badge/docs-mkdocs-blue)](https://fluxopt.github.io/pytest-benchmem/)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
