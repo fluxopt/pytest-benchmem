@@ -656,8 +656,8 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         action="append",
         metavar="FIELD:THRESHOLD",
         help="Fail the session on a memory regression, e.g. peak:10%, peak:5MiB, "
-        "allocations:5% (repeatable). Fields: peak, allocated, allocations. "
-        "Implies --benchmark-memory-compare.",
+        "allocations:5% (repeatable). Fields: peak, allocated, allocations, rss "
+        "(rss needs isolated runs). Implies --benchmark-memory-compare.",
     )
     group.addoption(
         "--benchmark-memory-profile",
@@ -681,9 +681,10 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--benchmark-memory-columns",
         action="store",
         default=None,
-        metavar="peak,allocated,allocations",
+        metavar="peak,allocated,allocations,rss",
         help="Which memory metrics the table shows, comma-separated and in order: "
-        "peak, allocated, allocations. Default: peak only.",
+        "peak, allocated, allocations, rss (rss only shows for isolated runs). Default: "
+        "peak only.",
     )
     group.addoption(
         "--benchmark-memory-stats",
