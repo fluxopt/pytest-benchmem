@@ -97,8 +97,10 @@ measures peak in a separate untimed pass.
     ```
 
     - `setup` — a callable run *untracked* before each measured call; if it returns
-      `(args, kwargs)`, those supply the call's arguments. Use it to rebuild fresh state
-      each round, essential for side-effectful workloads.
+      `(args, kwargs)`, those supply the call's arguments. Used for **both** the timed rounds
+      **and** each (adaptive) memory sample — one `setup` rebuilds fresh state for both — so a
+      stateful action's memory samples stay independent. The same applies to
+      `benchmark.pedantic(setup=…)` under `--benchmark-memory`: no extra changes.
     - `rounds`, `warmup_rounds`, `iterations` — as in pytest-benchmark.
 
 **Mostly memory, little timing?** There's no memory-only switch — the entry rides
