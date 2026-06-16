@@ -39,7 +39,7 @@ def test_rel_matches_pytest_benchmark_annotation():
 def test_result_of_reconstructs_or_none():
     blob = {"peak_bytes": [10, 20], "allocations": [1, 1], "total_bytes": [5, 5]}
     res = _result_of({"extra_info": {"benchmem": blob}})
-    assert res is not None and res.peak_bytes == 10 and res.peak_bytes_max == 20
+    assert res is not None and res.peak_bytes == 10 and res.peak_bytes_max == 20  # min / max
     assert _result_of({"extra_info": {}}) is None  # timing-only
     assert _result_of({}) is None  # no extra_info at all
     assert _result_of({"extra_info": {"benchmem": "nope"}}) is None  # malformed
