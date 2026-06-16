@@ -195,3 +195,30 @@ def test_compute_statistics_missing_raises_actionably(monkeypatch):
     monkeypatch.setitem(sys.modules, "memray._memray", types.ModuleType("memray._memray"))
     with pytest.raises(RuntimeError, match="compute_statistics"):
         m._compute_statistics()
+
+
+# --- isolate=True: a fresh child process per pass, recording whole-process RSS ---
+
+
+def _alloc_for_isolation():
+    """Module-level (so it's picklable for the spawn child) ~2 MiB allocation."""
+    return [bytearray(1024) for _ in range(2000)]
+
+
+def test_isolate_records_rss_from_child():
+    res = measure_memory(_alloc_for_isolation, repeats=1, warmup=0, isolate=True)
+    assert res.peak_bytes > 0  # memray still measured, in the child
+    assert res.rss_bytes is not None and res.rss_bytes > 0  # whole-process resident, from the child
+    assert all(m.rss_bytes is not None for m in res.samples)
+    assert res.as_dict()["rss_bytes"][0] == res.rss_bytes  # series carried in the blob
+
+
+def test_in_process_run_has_no_rss():
+    res = measure_memory(_alloc_for_isolation, repeats=2, warmup=0)
+    assert res.rss_bytes is None  # no attributable process-global RSS in-process
+    assert "rss_bytes" not in res.as_dict()  # optional series omitted, blob stays back-compatible
+
+
+def test_isolate_rejects_unpicklable_action():
+    with pytest.raises(RuntimeError, match="picklable"):
+        measure_memory(lambda: bytearray(1024), repeats=1, warmup=0, isolate=True)

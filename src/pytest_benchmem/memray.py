@@ -33,20 +33,30 @@ from typing import Any
 Action = Callable[[], object]
 
 
-#: The three per-repeat quantities, in the blob's ``series`` sub-dict and as ``Measurement``
-#: fields. Drives the series read-back so the names never drift between writer and reader.
+#: The three per-repeat quantities memray always yields, in the blob's ``series`` sub-dict and
+#: as ``Measurement`` fields. Drives the series read-back so names never drift writer↔reader.
 SERIES_FIELDS = ("peak_bytes", "allocations", "total_bytes")
+
+#: Per-repeat series present in the blob only when measured. ``rss_bytes`` (whole-process
+#: resident high-water) comes from an **isolated** pass; absent for in-process runs. ``from_blob``
+#: tolerates its absence, so old/in-process blobs stay valid.
+OPTIONAL_SERIES_FIELDS = ("rss_bytes",)
 
 
 @dataclass(frozen=True)
 class Measurement:
-    """One repeat's raw ``memray stats`` numbers — peak high-water, allocation count,
-    and total bytes allocated (cumulative churn, incl. temporaries GC later frees).
+    """One repeat's raw numbers — memray's peak high-water, allocation count, and total bytes
+    allocated (cumulative churn, incl. temporaries GC later frees), plus an optional
+    whole-process resident high-water.
+
+    ``rss_bytes`` is ``getrusage``'s ``ru_maxrss`` from an **isolated** pass (a fresh child
+    process); ``None`` in-process, where a process-global RSS isn't attributable to the action.
     """
 
     peak_bytes: int
     allocations: int
     total_bytes: int
+    rss_bytes: int | None = None
 
 
 @dataclass(frozen=True)
@@ -96,23 +106,49 @@ class MemoryResult:
         """Total bytes allocated by the representative (min-peak) run."""
         return self.representative.total_bytes
 
-    def series(self, field: str) -> list[int]:
-        """The per-repeat values of one :data:`SERIES_FIELDS` field."""
+    @property
+    def rss_bytes(self) -> int | None:
+        """Headline whole-process RSS — the **minimum** ``ru_maxrss`` across isolated passes
+        (the cold floor, like :attr:`peak_bytes`), or ``None`` if memory wasn't measured in
+        isolation (in-process has no attributable process-global RSS).
+        """
+        present = [m.rss_bytes for m in self.samples if m.rss_bytes is not None]
+        return min(present) if present else None
+
+    def series(self, field: str) -> list[Any]:
+        """The per-repeat values of one series field (``SERIES_FIELDS`` or optional)."""
         return [getattr(m, field) for m in self.samples]
 
     def as_dict(self) -> dict[str, Any]:
         """The JSON blob stored under pytest-benchmark ``extra_info["benchmem"]``.
 
-        Just the three per-repeat series, flat — no denormalized scalars and no
+        The three core per-repeat series, flat, plus any :data:`OPTIONAL_SERIES_FIELDS`
+        that were measured (all-or-nothing per result). No denormalized scalars and no
         ``repeats`` (it's ``len`` of any series). Everything else derives on read.
         """
-        return {f: self.series(f) for f in SERIES_FIELDS}
+        blob: dict[str, Any] = {f: self.series(f) for f in SERIES_FIELDS}
+        for f in OPTIONAL_SERIES_FIELDS:
+            vals = self.series(f)
+            if vals and all(v is not None for v in vals):
+                blob[f] = vals
+        return blob
 
     @classmethod
     def from_blob(cls, blob: Mapping[str, Any]) -> MemoryResult:
-        """Rebuild from a blob's per-repeat series (one column per :data:`SERIES_FIELDS`)."""
-        cols = [[int(v) for v in blob[f]] for f in SERIES_FIELDS]
-        return cls(tuple(Measurement(*row) for row in zip(*cols, strict=True)))
+        """Rebuild from a blob's per-repeat series. Core columns are required; any
+        :data:`OPTIONAL_SERIES_FIELDS` are read when present (else left ``None``).
+        """
+        core = {f: [int(v) for v in blob[f]] for f in SERIES_FIELDS}
+        optional = {f: [int(v) for v in blob[f]] for f in OPTIONAL_SERIES_FIELDS if f in blob}
+        n = len(next(iter(core.values())))
+        samples = tuple(
+            Measurement(
+                **{f: col[i] for f, col in core.items()},
+                **{f: col[i] for f, col in optional.items()},
+            )
+            for i in range(n)
+        )
+        return cls(samples)
 
 
 def _require_memray() -> None:
@@ -214,6 +250,7 @@ def measure_memory(
     repeats: int | None = None,
     *,
     warmup: int = _DEFAULT_WARMUP,
+    isolate: bool = False,
     max_time: float | None = None,
     min_passes: int = _ADAPTIVE_MIN_PASSES,
     max_passes: int = _ADAPTIVE_MAX_PASSES,
@@ -226,6 +263,12 @@ def measure_memory(
     ``warmup`` untracked dry-runs run first to shed one-time costs; then each measured pass
     gets a fresh tracker. The headline is the **min** across passes (see :class:`MemoryResult`);
     every pass's :class:`Measurement` is kept for spread stats.
+
+    With ``isolate=True`` each measured pass runs in a **fresh spawned process** (each warming
+    itself), and that child's whole-process resident high-water (``ru_maxrss``) is recorded as
+    :attr:`Measurement.rss_bytes` — a physical-memory reading attributable to the action, which
+    an in-process pass can't give. The action (and ``setup``) must be **picklable** (a top-level
+    callable, not a lambda/closure); ``keep_bin`` is ignored in this mode.
 
     Two modes, by ``repeats``:
 
@@ -240,6 +283,8 @@ def measure_memory(
         action: The zero-argument callable to measure.
         repeats: Fixed pass count, or ``None`` to sample adaptively.
         warmup: Untracked dry-runs (``setup`` + ``action``) before measuring; ``0`` disables.
+        isolate: Run each pass in a fresh spawned process and record its ``ru_maxrss`` as
+            :attr:`Measurement.rss_bytes`. Requires a picklable ``action``/``setup``.
         max_time: Wall-clock budget (seconds) for adaptive sampling; ``None`` = no time bound.
         min_passes: Minimum passes when sampling adaptively.
         max_passes: Hard ceiling on passes when sampling adaptively.
@@ -257,18 +302,22 @@ def measure_memory(
     """
     _require_memray()
 
-    for _ in range(max(0, warmup)):
-        if setup is not None:
-            setup()
-        action()
-    if warmup > 0:
-        gc.collect()  # clean heap for the first measured pass
+    # In-process warmup happens once, here; isolated passes each warm inside their own child.
+    if not isolate:
+        for _ in range(max(0, warmup)):
+            if setup is not None:
+                setup()
+            action()
+        if warmup > 0:
+            gc.collect()  # clean heap for the first measured pass
+
+    def _one(first: bool) -> Measurement:
+        if isolate:
+            return _isolated_run(action, setup, warmup)
+        return _run_pass(action, setup=setup, keep_bin=keep_bin if first else None)
 
     if repeats is not None:
-        samples = [
-            _run_pass(action, setup=setup, keep_bin=keep_bin if i == 0 else None)
-            for i in range(max(1, repeats))
-        ]
+        samples = [_one(i == 0) for i in range(max(1, repeats))]
         return MemoryResult(tuple(samples))
 
     samples = []
@@ -277,7 +326,7 @@ def measure_memory(
     cap = max(min_passes, max_passes)
     start = perf_counter()
     while True:
-        sample = _run_pass(action, setup=setup, keep_bin=keep_bin if not samples else None)
+        sample = _one(not samples)
         samples.append(sample)
         if best is None or sample.peak_bytes < best:
             best, stale = sample.peak_bytes, 0
@@ -301,6 +350,72 @@ def _run_pass(
     sample = _track_once(action, keep_bin=keep_bin)
     gc.collect()
     return sample
+
+
+def _ru_maxrss_bytes() -> int:
+    """Whole-process resident high-water (``getrusage`` ``ru_maxrss``), normalized to **bytes**.
+
+    ``ru_maxrss`` is reported in **KiB on Linux, bytes on macOS** — normalize so callers always
+    get bytes (matching every other field).
+    """
+    import resource
+
+    raw = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+    return raw if platform.system() == "Darwin" else raw * 1024
+
+
+def _isolated_child(queue: Any, action: Action, setup: Action | None, warmup: int) -> None:
+    """Body of an isolated pass, run in a fresh spawned process: warm, one tracked pass, read
+    ``ru_maxrss``; put the :class:`Measurement` (or the raised exception) on ``queue``.
+    """
+    try:
+        _require_memray()
+        for _ in range(max(0, warmup)):
+            if setup is not None:
+                setup()
+            action()
+        gc.collect()
+        m = _track_once(action)
+        queue.put(
+            Measurement(m.peak_bytes, m.allocations, m.total_bytes, rss_bytes=_ru_maxrss_bytes())
+        )
+    except BaseException as exc:  # noqa: BLE001 — ship any failure back, don't die silently
+        queue.put(exc)
+
+
+def _isolated_run(action: Action, setup: Action | None, warmup: int) -> Measurement:
+    """One measured pass in a **fresh** spawned process, so the heap is cold and ``ru_maxrss``
+    is attributable to the action. Returns the child's :class:`Measurement` incl. ``rss_bytes``.
+
+    The action (and ``setup``) must be picklable for ``spawn`` — a top-level callable, not a
+    lambda/closure. A non-picklable target, or a child that dies (segfault/OOM), raises an
+    actionable error.
+    """
+    import multiprocessing
+    from pickle import PicklingError
+
+    ctx = multiprocessing.get_context("spawn")
+    queue = ctx.SimpleQueue()
+    proc = ctx.Process(target=_isolated_child, args=(queue, action, setup, warmup))
+    try:
+        proc.start()
+    except (PicklingError, AttributeError, TypeError) as exc:
+        raise RuntimeError(
+            "isolated memory measurement (isolate=True) needs a picklable action and setup — a "
+            "top-level function with picklable args, not a lambda or closure. Use a module-level "
+            f"callable, or measure in-process (isolate=False). Pickling failed: {exc}"
+        ) from exc
+    proc.join()
+    if queue.empty():  # nothing was put → the child died before returning a result
+        raise RuntimeError(
+            f"isolated memory pass died before reporting (exit code {proc.exitcode}) — the "
+            "action likely segfaulted or was OOM-killed in its child process."
+        )
+    payload = queue.get()
+    if isinstance(payload, BaseException):
+        raise payload
+    assert isinstance(payload, Measurement)  # the child puts a Measurement or an exception
+    return payload
 
 
 def measure_peak(action: Action, repeats: int | None = None) -> int:

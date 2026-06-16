@@ -35,6 +35,22 @@ def test_from_blob_roundtrips():
     assert MemoryResult.from_blob(res.as_dict()).as_dict() == res.as_dict()
 
 
+def test_optional_rss_series_roundtrips():
+    res = MemoryResult(
+        (Measurement(100, 5, 300, rss_bytes=900), Measurement(80, 4, 250, rss_bytes=850))
+    )
+    blob = res.as_dict()
+    assert blob["rss_bytes"] == [900, 850]  # optional series carried when present
+    assert MemoryResult.from_blob(blob).as_dict() == blob  # round-trips
+    assert MemoryResult.from_blob(blob).rss_bytes == 850  # headline = min across passes
+
+
+def test_blob_omits_rss_when_absent():
+    res = MemoryResult((Measurement(100, 5, 300), Measurement(80, 4, 250)))
+    assert "rss_bytes" not in res.as_dict()  # in-process blob unchanged
+    assert MemoryResult.from_blob(res.as_dict()).rss_bytes is None  # back-compatible
+
+
 _SERIES_BLOB = {
     "peak_bytes": [10, 20, 30],
     "allocations": [1, 1, 1],
