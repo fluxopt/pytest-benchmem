@@ -1,7 +1,10 @@
 # pytest-benchmem
 
+[![PyPI](https://img.shields.io/pypi/v/pytest-benchmem)](https://pypi.org/project/pytest-benchmem/)
+[![Python versions](https://img.shields.io/pypi/pyversions/pytest-benchmem)](https://pypi.org/project/pytest-benchmem/)
 [![CI](https://github.com/fluxopt/pytest-benchmem/actions/workflows/ci.yaml/badge.svg)](https://github.com/fluxopt/pytest-benchmem/actions/workflows/ci.yaml)
-![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+[![Docs](https://img.shields.io/badge/docs-mkdocs-blue)](https://fluxopt.github.io/pytest-benchmem/)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 **The memory companion to [pytest-benchmark].** It times your code; pytest-benchmem
@@ -36,14 +39,14 @@ pytest --benchmark-only --benchmark-memory   # both metrics, in pytest-benchmark
   test_sort[100000]         321.2080 (9.86)       419.9160 (10.19)  │       0.76
   test_sort[1000000]      3,669.2920 (112.61)   4,331.5421 (105.11) │       7.63
 
- memory (right of │): a separate, untimed pass, not the timed rounds  •  also available via --benchmark-memory-columns: allocated, allocs
+ memory (right of │): a separate, untimed pass, not the timed rounds  •  also available via --benchmark-memory-columns: allocated, allocations
 ```
 
 Left of the divider is pytest-benchmark's timing, untouched; right is pytest-benchmem's
 memory. The two never overlap — memray measures peak on a *separate, untimed* call, so the
 allocator hooks cost the timing nothing. It's opt-in at the run level: without the flag, your
 suite runs exactly as before. Peak is the headline, so it shows by default; `allocated` and
-`allocs` are one flag away (`--benchmark-memory-columns`).
+`allocations` are one flag away (`--benchmark-memory-columns`).
 
 Add `--benchmark-json=run.json` and both persist under one node id: timing in `stats`,
 memory in `extra_info.benchmem`. Parametrize `params` become the dims the plots scale by —
@@ -81,20 +84,31 @@ Timing rides pytest-benchmark's own tooling (`pytest-benchmark compare`,
 and dims-aware views over either metric:
 
 ```bash
-benchmem compare base.json head.json                 # per-id table: time+peak, all stats
-benchmem plot    base.json head.json --metric peak   # interactive plotly view
+benchmem compare base.json head.json                  # grouped table, time + peak, every stat
+benchmem plot    base.json head.json --columns peak   # interactive plotly view
 
 # name the series/columns independently of the filenames (else the file stem):
 benchmem plot v067.json v070.json v080.json -l 0.6.7 -l 0.7.0 -l 0.8.0
 ```
 
+Modelled on pytest-benchmark's own table: one sub-table per benchmark, a row per run, and
+every cell relative to that benchmark's best run as a `(×)` multiplier (best green, worst
+red). The default spreads each metric (`time`, `peak`) across its full stat grid — so a
+regression shows up across `min`/`max`/`mean`/… at once; each column hoists its own unit
+(note `peak (KiB)` for the small stddev column):
+
 ```
-id                          base.json    head.json     change  (B)
---------------------------------------------------------------------
-test_sort[10000]              824 KiB      848 KiB       +2.9%
-test_sort[100000]             7.6 MiB      7.4 MiB       -2.6%
-test_sort[1000000]            76 MiB       91 MiB       +20.0%
+test_build[n=5000]
+             time (s)     time (s)      time (s)      time (s)      time (s)     peak (MiB)     peak (MiB)     peak (MiB)     peak (MiB)      peak (KiB)
+ name             min          max          mean        median        stddev            min            max           mean         median          stddev
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ (base)       2 (1.0)    2.3 (1.0)    2.12 (1.0)    2.08 (1.0)    0.09 (1.0)    60.00 (1.0)    60.50 (1.0)    60.23 (1.0)    60.20 (1.0)    210.41 (1.0)
+ (head)   2.05 (1.02)   2.4 (1.04)   2.18 (1.03)   2.12 (1.02)   0.11 (1.22)   72.00 (1.20)   73.20 (1.21)   72.53 (1.20)   72.40 (1.20)   510.86 (2.43)
 ```
+
+Narrow it with `--columns` (any of `time` / `peak` / `allocated` / `allocations`) and
+`--stat` (`min` | `max` | … | `all`); `--group-by` (`fullname` | `func` | `param:N` | …)
+regroups the rows.
 
 **Gate CI on a memory regression** — exit non-zero past a threshold, mirroring
 pytest-benchmark's `--benchmark-compare-fail=min:5%` grammar for memory:
@@ -183,7 +197,9 @@ installs cleanly with timing-only (the memory pass raises a clear error there).
 ## Status
 
 Early. Extracted from the linopy internal benchmark suite, where it's the local
-memory-profiling layer. API may move before 1.0.
+memory-profiling layer. API may move before 1.0 — see the
+[changelog](https://github.com/fluxopt/pytest-benchmem/blob/main/CHANGELOG.md) for what
+changed between releases.
 
 [pytest-benchmark]: https://pytest-benchmark.readthedocs.io
 [pytest-memray]: https://pytest-memray.readthedocs.io

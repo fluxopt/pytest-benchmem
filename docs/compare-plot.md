@@ -16,7 +16,7 @@ kernelspec:
 Two (or more) saved runs in, one comparison out — a table (`benchmem compare`) or an
 interactive view (`benchmem plot`). The table shows `time` and `peak` across every stat by
 default (pick metrics with `--columns`, a stat with `--stat`); the plot takes one
-(`--metric`). Both group by the [dims](dims.md) your tests carry.
+(`--columns`). Both group by the [dims](dims.md) your tests carry.
 
 ## A regression to catch
 
@@ -126,7 +126,7 @@ The dict rows blow past the threshold on every size, so the offending ids print 
 count. **Scaling** (one run) draws cost vs. input size — the baseline's peak-memory curve:
 
 ```bash
-benchmem plot baseline.json --metric peak -o scaling.html
+benchmem plot baseline.json --columns peak -o scaling.html
 ```
 
 ```{code-cell} ipython3
@@ -142,7 +142,7 @@ colour = absolute Δ. The top-right corner is "big *and* got bigger" — where a
 actually costs you:
 
 ```bash
-benchmem plot baseline.json candidate.json --metric peak -o scatter.html
+benchmem plot baseline.json candidate.json --columns peak -o scatter.html
 ```
 
 ```{code-cell} ipython3
@@ -164,7 +164,7 @@ plotting.plot_scatter([baseline, candidate], metric="peak")[0]
 > For *timing* comparisons you can also use pytest-benchmark's own tooling directly —
 > `pytest-benchmark compare`, `--benchmark-histogram`. pytest-benchmem doesn't reimplement
 > those; it adds the memory-aware, dims-aware views. Add `time` to `--columns` (or use
-> `--metric time` on the plot) to put both on the same footing.
+> `--columns time` on the plot) to put both on the same footing.
 
 ### More from `compare`
 
@@ -251,7 +251,7 @@ A minimal GitHub Actions job using the two-file approach, caching the baseline a
 the series per run (defaulting to the file stems):
 
 ```bash
-benchmem plot run.json --metric peak --facet node.func             # one panel per operation
+benchmem plot run.json --columns peak --facet node.func             # one panel per operation
 benchmem plot run.json --facet node.func --free-axes y             # ...each on its own cost scale
 benchmem plot run.json --where axis=n                              # one sweep at a time
 benchmem plot v1.json v2.json v3.json -l 0.6 -l 0.7 -l 0.8         # name series, not file stems

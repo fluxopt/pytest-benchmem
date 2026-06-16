@@ -25,12 +25,15 @@ Pre-1.0 changes vs 0.2.1, each quick to migrate:
   shape is not parsed. **Migrate:** re-run the suite with `--benchmark-memory` to
   regenerate the runs. Timing-only pytest-benchmark files are unaffected. ([#75](https://github.com/fluxopt/pytest-benchmem/issues/75))
 * **The `peak_max` metric is removed** — it was `peak` reduced by max (a stat of a stat), so
-  it couldn't itself take a `--stat`. **Migrate:** `--metric peak --stat max`. ([#75](https://github.com/fluxopt/pytest-benchmem/issues/75))
+  it couldn't itself take a `--stat`. **Migrate:** `--columns peak --stat max`. ([#75](https://github.com/fluxopt/pytest-benchmem/issues/75))
 * **The `memory` alias for `peak` is removed** — it read like a category, not a synonym.
-  **Migrate:** `--metric peak`. ([#75](https://github.com/fluxopt/pytest-benchmem/issues/75))
+  **Migrate:** `--columns peak`. ([#75](https://github.com/fluxopt/pytest-benchmem/issues/75))
 * **The `gross` metric and the per-blob `mode` tag are removed** — both were leftovers of the
   reverted RSS engine (`gross` had no producer and always errored; `mode` was a constant).
   Reading a legacy blob ignores a stray `mode` key, so **no migration is needed**. ([#67](https://github.com/fluxopt/pytest-benchmem/issues/67))
+* **`benchmem compare` selects metrics with `--columns`, not `--metric`.** The table is now a
+  metric × stat grid, so a comma list of metrics (`--columns`) paired with `--stat` replaces the
+  single `--metric`. **Migrate:** `--metric peak` → `--columns peak`. ([#98](https://github.com/fluxopt/pytest-benchmem/issues/98), [#101](https://github.com/fluxopt/pytest-benchmem/issues/101))
 
 ### Features
 
