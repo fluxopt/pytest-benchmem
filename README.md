@@ -32,8 +32,6 @@ pytest --benchmark-only --benchmark-memory --benchmark-columns=min,mean,median
 Your pytest-benchmark timing table, untouched, with the memory pass folded in right of the `│`
 — a *separate, untimed* memray pass (`peak` spreads into min/mean/max; `allocated` /
 `allocations` are opt-in).
-→ [Getting started](https://fluxopt.github.io/pytest-benchmem/getting-started/) ·
-[Metrics & options](https://fluxopt.github.io/pytest-benchmem/metrics/)
 
 ## Compare, gate, plot
 
@@ -59,10 +57,6 @@ version sweeps) and cross-version runs from one command:
 benchmem plot run.json --columns peak
 benchmem sweep mypkg 1.2.0 1.3.0 main --suite bench/
 ```
-
-→ [Compare & gate CI](https://fluxopt.github.io/pytest-benchmem/compare-plot/) ·
-[Sweeps](https://fluxopt.github.io/pytest-benchmem/sweeps/) ·
-[Dims](https://fluxopt.github.io/pytest-benchmem/dims/)
 
 ## Why memray, and where it sits
 
