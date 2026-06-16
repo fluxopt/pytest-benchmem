@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/fluxopt/pytest-benchmem/compare/v0.3.0...v0.4.0) (2026-06-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* benchmem plot --metric is removed; use --columns (e.g. 'plot run.json --columns peak'). Mirrors the compare --metric -> --columns rename.
+
+### Features
+
+* plot selects the metric via --columns (parity with compare) + 0.3.0 README refresh ([#102](https://github.com/fluxopt/pytest-benchmem/issues/102)) ([85443dd](https://github.com/fluxopt/pytest-benchmem/commit/85443dd57548e0801e5d33555bc6e3c6c62d41f3))
+* timed|untimed divider in compare; CLI-showcase README + Python 3.14 ([#104](https://github.com/fluxopt/pytest-benchmem/issues/104)) ([411987f](https://github.com/fluxopt/pytest-benchmem/commit/411987f32f6e1a54e53cc9a56f675f8182bb6ba6))
+
 ## [0.3.0](https://github.com/fluxopt/pytest-benchmem/compare/v0.2.1...v0.3.0) (2026-06-16)
 
 This release reshapes how a memory measurement is taken, stored, and reported. Each
