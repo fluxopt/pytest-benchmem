@@ -192,6 +192,25 @@ def test_fixture_records_timing_and_memory(pytester):
     assert {s.id.split("::")[-1] for s in mem_samples} == {"test_alloc", "test_pedantic"}
 
 
+def test_pedantic_setup_is_untracked(pytester):
+    """pedantic(setup=...) runs setup outside the memray tracker — its memory isn't counted."""
+    pytester.makepyfile(
+        "def test_x(benchmark_memory):\n"
+        "    def setup():\n"
+        "        _ = bytearray(80 * 1024 * 1024)  # 80 MiB in setup — must stay untracked\n"
+        "    benchmark_memory.pedantic(\n"
+        "        lambda: [bytearray(1024) for _ in range(100)], setup=setup, rounds=1\n"
+        "    )\n"
+    )
+    out = pytester.path / "b.json"
+    result = pytester.runpytest_subprocess(
+        "--benchmark-only", f"--benchmark-json={out}", "-p", "no:cacheprovider"
+    )
+    result.assert_outcomes(passed=1)
+    blob = json.loads(out.read_text())["benchmarks"][0]["extra_info"]["benchmem"]
+    assert max(blob["peak_bytes"]) < 10 * 1024**2  # setup's 80 MiB outside the tracked peak
+
+
 def test_fixture_is_opt_in_per_test(pytester):
     """Without --benchmark-memory, a plain `benchmark` test records no memory."""
     _out, data = _run_suite(pytester)

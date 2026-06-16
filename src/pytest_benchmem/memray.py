@@ -215,6 +215,7 @@ def measure_memory(
     max_passes: int = _ADAPTIVE_MAX_PASSES,
     patience: int = _ADAPTIVE_PATIENCE,
     keep_bin: Path | None = None,
+    setup: Action | None = None,
 ) -> MemoryResult:
     """Run ``action()`` under ``memray.Tracker`` → :class:`MemoryResult`, one pass per repeat.
 
@@ -240,6 +241,10 @@ def measure_memory(
         patience: Stop adaptive sampling after this many consecutive passes with no new min.
         keep_bin: If set, the *first* pass's profile ``.bin`` is retained here (for a later
             :func:`render_flamegraph`); the rest still go to temp dirs and are discarded.
+        setup: Optional zero-arg callable run **untracked** before each pass — its allocations
+            are not measured. Use it to rebuild fresh state so a stateful ``action`` (one that
+            caches on or mutates a carried-over object) gives *independent* samples instead of
+            a decaying/accumulating series. Mirrors pytest-benchmark's ``pedantic(setup=...)``.
 
     Returns:
         A :class:`MemoryResult` over every pass run.
@@ -248,7 +253,8 @@ def measure_memory(
 
     if repeats is not None:
         samples = [
-            _run_pass(action, keep_bin=keep_bin if i == 0 else None) for i in range(max(1, repeats))
+            _run_pass(action, setup=setup, keep_bin=keep_bin if i == 0 else None)
+            for i in range(max(1, repeats))
         ]
         return MemoryResult(tuple(samples))
 
@@ -258,7 +264,7 @@ def measure_memory(
     cap = max(min_passes, max_passes)
     start = perf_counter()
     while True:
-        sample = _run_pass(action, keep_bin=keep_bin if not samples else None)
+        sample = _run_pass(action, setup=setup, keep_bin=keep_bin if not samples else None)
         samples.append(sample)
         if best is None or sample.peak_bytes < best:
             best, stale = sample.peak_bytes, 0
@@ -273,8 +279,12 @@ def measure_memory(
     return MemoryResult(tuple(samples))
 
 
-def _run_pass(action: Action, keep_bin: Path | None = None) -> Measurement:
-    """One tracked pass, then a ``gc.collect()`` so the next pass starts from a clean heap."""
+def _run_pass(
+    action: Action, setup: Action | None = None, keep_bin: Path | None = None
+) -> Measurement:
+    """``setup()`` (untracked) then one tracked pass, then a ``gc.collect()`` for a clean heap."""
+    if setup is not None:
+        setup()  # rebuild fresh state outside the tracker — its memory isn't counted
     sample = _track_once(action, keep_bin=keep_bin)
     gc.collect()
     return sample

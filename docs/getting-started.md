@@ -63,9 +63,11 @@ before. Add `--benchmark-json=run.json` to save both metrics to one file.
     for explicit control (a `setup` that rebuilds fresh state each round, custom rounds).
 
 !!! warning "Your benchmark must be safe to re-run"
-    Memory rides a *separate* invocation, after pytest-benchmark has already called your
-    function many times for timing — so a side-effectful call (mutates a fixture, fills a
-    cache, drains an iterator) silently records its **warmed** state, not a cold one.
-    Benchmark a pure call, or use the
+    Memory rides a *separate* invocation, **sampled several times** (adaptive), after
+    pytest-benchmark has already called your function for timing — so a side-effectful or
+    **stateful** call (mutates a fixture, fills a cache on a carried-over object) records its
+    **warmed** state, and its samples *drift* (decaying or accumulating) instead of reporting
+    the cold cost. Benchmark a pure call, or use the
     [`pedantic` form](reference.md#the-benchmark_memory-fixture) with a `setup` that rebuilds
-    fresh state each round.
+    fresh state — `setup` runs **untracked before each sample**, so the samples stay
+    independent and each measures a cold run.

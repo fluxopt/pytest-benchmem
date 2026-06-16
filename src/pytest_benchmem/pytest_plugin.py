@@ -232,6 +232,7 @@ def _record_memory(
     benchmark: BenchmarkFixture,
     action: Callable[[], Any],
     *,
+    setup: Callable[[], None] | None = None,
     repeats: int | None = None,
     max_time: float | None = None,
     limits: Mapping[str, float] | None = None,
@@ -240,16 +241,19 @@ def _record_memory(
 
     Idempotent: if a blob is already recorded for this benchmark (e.g. the
     ``--benchmark-memory`` patch and the explicit fixture both fire), reuse it
-    rather than measuring twice. ``repeats`` (``None`` = adaptive) and ``max_time``
-    pass through to :func:`~pytest_benchmem.memray.measure_memory`. Any ``max_*`` ``limits``
-    are enforced on the result (freshly measured or reused), so a breach fails the test once.
+    rather than measuring twice. ``setup`` runs untracked before each sample (see
+    :func:`~pytest_benchmem.memray.measure_memory`); ``repeats`` (``None`` = adaptive) and
+    ``max_time`` pass through too. Any ``max_*`` ``limits`` are enforced on the result
+    (freshly measured or reused), so a breach fails the test once.
     """
     existing = benchmark.extra_info.get(BENCHMEM_KEY)
     if isinstance(existing, Mapping):
         result = MemoryResult.from_blob(existing)
     else:
         keep_bin = _profile_bin(getattr(benchmark, "fullname", "") or "")
-        result = measure_memory(action, repeats=repeats, max_time=max_time, keep_bin=keep_bin)
+        result = measure_memory(
+            action, repeats=repeats, max_time=max_time, keep_bin=keep_bin, setup=setup
+        )
         benchmark.extra_info[BENCHMEM_KEY] = result.as_dict()
     if limits:
         _enforce_limits(result, limits, getattr(benchmark, "fullname", "") or "")
@@ -318,9 +322,10 @@ class MemoryBenchmark:
     ) -> Any:
         """Like :meth:`pytest_benchmark.fixture.BenchmarkFixture.pedantic`, plus a memory pass.
 
-        ``setup`` runs untracked before the measured call (and, if it returns
-        ``(args, kwargs)``, supplies them) — matching pytest-benchmark, and
-        giving back the untimed-setup/measured-action split cleanly.
+        ``setup`` runs untracked before *each* measured call (and, if it returns
+        ``(args, kwargs)``, supplies them) — matching pytest-benchmark, for both the timed
+        rounds and the memory samples. Use it to rebuild fresh state so a stateful action's
+        memory samples stay independent rather than drifting.
         """
         kwargs = dict(kwargs or {})
         result = self._benchmark.pedantic(  # type: ignore[no-untyped-call]
@@ -332,9 +337,11 @@ class MemoryBenchmark:
             warmup_rounds=warmup_rounds,
             iterations=iterations,
         )
+        mem_setup, tracked = _pedantic_action(target, args, kwargs, setup)
         self.result = _record_memory(
             self._benchmark,
-            _pedantic_action(target, args, kwargs, setup),
+            tracked,
+            setup=mem_setup,
             repeats=self._repeats,
             max_time=self._max_time,
             limits=self._limits,
@@ -347,18 +354,29 @@ def _pedantic_action(
     args: tuple[Any, ...],
     kwargs: Mapping[str, Any],
     setup: Callable[[], Any] | None,
-) -> Callable[[], Any]:
-    """Build the zero-arg measured action for a pedantic call, honoring ``setup``."""
+) -> tuple[Callable[[], None] | None, Callable[[], Any]]:
+    """Split a pedantic call into ``(untracked_setup, tracked_action)`` for the memory pass.
 
-    def action() -> Any:
-        call_args, call_kwargs = args, dict(kwargs)
-        if setup is not None:
-            produced = setup()
-            if produced is not None:
-                call_args, call_kwargs = produced
-        return target(*call_args, **call_kwargs)
+    ``setup`` runs *outside* the memray tracker before each sample — so its memory isn't
+    counted, and a stateful ``target`` (one that caches on / mutates a carried-over object)
+    gets fresh state per sample instead of a decaying or accumulating peak series. If ``setup``
+    returns ``(args, kwargs)`` those feed the tracked ``target``, matching pytest-benchmark.
+    Returns ``None`` for the setup when the caller passed none (the action just re-runs).
+    """
+    state: dict[str, Any] = {"args": args, "kwargs": dict(kwargs)}
 
-    return action
+    def tracked() -> Any:
+        return target(*state["args"], **state["kwargs"])
+
+    if setup is None:
+        return None, tracked
+
+    def untracked_setup() -> None:
+        produced = setup()
+        if produced is not None:
+            state["args"], state["kwargs"] = produced
+
+    return untracked_setup, tracked
 
 
 @pytest.fixture
@@ -473,9 +491,11 @@ def _install_auto_memory() -> None:
             warmup_rounds=warmup_rounds,
             iterations=iterations,
         )
+        mem_setup, tracked = _pedantic_action(target, args, kwargs, setup)
         _record_memory(
             self,
-            _pedantic_action(target, args, kwargs, setup),
+            tracked,
+            setup=mem_setup,
             repeats=_repeats(self),
             max_time=_max_time(self),
             limits=_limits(self),
