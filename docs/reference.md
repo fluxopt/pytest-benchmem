@@ -30,6 +30,7 @@ def test_build(benchmark_memory):
 | Kwarg | Default | What |
 |---|---|---|
 | `repeats` | *auto* | force a fixed `N` memray passes for this test (default: adaptive — see below). **Every** pass is kept (the blob stores the whole series); the headline `peak` is the *minimum* across them, and `--stat` reports any other. Overrides the suite-wide `--benchmark-memory-repeats`. |
+| `warmup` | `1` | untracked dry-runs of the action before measuring, to shed one-time costs (lazy imports, first-touch caches). `0` disables. Overrides the suite-wide `--benchmark-memory-warmup`. |
 | `max_peak` | — | fail the test if the headline `peak` exceeds this **absolute** ceiling. A size string (`"100MiB"`, units `B`/`KiB`/`MiB`/`GiB`) or a bare int (bytes). |
 | `max_allocated` | — | as `max_peak`, on `allocated` (total bytes). |
 | `max_allocations` | — | as above, on the `allocations` *count* — a bare number (no unit). |
@@ -58,8 +59,8 @@ fixture *and* the `--benchmark-memory` patch — but a plain `benchmark()` call 
     [pytest-memray](https://pytest-memray.readthedocs.io)'s `limit_memory` / `limit_leaks`
     — see the README's "With pytest-memray".
 
-How many passes? By default pytest-benchmem **samples adaptively** — it runs the memray pass
-until the headline `min` floor settles (≥2 passes, so warmup is shed; capped at 10, or a
+How many passes? By default pytest-benchmem **samples adaptively** — after an untracked warmup
+run, it runs the memray pass until the min floor settles (≥2 passes; capped at 10, or a
 `--benchmark-memory-max-time` budget). Deterministic code settles in ~3 passes; noisy code runs
 more. Set `repeats=N` (marker) or `--benchmark-memory-repeats=N` (suite) to force a fixed,
 reproducible count — what CI gating against a saved baseline wants. Full rationale and the
@@ -67,17 +68,19 @@ noisy-workload guidance are in the guide: [Repeats & adaptive sampling](metrics.
 
 ## The `benchmark_memory` fixture
 
-Depends on pytest-benchmark's `benchmark` fixture; times via pytest-benchmark, then
-measures peak in a separate untimed pass.
+Depends on pytest-benchmark's `benchmark` fixture; measures peak in a separate untimed
+pass, then times via pytest-benchmark.
 
-!!! info "Order — timing first, then memory"
-    Every call form runs pytest-benchmark's timing (calibration + all rounds) first, then
-    the memray pass — so memory is measured on an already-warmed function and the allocator
-    hooks never touch the timing. This holds for `__call__`, `pedantic`, and the
-    `--benchmark-memory` patch alike. (The standalone `measure_peak` / `measure_memory`
-    have no timing phase, so the first pass is cold — but they sample adaptively the same way
-    by default, taking ≥2 passes so the min discards that cold pass; pass `repeats=N` to
-    force a fixed count instead.)
+!!! info "Order — memory first (cold), then timing"
+    Every call form runs the memray pass **first**, then pytest-benchmark's timing
+    (calibration + all rounds). This matters: timing runs the function thousands of times,
+    which grows and fragments the allocator's arenas — so measuring memory *after* timing
+    would report the **warm plateau**, not the fresh-process floor the headline `min` is meant
+    to be. Memory-first measures the cold cost (the warmup pass still sheds the one-time
+    cold-start within it); timing then runs cleanly, with no memray hooks active. This holds
+    for `__call__`, `pedantic`, and the `--benchmark-memory` patch alike. The standalone
+    `measure_peak` / `measure_memory` have no timing phase at all; `warmup=0` skips the warmup,
+    `repeats=N` forces a fixed count.
 
 === "Call form"
 

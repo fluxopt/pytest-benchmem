@@ -62,26 +62,37 @@ summed) and `allocations` counts the calls. A peak gate would wave this churn th
 
 ### Repeats & adaptive sampling
 
-Each benchmark is memory-profiled more than once, and the headline `peak` is the **minimum**
-across those passes — the cleanest floor. How many passes run is **adaptive** by default:
-pytest-benchmem keeps measuring until that floor settles, then stops.
+Before any measured pass, an **untracked warmup run** sheds one-time costs; each benchmark is
+then memory-profiled more than once, and the headline `peak` is the **minimum** across those
+passes — the cleanest floor. How many passes run is **adaptive** by default: pytest-benchmem
+keeps measuring until that floor settles, then stops.
 
-#### Why the minimum?
+#### Warmup, then the minimum
 
-Peak memory is allocator *demand* — the bytes a code path requests for given inputs — so it has a
-real, irreducible floor. What varies run-to-run is **upward**: GC timing, page cache, lazy
-imports, and short-lived temporaries whose high-water mark depends on scheduling. The minimum
-strips that transient inflation and recovers the floor — the least memory the operation can
-complete in. It's also the most reproducible summary, which is why it's what `--fail-on` gates
-and the JSON reports. The `mean` / `max` are kept too (they tell you the *worst-case headroom*),
-but they wander; the `min` doesn't.
+Peak memory has *two* sources of run-to-run variation, and they're handled separately:
+
+- **One-time cold-start** — lazy imports, first-touch caches, the initial arena allocation —
+  inflates only the very first run in a process (it can be *much* larger — e.g. ~2.7 GiB vs a
+  ~1.4 GiB steady write). An **untracked warmup run** pays it before measuring, so it never lands
+  in the recorded series (keeping `max` / whiskers / `--stat` honest).
+- **A cold → warm plateau.** Even after warmup, the *first measured* write lands on a clean heap
+  (≈ the fresh-process cost) while *repeated* writes grow/fragment the allocator's arenas and
+  plateau ~7% higher. These passes are **not** i.i.d. samples of one number — there are two
+  regimes — so a central stat (mean *or* median) reports the warm plateau, ~7% above the cold
+  cost, and that bias *grows with the pass count*. The **minimum** picks the cold regime: the
+  reproducible, fresh-process floor, independent of how many passes ran.
+
+!!! note "Want the warm plateau?"
+    The warm steady-state (what a long-lived process that reuses the operation actually holds) is
+    a legitimate but *different* quantity — and it's still right there in the series. Ask for it
+    with `--stat mean` / `--stat median`. The headline just defaults to the floor because that's
+    the reproducible one for regression gating.
 
 #### How it decides
 
 The loop runs a pass, then asks whether to run another:
 
-- **Always take at least 2.** The first pass carries one-time warmup — lazy imports, allocator
-  arena growth — that the `min` discards. One pass would report exactly that contaminated number.
+- **Always take at least 2.** A single pass can't show any run-to-run spread.
 - **Stop when the floor settles** — once 2 consecutive passes set no new low, the min has
   converged and more passes won't lower it.
 - **Never exceed 10 passes** (a hard cap), or an optional `--benchmark-memory-max-time` wall-clock
@@ -89,6 +100,9 @@ The loop runs a pass, then asks whether to run another:
 
 In practice: **deterministic code settles in ~3 passes**; **noisy code runs more**, up to the cap
 — exactly where extra passes pay off.
+
+The warmup defaults to one run; tune it suite-wide with `--benchmark-memory-warmup=N` (or per
+test with `@pytest.mark.benchmem(warmup=N)`), and set `0` to disable it.
 
 !!! note "Adaptive sampling, not calibration"
     The UX echoes pytest-benchmark — you don't pick a count — but the mechanism is different, so
@@ -135,6 +149,11 @@ pytest --benchmark-memory --benchmark-memory-max-time=3    # ≤3 s of adaptive 
     (`POLARS_MAX_THREADS=1`) collapses the spread far more effectively, and more honestly, than
     piling on repeats. Extra passes only sharpen the `min`; they can't make a genuinely bursty
     workload reproducible.
+
+    A *systematic* gap is different: if `peak·min` sits near the cold floor and `peak·max` is a
+    roughly **constant** step above it (rather than scattered), that's the cold→warm arena
+    plateau from [Warmup, then the minimum](#warmup-then-the-minimum) — deterministic, not noise,
+    so thread-pinning won't close it and it needs no fixing. The headline `min` is still the floor.
 
 #### Reading the distribution
 

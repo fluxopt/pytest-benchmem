@@ -22,7 +22,7 @@ pytestmark = pytest.mark.skipif(
     platform.system() == "Windows", reason="memray unavailable on Windows"
 )
 
-# --- ordering: timing must run before the memray pass (the function is warm by then) ---
+# --- ordering: the memray pass must run before timing (so memory is measured cold) ---
 
 
 class _OrderSpyBenchmark:
@@ -52,20 +52,20 @@ def _spy_measure(events: list[str]):
     return measure
 
 
-def test_timing_runs_before_memory_call(monkeypatch):
-    """Call form: pytest-benchmark times the function first, then the memray pass runs."""
+def test_memory_runs_before_timing_call(monkeypatch):
+    """Call form: the memray pass runs first (cold), then pytest-benchmark times the function."""
     events: list[str] = []
     monkeypatch.setattr(plugin, "measure_memory", _spy_measure(events))
     plugin.MemoryBenchmark(_OrderSpyBenchmark(events))(lambda: None)  # type: ignore[arg-type]
-    assert events == ["timing", "memory"]
+    assert events == ["memory", "timing"]
 
 
-def test_timing_runs_before_memory_pedantic(monkeypatch):
-    """Pedantic form: same order — timing first, memory second."""
+def test_memory_runs_before_timing_pedantic(monkeypatch):
+    """Pedantic form: same order — memory first (cold), timing second."""
     events: list[str] = []
     monkeypatch.setattr(plugin, "measure_memory", _spy_measure(events))
     plugin.MemoryBenchmark(_OrderSpyBenchmark(events)).pedantic(lambda: None)  # type: ignore[arg-type]
-    assert events == ["timing", "memory"]
+    assert events == ["memory", "timing"]
 
 
 SUITE = """
@@ -401,6 +401,14 @@ def test_limits_from_node_picks_only_max_kwargs():
     node = _FakeNode(_FakeMarker(repeats=3, max_peak="2KiB", max_allocations=10))
     assert plugin._limits_from_node(node) == {"max_peak": 2048.0, "max_allocations": 10.0}
     assert plugin._limits_from_node(_FakeNode(None)) == {}
+
+
+def test_warmup_from_node_marker_wins_else_default():
+    """``benchmem(warmup=N)`` wins; no marker (and no config) falls back to the default 1."""
+    assert plugin._warmup_from_node(_FakeNode(_FakeMarker(warmup=3))) == 3
+    assert plugin._warmup_from_node(_FakeNode(_FakeMarker(warmup=0))) == 0  # explicit disable
+    assert plugin._warmup_from_node(_FakeNode(_FakeMarker(repeats=2))) == 1  # no warmup kwarg
+    assert plugin._warmup_from_node(_FakeNode(None)) == 1
 
 
 def _result(peak: int, allocs: int = 1, total: int = 1) -> MemoryResult:

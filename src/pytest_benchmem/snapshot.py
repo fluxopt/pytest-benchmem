@@ -230,8 +230,8 @@ def memory_from_pytest_benchmark(
         field: Which series to read — ``peak_bytes`` (unit ``B``), ``allocations`` (count),
             or ``total_bytes``.
         reduce: Reduce the per-repeat series to one scalar. Default (``None``) derives the
-            headline (peak = min, allocations/total_bytes = the min-peak run); pass a
-            callable for a distribution stat over the series instead.
+            headline (peak = min, allocations/total_bytes = the min-peak run); pass a callable
+            for a distribution stat over the series instead.
 
     Returns:
         ``(label, samples, unit)`` — the run label, one :class:`Sample` per benchmark

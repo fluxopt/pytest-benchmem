@@ -71,13 +71,15 @@ def test_setup_runs_untracked_before_each_pass():
         _ = bytearray(60 * 1024 * 1024)  # 60 MiB allocated in setup — must NOT be counted
 
     res = measure_memory(lambda: [bytearray(1024) for _ in range(200)], repeats=4, setup=setup)
-    assert calls["n"] == 4  # setup ran once before every pass
+    assert calls["n"] == 5  # setup ran before the warmup run and before each of the 4 passes
     assert res.peak_bytes < 10 * 1024**2  # setup's 60 MiB is outside the tracker
 
 
 def test_setup_makes_stateful_samples_independent():
     # a stateful action: the first call fills a carried-over cache (big), later calls reuse it
-    # (small) → the peak series drifts, and the headline min reads the *warm* under-estimate.
+    # (small). Without setup, the warmup run fills the cache, so every measured pass is warm and
+    # the headline min reads the *warm* under-estimate. With setup rebuilding fresh state per
+    # pass (warmup included), every sample is cold and the min reflects the true allocation.
     cache: dict[str, bytearray] = {}
 
     def stateful():
@@ -86,11 +88,11 @@ def test_setup_makes_stateful_samples_independent():
         return cache["buf"]
 
     drift = measure_memory(stateful, repeats=4)
-    assert drift.peak_bytes < 10 * 1024**2  # min = warm (cache already filled) → under-reports
+    assert drift.peak_bytes < 10 * 1024**2  # warmup filled the cache → all passes warm → low min
 
     cache.clear()
     cold = measure_memory(stateful, repeats=4, setup=cache.clear)  # rebuild fresh state per pass
-    assert cold.peak_bytes > 30 * 1024**2  # every sample is cold → headline = the true 40 MiB
+    assert cold.peak_bytes > 30 * 1024**2  # every sample is cold → min ≈ the true 40 MiB
 
 
 def test_measure_memory_returns_result_with_allocations():

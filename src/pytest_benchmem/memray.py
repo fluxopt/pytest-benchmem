@@ -32,6 +32,7 @@ from typing import Any
 #: A zero-arg callable doing the work that gets memory-tracked.
 Action = Callable[[], object]
 
+
 #: The three per-repeat quantities, in the blob's ``series`` sub-dict and as ``Measurement``
 #: fields. Drives the series read-back so the names never drift between writer and reader.
 SERIES_FIELDS = ("peak_bytes", "allocations", "total_bytes")
@@ -55,11 +56,12 @@ class MemoryResult:
     The per-repeat :attr:`samples` are the single source of truth — that's all the blob
     stores (the ``series``); everything else is derived from them on read.
 
-    Peak memory is noisier than expected (GC timing, lazy imports, page cache), so the
-    headline :attr:`peak_bytes` is the *minimum* peak — the cleanest "floor this can hit" —
-    and :attr:`allocations` / :attr:`total_bytes` come from that same representative
-    (min-peak) run, a coherent snapshot. :attr:`peak_bytes_max` is the worst peak, so the
-    spread is visible.
+    The headline :attr:`peak_bytes` is the **minimum** peak across passes — the fresh-process
+    floor, unbiased by the in-process warm plateau (repeated runs fragment/grow arenas and
+    allocate more) that a central stat would report. :attr:`allocations` / :attr:`total_bytes`
+    come from that same min-peak run (a coherent snapshot); :attr:`peak_bytes_max` is the worst
+    peak, so the spread is visible. A warm-plateau / steady-state read is available via the
+    ``mean`` / ``median`` ``--stat``. A single pass collapses all of these to its own values.
     """
 
     samples: tuple[Measurement, ...]
@@ -76,7 +78,7 @@ class MemoryResult:
 
     @property
     def peak_bytes(self) -> int:
-        """The headline peak — the minimum high-water across repeats (the cleanest floor)."""
+        """The headline peak — the minimum high-water across passes (the fresh-process floor)."""
         return self.representative.peak_bytes
 
     @property
@@ -201,15 +203,17 @@ def _track_once(action: Action, keep_bin: Path | None = None) -> Measurement:
 #: calibration in pytest-benchmark's timer-resolution sense). Rather than a fixed count that's
 #: wasteful for deterministic code and too few for noisy code, run until the headline min
 #: settles, bounded by these.
-_ADAPTIVE_MIN_PASSES = 2  # always take ≥2 — the 1st pass carries one-time warmup the min sheds
+_ADAPTIVE_MIN_PASSES = 2  # always take ≥2 — one pass can't show the run-to-run spread
 _ADAPTIVE_MAX_PASSES = 10  # hard ceiling: cost is linear in passes, so cap the noisy case
 _ADAPTIVE_PATIENCE = 2  # stop once this many consecutive passes set no new (lower) min
+_DEFAULT_WARMUP = 1  # untracked dry-run(s) before measuring, to shed one-time allocations
 
 
 def measure_memory(
     action: Action,
     repeats: int | None = None,
     *,
+    warmup: int = _DEFAULT_WARMUP,
     max_time: float | None = None,
     min_passes: int = _ADAPTIVE_MIN_PASSES,
     max_passes: int = _ADAPTIVE_MAX_PASSES,
@@ -219,37 +223,46 @@ def measure_memory(
 ) -> MemoryResult:
     """Run ``action()`` under ``memray.Tracker`` → :class:`MemoryResult`, one pass per repeat.
 
-    Each pass gets a fresh tracker; the headline peak is the minimum across them (see
-    :class:`MemoryResult`), and every pass's :class:`Measurement` is retained for spread stats.
+    ``warmup`` untracked dry-runs run first to shed one-time costs; then each measured pass
+    gets a fresh tracker. The headline is the **min** across passes (see :class:`MemoryResult`);
+    every pass's :class:`Measurement` is kept for spread stats.
 
     Two modes, by ``repeats``:
 
     - ``repeats=N`` (an int) — run exactly ``N`` passes. Fixed and reproducible; what CI
       gating and saved-baseline comparisons want.
     - ``repeats=None`` (default) — **sample adaptively**: keep running passes until the min
-      stops improving (no new low for ``patience`` passes), bounded by ``min_passes`` (warmup
-      is shed by the min, so always take ≥2), ``max_passes``, and an optional ``max_time``
-      wall-clock budget. Deterministic code settles in a few passes; noisy code runs more,
-      exactly where extra passes pay off.
+      stops moving (no new low for ``patience`` passes), bounded by ``min_passes`` (≥2),
+      ``max_passes``, and an optional ``max_time`` budget. Deterministic code settles in a few
+      passes; noisy code runs more.
 
     Args:
         action: The zero-argument callable to measure.
         repeats: Fixed pass count, or ``None`` to sample adaptively.
+        warmup: Untracked dry-runs (``setup`` + ``action``) before measuring; ``0`` disables.
         max_time: Wall-clock budget (seconds) for adaptive sampling; ``None`` = no time bound.
         min_passes: Minimum passes when sampling adaptively.
         max_passes: Hard ceiling on passes when sampling adaptively.
         patience: Stop adaptive sampling after this many consecutive passes with no new min.
         keep_bin: If set, the *first* pass's profile ``.bin`` is retained here (for a later
             :func:`render_flamegraph`); the rest still go to temp dirs and are discarded.
-        setup: Optional zero-arg callable run **untracked** before each pass — its allocations
-            are not measured. Use it to rebuild fresh state so a stateful ``action`` (one that
-            caches on or mutates a carried-over object) gives *independent* samples instead of
-            a decaying/accumulating series. Mirrors pytest-benchmark's ``pedantic(setup=...)``.
+        setup: Optional zero-arg callable run **untracked** before each pass (and each warmup
+            run) — its allocations are not measured. Use it to rebuild fresh state so a stateful
+            ``action`` (one that caches on or mutates a carried-over object) gives *independent*
+            samples instead of a decaying/accumulating series. Mirrors pytest-benchmark's
+            ``pedantic(setup=...)``.
 
     Returns:
-        A :class:`MemoryResult` over every pass run.
+        A :class:`MemoryResult` over every measured pass (warmup runs are not retained).
     """
     _require_memray()
+
+    for _ in range(max(0, warmup)):
+        if setup is not None:
+            setup()
+        action()
+    if warmup > 0:
+        gc.collect()  # clean heap for the first measured pass
 
     if repeats is not None:
         samples = [
@@ -302,6 +315,6 @@ def measure_peak(action: Action, repeats: int | None = None) -> int:
         repeats: Fixed pass count, or ``None`` to sample adaptively.
 
     Returns:
-        Peak resident bytes (the headline ``peak`` = min across passes).
+        Peak bytes (the headline ``peak`` = min across passes, after warmup).
     """
     return measure_memory(action, repeats=repeats).peak_bytes

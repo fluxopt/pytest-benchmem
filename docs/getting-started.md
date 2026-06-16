@@ -63,10 +63,10 @@ before. Add `--benchmark-json=run.json` to save both metrics to one file.
     for explicit control (a `setup` that rebuilds fresh state each round, custom rounds).
 
 !!! warning "Stateful benchmarks: reuse your `setup`"
-    Memory rides a *separate* invocation, **sampled several times** (adaptive), after the
-    timing calls — so a **stateful** action (mutates a fixture, fills a cache on a
-    carried-over object) records its **warmed** state, and its samples *drift* (decaying or
-    accumulating) instead of the cold cost.
+    Memory rides a *separate*, untimed invocation, **sampled several times** (adaptive) — so a
+    **stateful** action (mutates a fixture, fills a cache on a carried-over object) *drifts*
+    across those samples (the first fills the state, later ones reuse it) instead of reporting
+    the cold cost on each.
 
     The fix is **free if you already do it for timing**: a `setup` passed to the
     [`pedantic` form](reference.md#the-benchmark_memory-fixture) — or to `benchmark.pedantic`
