@@ -556,9 +556,10 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         action="store",
         default=None,
         metavar="DIR",
-        help="Save the memray profile (<id>.bin) into DIR for memory regressions, to render "
-        "later with `memray flamegraph` (or tree/summary). With --benchmark-memory-compare-fail, "
-        "only the offending ids; otherwise every measured benchmark. Off by default (disk cost).",
+        help="Save the memray profile (<id>.bin) into DIR — render later with `memray "
+        "flamegraph` (or tree/summary). Scope follows the gate: WITH "
+        "--benchmark-memory-compare-fail only the regressing ids, otherwise EVERY measured "
+        "benchmark. Off by default (disk cost).",
     )
     group.addoption(
         "--benchmark-memory-table",

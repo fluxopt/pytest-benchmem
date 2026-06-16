@@ -209,9 +209,15 @@ benchmem: saved 1 memory profile(s) to profiles/ — render with:
 ```
 
 The `.bin` is memray's raw capture, so the same file also feeds `memray tree` / `summary` /
-`stats` — pick the lens you want. With a fail-gate only the **offenders** are kept; without
-one, **every measured benchmark**. Off by default (retaining `.bin`s costs disk), and in CI
+`stats` — pick the lens you want. Off by default (retaining `.bin`s costs disk), and in CI
 it's the natural artifact to upload and render locally on the PR.
+
+**Which benchmarks get a profile** follows the gate:
+
+- **with** `--benchmark-memory-compare-fail` → only the **regressing** ids (keep the failing
+  run cheap and the output small);
+- **without** a fail-gate → **every measured benchmark** — drop the gate and keep
+  `--benchmark-memory-profile DIR` alone to archive them all, regressing or not.
 
 A minimal GitHub Actions job using the two-file approach, caching the baseline across runs:
 
