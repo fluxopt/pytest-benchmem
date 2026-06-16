@@ -142,8 +142,8 @@ Every pass is kept as a flat series in the [blob](#the-raw-blob), so any stat is
 the fact. Ask for one over the series with `--stat`:
 
 ```bash
-benchmem compare base.json head.json --metric peak --stat stddev   # how noisy is peak?
-benchmem compare v1.json v2.json --metric allocated --stat mean
+benchmem compare base.json head.json --columns peak --stat stddev   # how noisy is peak?
+benchmem compare v1.json v2.json --columns allocated --stat mean
 ```
 
 `--stat` takes `min` / `max` / `mean` / `median` / `stddev` and applies to any metric. Peak is

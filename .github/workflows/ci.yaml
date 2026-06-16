@@ -88,7 +88,7 @@ jobs:
           # 2) the console script is on PATH and reads what the plugin produced
           /tmp/smoke/bin/benchmem --help
           cp /tmp/bench.json /tmp/bench2.json
-          /tmp/smoke/bin/benchmem compare /tmp/bench.json /tmp/bench2.json --metric peak
+          /tmp/smoke/bin/benchmem compare /tmp/bench.json /tmp/bench2.json --columns peak
           # 3) py.typed is packaged, so downstream type-checkers see our types
           /tmp/smoke/bin/python -c "from importlib.resources import files; assert files('pytest_benchmem').joinpath('py.typed').is_file()"
 

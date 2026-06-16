@@ -1,8 +1,9 @@
 """pytest-benchmem CLI — ``plot`` and ``compare`` over pytest-benchmark JSON runs.
 
-Both commands read the JSON pytest-benchmark writes (``.benchmarks/…``) and pick
-a ``--metric``: ``time`` from ``stats``; the rest from ``extra_info.benchmem`` —
-``peak``, ``allocated``, and ``allocations``.
+Both commands read the JSON pytest-benchmark writes (``.benchmarks/…``) over the same
+metrics: ``time`` from ``stats``; the rest from ``extra_info.benchmem`` — ``peak``,
+``allocated``, and ``allocations``. ``plot`` takes one (``--metric``); ``compare`` shows
+them all by default and narrows with ``--columns``.
 ``--stat`` reports a distribution over a metric's per-repeat series (e.g. ``peak
 --stat max`` is the worst peak). Timing comparison/histograms are pytest-benchmark's
 own job; these commands are the memory-aware, dims-aware views on top.
@@ -35,9 +36,6 @@ MetricOpt = Annotated[
         help="Metric: time | peak | allocated | allocations (pair with --stat for a distribution)."
     ),
 ]
-
-#: ``compare``'s ``--metric`` also accepts ``both`` (shorthand for ``--columns time,peak``).
-CompareMetric = Literal["time", "peak", "allocated", "allocations", "both"]
 
 
 def _fail(msg: str, code: int = 1) -> typer.Exit:
@@ -183,17 +181,13 @@ def compare(
         list[Path],
         typer.Argument(help="Two or more pytest-benchmark runs, oldest → newest (a sweep is N)."),
     ],
-    metric: Annotated[
-        CompareMetric,
-        typer.Option(
-            help="Metric column(s): time | peak | allocated | allocations | both "
-            "(both = time,peak). Overridden by --columns."
-        ),
-    ] = "time",
     columns: Annotated[
         str | None,
         typer.Option(
-            "--columns", help="Comma list of metric columns (e.g. time,peak); overrides --metric."
+            "--columns",
+            help="Comma list of metrics: time | peak | allocated | allocations "
+            "(e.g. peak or time,peak,allocations). Default: time,peak. Each is shown across "
+            "every --stat; a metric absent from every run is dropped.",
         ),
     ] = None,
     group_by: Annotated[
@@ -207,9 +201,8 @@ def compare(
     stat: Annotated[
         str | None,
         typer.Option(
-            help="Distribution stat over each benchmark's per-repeat series "
-            "(min | max | mean | median | stddev) for peak/allocated/allocations. "
-            "Default: the headline value.",
+            help="Which stat column(s) per metric: min | max | mean | median | stddev, or "
+            "all (the default) for the full spread side by side.",
         ),
     ] = None,
     sort: Annotated[
@@ -236,9 +229,7 @@ def compare(
     from pytest_benchmem.compare import compare_runs, find_regressions, parse_threshold
 
     with _exit_on_value_error():
-        compare_runs(
-            runs, metric=metric, columns=columns, group_by=group_by, stat=stat, sort=sort, csv=csv
-        )
+        compare_runs(runs, columns=columns, group_by=group_by, stat=stat, sort=sort, csv=csv)
 
     if not fail_on:
         return
@@ -349,7 +340,7 @@ def sweep(
     if produced:
         files = " ".join(str(p) for p in produced)
         typer.secho(f"sweep: wrote {len(produced)} run(s) under {out}/", fg=typer.colors.GREEN)
-        typer.echo(f"  compare: benchmem compare {files} --metric peak")
+        typer.echo(f"  compare: benchmem compare {files}")
         typer.echo(f"  plot:    benchmem plot {files} --metric peak")
     if failed:
         raise _fail(f"failed to provision: {', '.join(failed)}", 1)

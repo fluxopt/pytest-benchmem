@@ -14,8 +14,9 @@ kernelspec:
 # Compare & gate CI
 
 Two (or more) saved runs in, one comparison out — a table (`benchmem compare`) or an
-interactive view (`benchmem plot`). Both take `--metric time` or any memory metric, and group
-by the [dims](dims.md) your tests carry.
+interactive view (`benchmem plot`). The table shows `time` and `peak` across every stat by
+default (pick metrics with `--columns`, a stat with `--stat`); the plot takes one
+(`--metric`). Both group by the [dims](dims.md) your tests carry.
 
 ## A regression to catch
 
@@ -75,20 +76,23 @@ for _out, _row in [(baseline, "[(i, i * i) for i in range(n)]"),
 
 ## `benchmem compare` — the comparison table
 
-Modelled on pytest-benchmark's own table: one row per `(benchmark × run)`, one column per
-`--metric`, and each cell carries a relative `(N.NN)` multiplier vs the group's best run (best
-green, worst red). Rows are grouped into sub-tables by `--group-by` (default `fullname`, so
-each benchmark's runs sit together and the multiplier reads as the cross-run ratio):
+Modelled on pytest-benchmark's own table: one row per `(benchmark × run)`, columns are
+`metric × stat`, and each cell carries a relative `(N.NN)` multiplier vs the column's best
+run (best green, worst red). Rows are grouped into sub-tables by `--group-by` (default
+`fullname`, so each benchmark's runs sit together and the multiplier reads as the cross-run
+ratio). By default it shows `time` and `peak`, each across the full stat spread
+(min/max/mean/median/stddev) — so no single statistic is privileged:
 
 ```{code-cell} ipython3
-!benchmem compare {baseline} {candidate} --metric peak
+!benchmem compare {baseline} {candidate}
 ```
 
-Show **timing and memory side by side** with `--metric both` (shorthand for `--columns
-time,peak`), or pick any set with `--columns time,peak,allocated`:
+Pick the metrics with `--columns` (a comma list of `time` / `peak` / `allocated` /
+`allocations`; a metric absent from every run is dropped) and the stat with `--stat`
+(`min` / `max` / `mean` / `median` / `stddev`, or `all`):
 
 ```{code-cell} ipython3
-!benchmem compare {baseline} {candidate} --metric both
+!benchmem compare {baseline} {candidate} --columns peak --stat min
 ```
 
 `--group-by` follows pytest-benchmark's grammar (`fullname` | `name` | `func` | `group` |
@@ -111,7 +115,7 @@ The dict rows blow past the threshold on every size, so the offending ids print 
 `1` — failing the CI job:
 
 ```{code-cell} ipython3
-!benchmem compare {baseline} {candidate} --metric peak --fail-on peak:10% --fail-on allocations:5%; echo "exit: $?"
+!benchmem compare {baseline} {candidate} --columns peak --fail-on peak:10% --fail-on allocations:5%; echo "exit: $?"
 ```
 
 `allocations` is usually the steadiest tripwire — see [Choosing a metric](metrics.md).
@@ -159,8 +163,8 @@ plotting.plot_scatter([baseline, candidate], metric="peak")[0]
 
 > For *timing* comparisons you can also use pytest-benchmark's own tooling directly —
 > `pytest-benchmark compare`, `--benchmark-histogram`. pytest-benchmem doesn't reimplement
-> those; it adds the memory-aware, dims-aware views. Pass `--metric time` to any command here
-> to put both on the same footing.
+> those; it adds the memory-aware, dims-aware views. Add `time` to `--columns` (or use
+> `--metric time` on the plot) to put both on the same footing.
 
 ### More from `compare`
 
@@ -168,7 +172,7 @@ Order rows with `--sort` (`name` | `value` — largest last-run first — | `cha
 raw numbers for another tool with `--csv out.csv`:
 
 ```bash
-benchmem compare baseline.json candidate.json --metric peak --sort value --csv peak.csv
+benchmem compare baseline.json candidate.json --columns peak --sort value --csv peak.csv
 ```
 
 ### Gating without separate files
