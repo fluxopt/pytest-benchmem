@@ -2,8 +2,8 @@
 
 Both commands read the JSON pytest-benchmark writes (``.benchmarks/…``) over the same
 metrics: ``time`` from ``stats``; the rest from ``extra_info.benchmem`` — ``peak``,
-``allocated``, and ``allocations``. ``plot`` takes one (``--metric``); ``compare`` shows
-them all by default and narrows with ``--columns``.
+``allocated``, and ``allocations``. Both select with ``--columns`` — ``plot`` takes one
+(a single value axis); ``compare`` shows several side by side (default all).
 ``--stat`` reports a distribution over a metric's per-repeat series (e.g. ``peak
 --stat max`` is the worst peak). Timing comparison/histograms are pytest-benchmark's
 own job; these commands are the memory-aware, dims-aware views on top.
@@ -344,6 +344,6 @@ def sweep(
         files = " ".join(str(p) for p in produced)
         typer.secho(f"sweep: wrote {len(produced)} run(s) under {out}/", fg=typer.colors.GREEN)
         typer.echo(f"  compare: benchmem compare {files}")
-        typer.echo(f"  plot:    benchmem plot {files} --metric peak")
+        typer.echo(f"  plot:    benchmem plot {files} --columns peak")
     if failed:
         raise _fail(f"failed to provision: {', '.join(failed)}", 1)
