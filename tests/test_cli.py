@@ -152,9 +152,8 @@ def test_plot_label_option_threads_through(tmp_path, monkeypatch):
     assert captured["labels"] == ["0.6", "0.7", "0.8"]
 
 
-@pytest.mark.parametrize("flag", ["--columns", "--metric"])
-def test_plot_columns_is_alias_for_metric(tmp_path, monkeypatch, flag):
-    """plot selects the metric via --columns (parity with compare); --metric still works."""
+def test_plot_columns_selects_metric(tmp_path, monkeypatch):
+    """plot selects the metric via --columns — the same flag as compare."""
     captured = {}
 
     def _stub(*a, **k):
@@ -163,9 +162,21 @@ def test_plot_columns_is_alias_for_metric(tmp_path, monkeypatch, flag):
 
     monkeypatch.setattr(plotting, "plot_scaling", _stub)
     r = _run(tmp_path, "r.json", [_bm("x")])
-    result = runner.invoke(app, ["plot", str(r), flag, "peak", "-o", str(tmp_path / "o.html")])
+    result = runner.invoke(
+        app, ["plot", str(r), "--columns", "peak", "-o", str(tmp_path / "o.html")]
+    )
     assert result.exit_code == 0, _text(result)
     assert captured["metric"] == "peak"
+
+
+def test_plot_metric_flag_removed(tmp_path):
+    """--metric is gone (pre-1.0 rename to --columns, matching compare)."""
+    r = _run(tmp_path, "r.json", [_bm("x")])
+    result = runner.invoke(
+        app, ["plot", str(r), "--metric", "peak", "-o", str(tmp_path / "o.html")]
+    )
+    assert result.exit_code == 2
+    assert "No such option" in _text(result)
 
 
 def test_plot_columns_rejects_multiple_metrics(tmp_path):

@@ -34,10 +34,9 @@ MetricOpt = Annotated[
     Metric,
     typer.Option(
         "--columns",
-        "--metric",
-        help="Metric to plot: time | peak | allocated | allocations. One per figure — "
-        "`--columns` mirrors `compare` (`--metric` is the legacy alias); the spread shows as "
-        "whiskers via --band.",
+        help="Metric to plot: time | peak | allocated | allocations. One per figure (a plot "
+        "has a single value axis) — same flag as `compare`; the spread shows as whiskers via "
+        "--band.",
     ),
 ]
 

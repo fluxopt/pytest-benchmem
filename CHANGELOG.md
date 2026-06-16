@@ -33,8 +33,7 @@ Pre-1.0 changes vs 0.2.1, each quick to migrate:
   Reading a legacy blob ignores a stray `mode` key, so **no migration is needed**. ([#67](https://github.com/fluxopt/pytest-benchmem/issues/67))
 * **`benchmem compare` selects metrics with `--columns`, not `--metric`.** The table is now a
   metric × stat grid, so a comma list of metrics (`--columns`) paired with `--stat` replaces the
-  single `--metric`. **Migrate:** `--metric peak` → `--columns peak` (`benchmem plot` keeps
-  `--metric`). ([#98](https://github.com/fluxopt/pytest-benchmem/issues/98), [#101](https://github.com/fluxopt/pytest-benchmem/issues/101))
+  single `--metric`. **Migrate:** `--metric peak` → `--columns peak`. ([#98](https://github.com/fluxopt/pytest-benchmem/issues/98), [#101](https://github.com/fluxopt/pytest-benchmem/issues/101))
 
 ### Features
 
