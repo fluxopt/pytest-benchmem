@@ -84,28 +84,31 @@ Timing rides pytest-benchmark's own tooling (`pytest-benchmark compare`,
 and dims-aware views over either metric:
 
 ```bash
-benchmem compare base.json head.json --columns time,peak --stat min   # grouped table
-benchmem plot    base.json head.json --metric peak                    # interactive plotly view
+benchmem compare base.json head.json                 # grouped table, time + peak, every stat
+benchmem plot    base.json head.json --metric peak   # interactive plotly view
 
 # name the series/columns independently of the filenames (else the file stem):
 benchmem plot v067.json v070.json v080.json -l 0.6.7 -l 0.7.0 -l 0.8.0
 ```
 
-Modelled on pytest-benchmark's own table: one sub-table per benchmark, a row per run,
-and each cell relative to that benchmark's best run as a `(×)` multiplier (best green,
-worst red) — so `peak 91 MiB (1.20)` reads as *20% over the baseline*:
+Modelled on pytest-benchmark's own table: one sub-table per benchmark, a row per run, and
+every cell relative to that benchmark's best run as a `(×)` multiplier (best green, worst
+red). The default spreads each metric (`time`, `peak`) across its full stat grid — so a
+regression shows up across `min`/`max`/`mean`/… at once; each column hoists its own unit
+(note `peak (KiB)` for the small stddev column):
 
 ```
-test_sort[1000000]
-             time (s)     peak (MiB)
- name             min            min
-─────────────────────────────────────
- (base)      10 (1.0)    76.00 (1.0)
- (head)   10.2 (1.02)   91.00 (1.20)
+test_build[n=5000]
+             time (s)     time (s)      time (s)      time (s)      time (s)     peak (MiB)     peak (MiB)     peak (MiB)     peak (MiB)      peak (KiB)
+ name             min          max          mean        median        stddev            min            max           mean         median          stddev
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ (base)       2 (1.0)    2.3 (1.0)    2.12 (1.0)    2.08 (1.0)    0.09 (1.0)    60.00 (1.0)    60.50 (1.0)    60.23 (1.0)    60.20 (1.0)    210.41 (1.0)
+ (head)   2.05 (1.02)   2.4 (1.04)   2.18 (1.03)   2.12 (1.02)   0.11 (1.22)   72.00 (1.20)   73.20 (1.21)   72.53 (1.20)   72.40 (1.20)   510.86 (2.43)
 ```
 
-Pick columns with `--columns` (any of `time` / `peak` / `allocated` / `allocations`) and
-stats with `--stat`; `--group-by` (`fullname` | `func` | `param:N` | …) regroups the rows.
+Narrow it with `--columns` (any of `time` / `peak` / `allocated` / `allocations`) and
+`--stat` (`min` | `max` | … | `all`); `--group-by` (`fullname` | `func` | `param:N` | …)
+regroups the rows.
 
 **Gate CI on a memory regression** — exit non-zero past a threshold, mirroring
 pytest-benchmark's `--benchmark-compare-fail=min:5%` grammar for memory:
