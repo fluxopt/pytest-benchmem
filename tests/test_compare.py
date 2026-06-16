@@ -98,6 +98,24 @@ def test_columns_selects_specific_metrics(tmp_path):
     assert "peak (" in text and "allocations" in text and "time" not in text
 
 
+def test_divider_marks_timed_untimed_boundary(tmp_path):
+    # time (pytest-benchmark's timed rounds) | peak (the separate untimed memray pass)
+    a = _write(tmp_path / "a.json", [_bm("test_x", t=1.0, peak=10 * 1024**2)])
+    b = _write(tmp_path / "b.json", [_bm("test_x", t=1.0, peak=12 * 1024**2)])
+    out = StringIO()
+    compare_runs([a, b], columns="time,peak", stat="min", out=out)
+    assert "│" in out.getvalue()
+
+
+def test_no_divider_among_memory_metrics(tmp_path):
+    # peak and allocated both come from the untimed pass → no provenance boundary between them
+    a = _write(tmp_path / "a.json", [_bm("test_x", peak=10 * 1024**2, total_bytes=10 * 1024**2)])
+    b = _write(tmp_path / "b.json", [_bm("test_x", peak=12 * 1024**2, total_bytes=12 * 1024**2)])
+    out = StringIO()
+    compare_runs([a, b], columns="peak,allocated", stat="min", out=out)
+    assert "│" not in out.getvalue()
+
+
 def test_default_is_time_and_peak_across_every_stat(tmp_path):
     # no --columns/--stat → the two headline metrics, each across the full stat spread;
     # allocated/allocations stay opt-in
