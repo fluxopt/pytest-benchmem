@@ -84,8 +84,8 @@ Timing rides pytest-benchmark's own tooling (`pytest-benchmark compare`,
 and dims-aware views over either metric:
 
 ```bash
-benchmem compare base.json head.json                 # grouped table, time + peak, every stat
-benchmem plot    base.json head.json --metric peak   # interactive plotly view
+benchmem compare base.json head.json                  # grouped table, time + peak, every stat
+benchmem plot    base.json head.json --columns peak   # interactive plotly view
 
 # name the series/columns independently of the filenames (else the file stem):
 benchmem plot v067.json v070.json v080.json -l 0.6.7 -l 0.7.0 -l 0.8.0

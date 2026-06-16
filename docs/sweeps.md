@@ -33,11 +33,11 @@ For a picture, point `benchmem plot` at the same files — with 3+ runs it defau
 `sweep` view, a log₂ fold-change heatmap vs the baseline:
 
 ```bash
-benchmem plot 1.2.0.json 1.3.0.json main.json --metric peak
+benchmem plot 1.2.0.json 1.3.0.json main.json --columns peak
 ```
 
 `compare` shows `time` and `peak` across every stat by default (pick metrics with
-`--columns`, a stat with `--stat`); `plot` takes one `--metric`. See
+`--columns`, a stat with `--stat`); `plot` takes one `--columns`. See
 [Compare & gate CI](compare-plot.md) for the other views.
 
 ---

@@ -21,7 +21,7 @@ After a run, `n` is a real, numeric axis your plots and compares group by — `b
 picks it up as the x of a scaling curve with no extra flags:
 
 ```bash
-benchmem plot run.json --metric peak     # scaling: peak vs n, auto-inferred
+benchmem plot run.json --columns peak     # scaling: peak vs n, auto-inferred
 ```
 
 Only **scalars** (`str`/`int`/`float`) become dims; a `list`/`dict`, or an object
@@ -96,7 +96,7 @@ These are most useful when the axis you care about *is* the test — e.g. one fu
 operation. Facet a plot by it directly:
 
 ```bash
-benchmem plot run.json --metric peak --facet node.func
+benchmem plot run.json --columns peak --facet node.func
 ```
 
 They're selectable but never auto-chosen: a plot only splits by a `node.*` dim when you name

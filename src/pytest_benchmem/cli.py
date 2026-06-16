@@ -33,7 +33,11 @@ app = typer.Typer(help="pytest-benchmem — plot and compare benchmark runs.", n
 MetricOpt = Annotated[
     Metric,
     typer.Option(
-        help="Metric: time | peak | allocated | allocations (pair with --stat for a distribution)."
+        "--columns",
+        "--metric",
+        help="Metric to plot: time | peak | allocated | allocations. One per figure — "
+        "`--columns` mirrors `compare` (`--metric` is the legacy alias); the spread shows as "
+        "whiskers via --band.",
     ),
 ]
 

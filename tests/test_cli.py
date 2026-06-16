@@ -152,6 +152,32 @@ def test_plot_label_option_threads_through(tmp_path, monkeypatch):
     assert captured["labels"] == ["0.6", "0.7", "0.8"]
 
 
+@pytest.mark.parametrize("flag", ["--columns", "--metric"])
+def test_plot_columns_is_alias_for_metric(tmp_path, monkeypatch, flag):
+    """plot selects the metric via --columns (parity with compare); --metric still works."""
+    captured = {}
+
+    def _stub(*a, **k):
+        captured.update(k)
+        return _FakeFig(), 1
+
+    monkeypatch.setattr(plotting, "plot_scaling", _stub)
+    r = _run(tmp_path, "r.json", [_bm("x")])
+    result = runner.invoke(app, ["plot", str(r), flag, "peak", "-o", str(tmp_path / "o.html")])
+    assert result.exit_code == 0, _text(result)
+    assert captured["metric"] == "peak"
+
+
+def test_plot_columns_rejects_multiple_metrics(tmp_path):
+    """A plot has one value axis — multiple metrics is a clean usage error, not a crash."""
+    r = _run(tmp_path, "r.json", [_bm("x")])
+    result = runner.invoke(
+        app, ["plot", str(r), "--columns", "time,peak", "-o", str(tmp_path / "o.html")]
+    )
+    assert result.exit_code == 2
+    assert "not one of" in _text(result) or "Invalid value" in _text(result)
+
+
 def test_plot_where_parses_into_dict(tmp_path, monkeypatch):
     captured = {}
 
