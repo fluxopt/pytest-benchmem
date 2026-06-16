@@ -38,6 +38,7 @@ _FIELD = {
     "peak": ("memory", "peak_bytes", "B"),
     "allocated": ("memory", "total_bytes", "B"),
     "allocations": ("memory", "allocations", ""),
+    "rss": ("memory", "rss_bytes", "B"),
     "time": ("time", "min", "s"),
 }
 
@@ -58,7 +59,7 @@ def _fmt_value(field: str, value: float) -> str:
 
 
 #: Metrics selectable as table columns (each carries its own unit), in canonical order.
-_COLUMN_METRICS: tuple[Metric, ...] = ("time", "peak", "allocated", "allocations")
+_COLUMN_METRICS: tuple[Metric, ...] = ("time", "peak", "allocated", "allocations", "rss")
 
 #: Valid ``--sort`` keys for the comparison table.
 _SORTS = ("name", "value", "change")
@@ -444,7 +445,12 @@ def find_regressions(a: str | Path, b: str | Path, thresholds: list[Threshold]) 
 
 
 #: Memory-blob key per fail-on field — the fields ``--benchmark-memory-compare-fail`` gates on.
-_BLOB_FIELD = {"peak": "peak_bytes", "allocated": "total_bytes", "allocations": "allocations"}
+_BLOB_FIELD = {
+    "peak": "peak_bytes",
+    "allocated": "total_bytes",
+    "allocations": "allocations",
+    "rss": "rss_bytes",
+}
 
 
 def memory_regressions(
@@ -460,12 +466,16 @@ def memory_regressions(
     from pytest_benchmem.memray import MemoryResult
 
     def headline(blobs: dict[str, dict[str, Any]], attr: str) -> dict[str, float]:
-        # the blob is the per-repeat series; the gate reads its derived headline scalar
-        return {
-            i: float(getattr(MemoryResult.from_blob(b), attr))
-            for i, b in blobs.items()
-            if "peak_bytes" in b
-        }
+        # the blob is the per-repeat series; the gate reads its derived headline scalar.
+        # ``rss`` is ``None`` for in-process blobs — skip those (nothing to gate there).
+        out: dict[str, float] = {}
+        for i, b in blobs.items():
+            if "peak_bytes" not in b:
+                continue
+            scalar = getattr(MemoryResult.from_blob(b), attr)
+            if scalar is not None:
+                out[i] = float(scalar)
+        return out
 
     regressions: list[Regression] = []
     for th in thresholds:

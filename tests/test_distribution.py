@@ -84,3 +84,17 @@ def test_rejects_unknown_stat(tmp_path):
     p = _write_blob(tmp_path, _SERIES_BLOB)
     with pytest.raises(ValueError, match="unknown stat"):
         load_samples(p, metric="peak", stat="p99")
+
+
+def test_rss_metric_reads_isolated_series(tmp_path):
+    blob = {**_SERIES_BLOB, "rss_bytes": [900, 950, 1000]}
+    p = _write_blob(tmp_path, blob)
+    assert load_samples(p, metric="rss")[1][0].value == 900.0  # headline = min
+    assert load_samples(p, metric="rss", stat="mean")[1][0].value == 950.0
+    assert load_samples(p, metric="rss")[2] == "B"  # bytes unit
+
+
+def test_rss_metric_skips_in_process_blobs(tmp_path):
+    p = _write_blob(tmp_path, _SERIES_BLOB)  # no rss_bytes → in-process run
+    assert load_samples(p, metric="rss")[1] == []  # nothing to read, not an error
+    assert load_samples(p, metric="rss", stat="mean")[1] == []

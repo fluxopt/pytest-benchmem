@@ -348,6 +348,33 @@ def test_benchmem_marker_is_registered(pytester):
     result.assert_outcomes(passed=1)
 
 
+def test_isolate_records_rss_series_in_json(pytester):
+    """isolate=True runs each pass in a fresh process and records an `rss_bytes` series in the
+    JSON alongside memray's `peak_bytes`. The benchmarked fn lives in its own module so it's a
+    top-level, picklable target the spawned child can import."""
+    pytester.makepyfile(
+        workload="def build():\n    return [bytearray(1024) for _ in range(3000)]\n"
+    )
+    pytester.makepyfile(
+        """
+        import pytest
+        from workload import build
+
+        @pytest.mark.benchmem(isolate=True, repeats=1, warmup=0)
+        def test_iso(benchmark_memory):
+            benchmark_memory(build)
+        """
+    )
+    out = pytester.path / "bench.json"
+    result = pytester.runpytest_subprocess(
+        "--benchmark-only", f"--benchmark-json={out}", "-p", "no:cacheprovider"
+    )
+    result.assert_outcomes(passed=1)
+    blob = json.loads(out.read_text())["benchmarks"][0]["extra_info"]["benchmem"]
+    assert "peak_bytes" in blob  # memray still measured, in the child
+    assert blob["rss_bytes"][0] > 0  # whole-process resident high-water, recorded from the child
+
+
 # --- @pytest.mark.benchmem(max_*=...): action-scoped absolute ceilings -----------
 
 
@@ -409,6 +436,14 @@ def test_warmup_from_node_marker_wins_else_default():
     assert plugin._warmup_from_node(_FakeNode(_FakeMarker(warmup=0))) == 0  # explicit disable
     assert plugin._warmup_from_node(_FakeNode(_FakeMarker(repeats=2))) == 1  # no warmup kwarg
     assert plugin._warmup_from_node(_FakeNode(None)) == 1
+
+
+def test_isolate_from_node_marker_wins_else_default():
+    """``benchmem(isolate=...)`` wins; no marker (and no config) falls back to ``False``."""
+    assert plugin._isolate_from_node(_FakeNode(_FakeMarker(isolate=True))) is True
+    assert plugin._isolate_from_node(_FakeNode(_FakeMarker(isolate=False))) is False
+    assert plugin._isolate_from_node(_FakeNode(_FakeMarker(repeats=2))) is False  # no isolate kwarg
+    assert plugin._isolate_from_node(_FakeNode(None)) is False
 
 
 def _result(peak: int, allocs: int = 1, total: int = 1) -> MemoryResult:
