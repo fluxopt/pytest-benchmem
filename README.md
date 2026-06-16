@@ -31,7 +31,9 @@ pytest --benchmark-only --benchmark-memory --benchmark-columns=min,mean,median
 
 Your pytest-benchmark timing table, untouched, with the memory pass folded in right of the `│`
 — a *separate, untimed* memray pass (`peak` spreads into min/mean/max; `allocated` /
-`allocations` are opt-in).
+`allocations` are opt-in). Already use `benchmark.pedantic(setup=…)` to rebuild state for
+timing? That same `setup` is reused — untracked — before each memory sample, so stateful
+benchmarks stay accurate with **no extra changes**.
 
 ## Compare, gate, plot
 

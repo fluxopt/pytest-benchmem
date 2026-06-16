@@ -62,12 +62,14 @@ before. Add `--benchmark-json=run.json` to save both metrics to one file.
     The fixture also gives you the [`pedantic` form](reference.md#the-benchmark_memory-fixture)
     for explicit control (a `setup` that rebuilds fresh state each round, custom rounds).
 
-!!! warning "Your benchmark must be safe to re-run"
-    Memory rides a *separate* invocation, **sampled several times** (adaptive), after
-    pytest-benchmark has already called your function for timing — so a side-effectful or
-    **stateful** call (mutates a fixture, fills a cache on a carried-over object) records its
-    **warmed** state, and its samples *drift* (decaying or accumulating) instead of reporting
-    the cold cost. Benchmark a pure call, or use the
-    [`pedantic` form](reference.md#the-benchmark_memory-fixture) with a `setup` that rebuilds
-    fresh state — `setup` runs **untracked before each sample**, so the samples stay
-    independent and each measures a cold run.
+!!! warning "Stateful benchmarks: reuse your `setup`"
+    Memory rides a *separate* invocation, **sampled several times** (adaptive), after the
+    timing calls — so a **stateful** action (mutates a fixture, fills a cache on a
+    carried-over object) records its **warmed** state, and its samples *drift* (decaying or
+    accumulating) instead of the cold cost.
+
+    The fix is **free if you already do it for timing**: a `setup` passed to the
+    [`pedantic` form](reference.md#the-benchmark_memory-fixture) — or to `benchmark.pedantic`
+    under `--benchmark-memory` — is **reused, untracked, before each memory sample**, so
+    `setup`-based suites stay accurate with **no extra changes**. Otherwise, benchmark a pure
+    call, or add such a `setup`.
