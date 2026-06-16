@@ -292,7 +292,11 @@ def compare_runs(
         # best/worst — for the colour and the (N.NN) multiplier — comparing like-for-like
         # across the runs.
         cscale: dict[str, tuple[float, str, float | None, float | None]] = {}
+        prev_metric: str | None = None
         for metric, stat in cols:
+            if prev_metric is not None and (metric == "time") != (prev_metric == "time"):
+                table.add_column("│", justify="center", style="dim")  # timed | untimed boundary
+            prev_metric = metric
             col_id = f"{metric}:{stat}"
             unit = units.get(metric, "")
             present = [values[(col_id, i, lab)] for i, lab in rows if (col_id, i, lab) in values]
@@ -305,7 +309,11 @@ def compare_runs(
 
         for i, lab in rows:
             cells = [Text(f"({lab})" if single_id else f"{_short(i)} ({lab})")]
+            prev_metric = None
             for metric, stat in cols:
+                if prev_metric is not None and (metric == "time") != (prev_metric == "time"):
+                    cells.append(Text("│", style="dim"))
+                prev_metric = metric
                 col_id = f"{metric}:{stat}"
                 factor, unit, best, worst = cscale[col_id]
                 if (col_id, i, lab) not in values:

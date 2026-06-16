@@ -15,8 +15,7 @@ both metrics. memray-precision (it sees numpy/C allocations), not coarse RSS sam
 
 ## Quickstart
 
-A **drop-in** for an existing pytest-benchmark suite: add `--benchmark-memory` and every
-`benchmark(...)` call also records peak memory — no test changes.
+A **drop-in** for an existing pytest-benchmark suite — add `--benchmark-memory`, no test changes:
 
 ```bash
 pytest --benchmark-only --benchmark-memory --benchmark-columns=min,mean,median
@@ -30,52 +29,38 @@ pytest --benchmark-only --benchmark-memory --benchmark-columns=min,mean,median
   test_sort[1000000]   3,667.6250 (121.41)   4,427.5485 (118.54)   4,361.7500 (112.93)   │         7,812.50    7,812.50   7,812.50
 ```
 
-Your pytest-benchmark timing table — full default `Min/Max/Mean/StdDev/Median/IQR/Outliers/OPS/
-Rounds/Iterations`, trimmed here with `--benchmark-columns` — untouched, with the memory pass
-folded in right of the `│`: `peak` spreads into `min`/`mean`/`max` (and `allocated` /
-`allocations` via `--benchmark-memory-columns`). That pass is *separate and untimed*, so the
-allocator hooks cost the timing nothing. Add `--benchmark-json=run.json` to persist both under
-one id; for memory on only a few tests, use the `benchmark_memory` fixture instead of the flag.
+Your pytest-benchmark timing table, untouched, with the memory pass folded in right of the `│`
+— a *separate, untimed* memray pass (`peak` spreads into min/mean/max; `allocated` /
+`allocations` are opt-in).
 → [Getting started](https://fluxopt.github.io/pytest-benchmem/getting-started/) ·
-[Metrics & `--stat`](https://fluxopt.github.io/pytest-benchmem/metrics/)
+[Metrics & options](https://fluxopt.github.io/pytest-benchmem/metrics/)
 
-## The CLI
+## Compare, gate, plot
 
-**Compare & gate CI.** A per-benchmark table — `time` and `peak` across the full
-`min`/`max`/`mean`/`median`/`stddev` grid by default — or fail the build on a regression:
-
-```bash
-benchmem compare base.json head.json                      # the table below
-benchmem compare base.json head.json --fail-on peak:10%   # exit non-zero past a threshold
-```
+**`benchmem compare`** — a per-benchmark table (`time │ peak` across every stat, each cell a
+relative `(×)` multiplier vs the best run), or `--fail-on` to fail CI on a regression:
 
 ```
 test_build[n=5000]
-             time (s)     time (s)      time (s)      time (s)      time (s)     peak (MiB)     peak (MiB)     peak (MiB)     peak (MiB)      peak (KiB)
- name             min          max          mean        median        stddev            min            max           mean         median          stddev
-──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
- (base)       2 (1.0)    2.3 (1.0)    2.12 (1.0)    2.08 (1.0)    0.09 (1.0)    60.00 (1.0)    60.50 (1.0)    60.23 (1.0)    60.20 (1.0)    210.41 (1.0)
- (head)   2.05 (1.02)   2.4 (1.04)   2.18 (1.03)   2.12 (1.02)   0.11 (1.22)   72.00 (1.20)   73.20 (1.21)   72.53 (1.20)   72.40 (1.20)   510.86 (2.43)
+             time (s)     time (s)      time (s)      time (s)      time (s)         peak (MiB)     peak (MiB)     peak (MiB)     peak (MiB)     peak (KiB)
+ name             min          max          mean        median        stddev   │            min            max           mean         median         stddev
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ (base)       2 (1.0)    2.3 (1.0)    2.12 (1.0)    2.08 (1.0)    0.09 (1.0)   │    60.00 (1.0)    60.50 (1.0)    60.23 (1.0)    60.20 (1.0)    210.41 (1.0)
+ (head)   2.05 (1.02)   2.4 (1.04)   2.18 (1.03)   2.12 (1.02)   0.11 (1.22)   │   72.00 (1.20)   73.20 (1.21)   72.53 (1.20)   72.40 (1.20)   510.86 (2.43)
 ```
 
-One sub-table per benchmark, a row per run; each cell is relative to that benchmark's best run
-as a `(×)` multiplier (best green, worst red), so the `peak +20%` regression shows across every
-stat at once. Narrow with `--columns` / `--stat` / `--group-by`. Gate **inline** in the run
-too, and add `--benchmark-memory-profile DIR` to keep the memray `.bin` of each offending id so
-`memray flamegraph` shows *where* it grew.
-→ [Compare & gate CI](https://fluxopt.github.io/pytest-benchmem/compare-plot/)
+Gate inline in the run too (`--benchmark-memory-compare-fail`), and `--benchmark-memory-profile
+DIR` keeps the memray `.bin` of each offender so `memray flamegraph` shows *where* it grew.
 
-**Plot across inputs & versions.** Dims-aware plotly views — scaling (cost vs input size),
-A/B scatter, version sweeps:
+**`benchmem plot` / `sweep`** — dims-aware plotly views (scaling vs input size, A/B scatter,
+version sweeps) and cross-version runs from one command:
 
 ```bash
-benchmem plot run.json --columns peak                       # peak vs the parametrized dim
-benchmem sweep mypkg 1.2.0 1.3.0 main --suite bench/        # run a suite across versions → compare/plot
+benchmem plot run.json --columns peak
+benchmem sweep mypkg 1.2.0 1.3.0 main --suite bench/
 ```
 
-`@pytest.mark.parametrize` params become the dims the plots scale by, and
-`@pytest.mark.benchmem(max_peak="100MiB")` sets an absolute per-test ceiling.
-→ [Plot](https://fluxopt.github.io/pytest-benchmem/compare-plot/) ·
+→ [Compare & gate CI](https://fluxopt.github.io/pytest-benchmem/compare-plot/) ·
 [Sweeps](https://fluxopt.github.io/pytest-benchmem/sweeps/) ·
 [Dims](https://fluxopt.github.io/pytest-benchmem/dims/)
 
@@ -86,12 +71,10 @@ sampling (ASV's `peakmem`) misses and folds out interpreter baseline. pytest-ben
 pytest-benchmark for timing and reads/writes its JSON — it doesn't reimplement timing, a CI
 dashboard ([CodSpeed]), or cross-commit history ([ASV]).
 
-**vs [pytest-memray]** — complements, not rivals; both are thin layers over memray, pointed
-opposite ways. pytest-memray is a *guardrail*: `limit_memory` / leak detection over the
-**whole test**. pytest-benchmem is a *benchmark*: it measures **only the benchmarked action**,
-alongside timing, and lets you **compare, sweep, and plot** it across inputs and versions.
-(Don't run `pytest --memray` and a benchmem fixture on the *same* test — memray won't nest two
-trackers.)
+**vs [pytest-memray]** — complements, not rivals; both wrap memray, pointed opposite ways.
+pytest-memray is a *guardrail* (`limit_memory` / leak detection over the whole test);
+pytest-benchmem is a *benchmark* — only the benchmarked action, alongside timing, **compared,
+swept, and plotted** across inputs and versions.
 
 ## Install
 
@@ -100,8 +83,8 @@ uv add pytest-benchmem            # the fixture + flag + memray engine
 uv add "pytest-benchmem[plot]"    # + the plot/compare/sweep CLI (pandas, plotly, typer)
 ```
 
-memray is Linux/macOS only, so Windows installs cleanly with timing-only (the memory pass
-raises a clear error there).
+memray is Linux/macOS only; Windows installs cleanly with timing-only (the memory pass raises a
+clear error there).
 
 ## Status
 
