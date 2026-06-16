@@ -26,7 +26,7 @@ Hand the per-version JSONs (oldest → newest) straight to `benchmem compare` fo
 one row per benchmark, one column per version, lightest value tinted green, heaviest red:
 
 ```bash
-benchmem compare 1.2.0.json 1.3.0.json main.json --metric peak
+benchmem compare 1.2.0.json 1.3.0.json main.json --columns peak
 ```
 
 For a picture, point `benchmem plot` at the same files — with 3+ runs it defaults to the
@@ -36,7 +36,8 @@ For a picture, point `benchmem plot` at the same files — with 3+ runs it defau
 benchmem plot 1.2.0.json 1.3.0.json main.json --metric peak
 ```
 
-Either way, pick `--metric time` or any memory metric. See
+`compare` shows `time` and `peak` across every stat by default (pick metrics with
+`--columns`, a stat with `--stat`); `plot` takes one `--metric`. See
 [Compare & gate CI](compare-plot.md) for the other views.
 
 ---

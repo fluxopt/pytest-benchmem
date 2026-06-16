@@ -35,7 +35,7 @@ def _run(tmp_path, name, benchmarks):
 
 
 def _bm(name, *, t=1.0, peak=None):
-    bm = {"fullname": name, "stats": {"min": t}}
+    bm = {"fullname": name, "stats": {s: t for s in ("min", "max", "mean", "median", "stddev")}}
     if peak is not None:
         bm["extra_info"] = {
             "benchmem": {"peak_bytes": [peak], "allocations": [0], "total_bytes": [peak]}
@@ -60,10 +60,10 @@ def test_compare_prints_table(tmp_path):
     assert "(2.00)" in result.output and "time (s)" in result.output
 
 
-def test_compare_metric_both_columns(tmp_path):
+def test_compare_columns_selects_time_and_peak(tmp_path):
     a = _run(tmp_path, "base.json", [_bm("test_x", t=1.0, peak=10 * 1024**2)])
     b = _run(tmp_path, "head.json", [_bm("test_x", t=1.0, peak=20 * 1024**2)])
-    result = runner.invoke(app, ["compare", str(a), str(b), "--metric", "both"])
+    result = runner.invoke(app, ["compare", str(a), str(b), "--columns", "time,peak"])
     assert result.exit_code == 0, _text(result)
     assert "time (s)" in result.output and "peak (MiB)" in result.output
 
