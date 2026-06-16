@@ -299,8 +299,9 @@ def compare_runs(
             uname, factor = byte_unit(present) if unit == "B" and present else (unit, 1.0)
             best, worst = (min(present), max(present)) if present else (None, None)
             cscale[col_id] = (factor, unit, best, worst)
-            table.add_column(f"{metric} ({uname})\n{stat}" if uname else f"{metric}\n{stat}",
-                             justify="right")
+            table.add_column(
+                f"{metric} ({uname})\n{stat}" if uname else f"{metric}\n{stat}", justify="right"
+            )
 
         for i, lab in rows:
             cells = [Text(f"({lab})" if single_id else f"{_short(i)} ({lab})")]

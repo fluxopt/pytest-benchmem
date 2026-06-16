@@ -38,7 +38,6 @@ MetricOpt = Annotated[
 ]
 
 
-
 def _fail(msg: str, code: int = 1) -> typer.Exit:
     """Print ``msg`` in red to stderr; return a :class:`typer.Exit` for the caller to raise."""
     typer.secho(msg, fg=typer.colors.RED, err=True)
@@ -230,9 +229,7 @@ def compare(
     from pytest_benchmem.compare import compare_runs, find_regressions, parse_threshold
 
     with _exit_on_value_error():
-        compare_runs(
-            runs, columns=columns, group_by=group_by, stat=stat, sort=sort, csv=csv
-        )
+        compare_runs(runs, columns=columns, group_by=group_by, stat=stat, sort=sort, csv=csv)
 
     if not fail_on:
         return

@@ -241,8 +241,10 @@ def test_stat_narrows_to_a_single_column(tmp_path):
 def test_stat_selects_the_time_distribution(tmp_path):
     # --stat reads pytest-benchmark's own stat for time too (here max), not just memory
     def _t(max_):
-        return {"fullname": "test_x", "stats": {"min": 1.0, "max": max_, "mean": 2.0,
-                                                "median": 2.0, "stddev": 0.5}}
+        return {
+            "fullname": "test_x",
+            "stats": {"min": 1.0, "max": max_, "mean": 2.0, "median": 2.0, "stddev": 0.5},
+        }
 
     pa, pb = _write(tmp_path / "a.json", [_t(3.0)]), _write(tmp_path / "b.json", [_t(9.0)])
     out = StringIO()
