@@ -149,8 +149,8 @@ def _compute_statistics() -> Callable[[str], Any]:
 _NESTED_TRACKER_MARKER = "more than one Tracker"
 
 
-def _track_once(action: Action) -> Measurement:
-    """One fresh tracker run → a :class:`Measurement` via memray stats.
+def _track_to(out: Path, action: Action) -> Measurement:
+    """Track ``action`` to the ``out`` ``.bin`` (which memray creates) → a :class:`Measurement`.
 
     memray allows only one active ``Tracker`` per process, so if one is already
     running — most often pytest-memray's ``--memray`` profiling the same test — the
@@ -160,27 +160,39 @@ def _track_once(action: Action) -> Measurement:
     import memray
 
     compute_statistics = _compute_statistics()
+    try:
+        with memray.Tracker(out):
+            action()
+    except RuntimeError as exc:
+        if _NESTED_TRACKER_MARKER in str(exc):
+            raise RuntimeError(
+                "pytest-benchmem couldn't start its memray pass because another memray "
+                "Tracker is already active — most likely pytest-memray's `--memray` running "
+                "on the same test. memray allows only one Tracker per process. Run the two "
+                "on different tests (or different sessions): pytest-memray for whole-test "
+                "limits/leaks, pytest-benchmem for the benchmarked action's memory."
+            ) from exc
+        raise
+    s = compute_statistics(str(out))
+    return Measurement(
+        peak_bytes=int(s.peak_memory_allocated),
+        allocations=int(s.total_num_allocations),
+        total_bytes=int(s.total_memory_allocated),
+    )
+
+
+def _track_once(action: Action, keep_bin: Path | None = None) -> Measurement:
+    """One fresh tracker run → a :class:`Measurement`.
+
+    With ``keep_bin`` the profile ``.bin`` is written there and retained (for a later
+    :func:`render_flamegraph`); otherwise it goes to a temp dir and is discarded.
+    """
+    if keep_bin is not None:
+        keep_bin.parent.mkdir(parents=True, exist_ok=True)
+        keep_bin.unlink(missing_ok=True)  # memray must create the file itself
+        return _track_to(keep_bin, action)
     with tempfile.TemporaryDirectory(prefix="pytest-benchmem-") as tmp:
-        out = Path(tmp) / "track.bin"  # memray must create the file itself
-        try:
-            with memray.Tracker(out):
-                action()
-        except RuntimeError as exc:
-            if _NESTED_TRACKER_MARKER in str(exc):
-                raise RuntimeError(
-                    "pytest-benchmem couldn't start its memray pass because another memray "
-                    "Tracker is already active — most likely pytest-memray's `--memray` running "
-                    "on the same test. memray allows only one Tracker per process. Run the two "
-                    "on different tests (or different sessions): pytest-memray for whole-test "
-                    "limits/leaks, pytest-benchmem for the benchmarked action's memory."
-                ) from exc
-            raise
-        s = compute_statistics(str(out))
-        return Measurement(
-            peak_bytes=int(s.peak_memory_allocated),
-            allocations=int(s.total_num_allocations),
-            total_bytes=int(s.total_memory_allocated),
-        )
+        return _track_to(Path(tmp) / "track.bin", action)
 
 
 #: Adaptive-sampling defaults, used when ``repeats`` is ``None`` (the default). memray
@@ -202,6 +214,7 @@ def measure_memory(
     min_passes: int = _ADAPTIVE_MIN_PASSES,
     max_passes: int = _ADAPTIVE_MAX_PASSES,
     patience: int = _ADAPTIVE_PATIENCE,
+    keep_bin: Path | None = None,
 ) -> MemoryResult:
     """Run ``action()`` under ``memray.Tracker`` → :class:`MemoryResult`, one pass per repeat.
 
@@ -225,6 +238,8 @@ def measure_memory(
         min_passes: Minimum passes when sampling adaptively.
         max_passes: Hard ceiling on passes when sampling adaptively.
         patience: Stop adaptive sampling after this many consecutive passes with no new min.
+        keep_bin: If set, the *first* pass's profile ``.bin`` is retained here (for a later
+            :func:`render_flamegraph`); the rest still go to temp dirs and are discarded.
 
     Returns:
         A :class:`MemoryResult` over every pass run.
@@ -232,7 +247,9 @@ def measure_memory(
     _require_memray()
 
     if repeats is not None:
-        samples = [_run_pass(action) for _ in range(max(1, repeats))]
+        samples = [
+            _run_pass(action, keep_bin=keep_bin if i == 0 else None) for i in range(max(1, repeats))
+        ]
         return MemoryResult(tuple(samples))
 
     samples = []
@@ -241,7 +258,7 @@ def measure_memory(
     cap = max(min_passes, max_passes)
     start = perf_counter()
     while True:
-        sample = _run_pass(action)
+        sample = _run_pass(action, keep_bin=keep_bin if not samples else None)
         samples.append(sample)
         if best is None or sample.peak_bytes < best:
             best, stale = sample.peak_bytes, 0
@@ -256,9 +273,9 @@ def measure_memory(
     return MemoryResult(tuple(samples))
 
 
-def _run_pass(action: Action) -> Measurement:
+def _run_pass(action: Action, keep_bin: Path | None = None) -> Measurement:
     """One tracked pass, then a ``gc.collect()`` so the next pass starts from a clean heap."""
-    sample = _track_once(action)
+    sample = _track_once(action, keep_bin=keep_bin)
     gc.collect()
     return sample
 

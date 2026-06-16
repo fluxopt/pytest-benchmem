@@ -188,6 +188,37 @@ pytest --benchmark-only --benchmark-memory --benchmark-memory-compare-fail=peak:
 > Without a prior saved run, the inline gate is a no-op — it prints *"no prior run with memory
 > to compare against"* and passes. Save a baseline first.
 
+### Profile the offenders
+
+A `peak +20%` number says *that* a benchmark regressed, not *where*. Add
+`--benchmark-memory-profile DIR` to keep the memray profile (`.bin`) for each regressing id,
+so you can render the allocating call paths after the fact:
+
+```bash
+pytest --benchmark-only --benchmark-memory \
+       --benchmark-memory-compare-fail=peak:10% \
+       --benchmark-memory-profile profiles/
+# -> profiles/<id>.bin for every id over threshold; clean ids get nothing
+```
+
+The run prints a ready-to-paste command per saved profile:
+
+```text
+benchmem: saved 1 memory profile(s) to profiles/ — render with:
+    memray flamegraph profiles/test_solve.bin
+```
+
+The `.bin` is memray's raw capture, so the same file also feeds `memray tree` / `summary` /
+`stats` — pick the lens you want. Off by default (retaining `.bin`s costs disk), and in CI
+it's the natural artifact to upload and render locally on the PR.
+
+**Which benchmarks get a profile** follows the gate:
+
+- **with** `--benchmark-memory-compare-fail` → only the **regressing** ids (keep the failing
+  run cheap and the output small);
+- **without** a fail-gate → **every measured benchmark** — drop the gate and keep
+  `--benchmark-memory-profile DIR` alone to archive them all, regressing or not.
+
 A minimal GitHub Actions job using the two-file approach, caching the baseline across runs:
 
 ```yaml

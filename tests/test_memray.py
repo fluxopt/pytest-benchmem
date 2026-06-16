@@ -6,7 +6,7 @@ import platform
 import pytest
 
 from pytest_benchmem import measure_memory, measure_peak
-from pytest_benchmem.memray import Measurement, MemoryResult
+from pytest_benchmem.memray import Measurement, MemoryResult, _track_once
 from pytest_benchmem.snapshot import memory_from_pytest_benchmark
 
 pytest.importorskip("memray")
@@ -39,6 +39,28 @@ def test_repeats_takes_min_of_n():
     small = measure_peak(lambda: [0] * 100_000, repeats=3)
     big = measure_peak(lambda: [0] * 5_000_000, repeats=3)
     assert big > small
+
+
+def test_keep_bin_retains_the_profile(tmp_path):
+    binp = tmp_path / "sub" / "track.bin"
+    _track_once(lambda: [bytearray(1024) for _ in range(50)], keep_bin=binp)
+    assert binp.exists() and binp.stat().st_size > 0  # parent created, .bin kept
+
+
+def test_measure_memory_keep_bin_retains_first_pass(tmp_path):
+    binp = tmp_path / "track.bin"
+    measure_memory(lambda: [bytearray(512) for _ in range(20)], repeats=3, keep_bin=binp)
+    assert binp.exists()  # adaptive/fixed passes still leave exactly the one retained bin
+
+
+def test_kept_bin_is_a_valid_memray_capture(tmp_path):
+    # the retained .bin must be renderable by memray's own reporters (flamegraph/tree/…)
+    binp = tmp_path / "track.bin"
+    _track_once(lambda: [bytearray(1024) for _ in range(100)], keep_bin=binp)
+    from memray._memray import compute_statistics
+
+    stats = compute_statistics(str(binp))
+    assert stats.peak_memory_allocated > 0  # a real capture memray can read back
 
 
 def test_measure_memory_returns_result_with_allocations():
@@ -89,7 +111,9 @@ def _feed_peaks(monkeypatch, peaks):
 
     seq = iter(peaks)
     monkeypatch.setattr(m, "_require_memray", lambda: None)
-    monkeypatch.setattr(m, "_track_once", lambda action: Measurement(next(seq), 1, 1))
+    monkeypatch.setattr(
+        m, "_track_once", lambda action, keep_bin=None: Measurement(next(seq), 1, 1)
+    )
 
 
 def test_explicit_repeats_runs_exactly_n(monkeypatch):

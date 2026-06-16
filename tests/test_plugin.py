@@ -519,3 +519,46 @@ def test_memory_compare_rejects_time_field(pytester):
     cand = _run_compare(pytester, _SMALL, storage, "--benchmark-memory-compare-fail=time:5%")
     assert cand.ret != 0
     cand.stderr.fnmatch_lines(["*can't gate on time*"])
+
+
+# --- --benchmark-memory-profile: keep the .bin for debugging ---------------------
+
+_TWO = (
+    "def test_small(benchmark):\n    benchmark(lambda: [0] * 50_000)\n\n"
+    "def test_big(benchmark):\n    benchmark(lambda: [0] * 6_000_000)\n"
+)
+
+
+def test_profile_no_gate_saves_every_measured(pytester):
+    """Without a gate, --benchmark-memory-profile keeps a .bin per measured benchmark."""
+    pytester.makepyfile(_TWO)
+    out = pytester.path / "profiles"
+    result = pytester.runpytest_subprocess(
+        "--benchmark-only",
+        "--benchmark-memory",
+        f"--benchmark-memory-profile={out}",
+        "-p",
+        "no:cacheprovider",
+    )
+    result.assert_outcomes(passed=2)
+    bins = {p.name for p in out.glob("*.bin")}
+    assert any("test_small" in n for n in bins) and any("test_big" in n for n in bins)
+    result.stdout.fnmatch_lines(["*saved 2 memory profile(s)*", "*memray flamegraph*"])
+
+
+def test_profile_with_gate_saves_offenders_only(pytester):
+    """With a fail-gate, only the regressing id's .bin is kept (clean ids get nothing)."""
+    storage = str(pytester.path / "store")
+    out = pytester.path / "profiles"
+    _run_compare(pytester, _SMALL, storage, "--benchmark-autosave").assert_outcomes(passed=1)
+    cand = _run_compare(
+        pytester,
+        _BIG,
+        storage,
+        "--benchmark-memory-compare-fail=peak:10%",
+        f"--benchmark-memory-profile={out}",
+    )
+    assert cand.ret != 0  # the gate still fails the session
+    bins = [p.name for p in out.glob("*.bin")]
+    assert len(bins) == 1 and "test_m" in bins[0]  # only the offender's profile kept
+    cand.stdout.fnmatch_lines(["*saved 1 memory profile(s)*", "*memray flamegraph*"])
