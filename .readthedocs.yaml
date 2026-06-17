@@ -8,4 +8,7 @@ build:
     - pip install uv
     - uv sync --group docs
     - uv run jupytext --to ipynb docs/getting-started.md docs/metrics.md docs/dims.md docs/compare-plot.md docs/reference.md
-    - uv run mkdocs build --strict --site-dir "$READTHEDOCS_OUTPUT/html"
+    # RTD sets NO_COLOR in the build env; rich honors it and strips the typer
+    # --help colors from the mkdocs-typer2 termynal capture (bold/dim survive,
+    # foreground colors don't). Drop it for the build so the capture stays colored.
+    - env -u NO_COLOR uv run mkdocs build --strict --site-dir "$READTHEDOCS_OUTPUT/html"
