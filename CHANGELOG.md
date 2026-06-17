@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.1](https://github.com/fluxopt/pytest-benchmem/compare/v0.4.0...v0.4.1) (2026-06-17)
+
+
+### Features
+
+* `benchmem flamegraph` — one-step render of a kept profile (closes [#114](https://github.com/fluxopt/pytest-benchmem/issues/114)) ([#118](https://github.com/fluxopt/pytest-benchmem/issues/118)) ([95d2f8d](https://github.com/fluxopt/pytest-benchmem/commit/95d2f8d127bbc64b43423a3555893f1fd61c8a01))
+* isolated RSS metric — opt-in whole-process peak memory (Phase 1 of [#109](https://github.com/fluxopt/pytest-benchmem/issues/109)) ([#110](https://github.com/fluxopt/pytest-benchmem/issues/110)) ([782fec9](https://github.com/fluxopt/pytest-benchmem/commit/782fec9f853c914ea9d11a09a7aa67b48437c73a))
+* native-trace capture for the kept memory profile (closes [#113](https://github.com/fluxopt/pytest-benchmem/issues/113)) ([#117](https://github.com/fluxopt/pytest-benchmem/issues/117)) ([9ff5f2a](https://github.com/fluxopt/pytest-benchmem/commit/9ff5f2ad6e001d8cb907f8d153842eb0a02218ab))
+* reuse pedantic `setup` for memory samples — stateful benchmarks stay accurate (closes [#105](https://github.com/fluxopt/pytest-benchmem/issues/105)) ([#106](https://github.com/fluxopt/pytest-benchmem/issues/106)) ([d1de57a](https://github.com/fluxopt/pytest-benchmem/commit/d1de57a9b33ff7a43e2060b6f5f3288ccff5a0c8))
+* rss isolate is marker-only opt-in; warn on heavy pickled actions ([#115](https://github.com/fluxopt/pytest-benchmem/issues/115)) ([fc2e4cf](https://github.com/fluxopt/pytest-benchmem/commit/fc2e4cfbe377e6f1d519f8c13642d60ba607a221))
+* warmup pass + measure memory before timing (cold floor) ([#108](https://github.com/fluxopt/pytest-benchmem/issues/108)) ([95c021b](https://github.com/fluxopt/pytest-benchmem/commit/95c021b50755d8a88b0a606eee0a6005b7d9c72a))
+
 ## [0.4.0](https://github.com/fluxopt/pytest-benchmem/compare/v0.3.0...v0.4.0) (2026-06-16)
 
 
