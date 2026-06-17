@@ -451,11 +451,11 @@ def test_isolate_with_setup_is_rejected_with_specific_message():
     'make it top-level' (the generic pickling error) wouldn't help here."""
 
     class _Bench:
-        extra_info: dict = {}
+        extra_info: dict[str, object] = {}
         fullname = "t"
 
     with pytest.raises(ValueError, match="per-sample"):
-        plugin._record_memory(_Bench(), lambda: None, setup=lambda: None, isolate=True)
+        plugin._record_memory(_Bench(), lambda: None, setup=lambda: None, isolate=True)  # type: ignore[arg-type]
 
 
 def _result(peak: int, allocs: int = 1, total: int = 1) -> MemoryResult:
