@@ -31,7 +31,7 @@ def test_build(benchmark_memory):
 |---|---|---|
 | `repeats` | *auto* | force a fixed `N` memray passes for this test (default: adaptive — see below). **Every** pass is kept (the blob stores the whole series); the headline `peak` is the *minimum* across them, and `--stat` reports any other. Overrides the suite-wide `--benchmark-memory-repeats`. |
 | `warmup` | `1` | untracked dry-runs of the action before measuring, to shed one-time costs (lazy imports, first-touch caches). `0` disables. Overrides the suite-wide `--benchmark-memory-warmup`. |
-| `isolate` | `False` | run each memray pass in a **fresh process** and also record whole-process resident memory as the `rss` metric — the physical/OOM-relevant peak memray's logical heap can't give. Needs a **top-level, picklable** benchmarked function (not a lambda/closure). Overrides the suite-wide `--benchmark-memory-isolate`. |
+| `isolate` | `False` | run each memray pass in a **fresh process** and also record whole-process resident memory as the `rss` metric — the physical/OOM-relevant peak memray's logical heap can't give. **Per-test only** (no suite-wide flag): `rss` is a whole-job capacity number, meaningful only for build+operate benchmarks, so you mark the specific ones. Needs a **top-level, picklable** benchmarked function (see the whole-job warning below). |
 | `max_peak` | — | fail the test if the headline `peak` exceeds this **absolute** ceiling. A size string (`"100MiB"`, units `B`/`KiB`/`MiB`/`GiB`) or a bare int (bytes). |
 | `max_allocated` | — | as `max_peak`, on `allocated` (total bytes). |
 | `max_allocations` | — | as above, on the `allocations` *count* — a bare number (no unit). |

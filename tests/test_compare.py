@@ -364,11 +364,11 @@ def test_rss_gate_without_isolated_data_is_loud(tmp_path):
 
     a = _write(tmp_path / "base.json", [_bm("x", peak=10)])  # no rss
     b = _write(tmp_path / "head.json", [_bm("x", peak=10)])
-    with pytest.raises(ValueError, match="--benchmark-memory-isolate"):
+    with pytest.raises(ValueError, match="isolate=True"):
         find_regressions(a, b, [parse_threshold("rss:10%")])
 
     blob = {"peak_bytes": [10], "allocations": [1], "total_bytes": [10]}  # in-process blob
-    with pytest.raises(ValueError, match="--benchmark-memory-isolate"):
+    with pytest.raises(ValueError, match="isolate=True"):
         memory_regressions({"x": blob}, {"x": blob}, [parse_threshold("rss:10%")])
 
 

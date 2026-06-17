@@ -273,11 +273,11 @@ def compare_runs(
     console = Console(file=out or sys.stdout, width=_COMPARE_WIDTH)
     if "rss" in metrics and not any(col.startswith("rss:") for col in with_data):
         # rss was asked for but no run carries it — say so, rather than silently dropping the
-        # column (it conflates "timing-only file" with "forgot --benchmark-memory-isolate").
+        # column (it conflates "timing-only file" with "forgot to mark the benchmark isolate").
         console.print(
             Text(
-                "rss not recorded in these runs — re-run the benchmarks with "
-                "--benchmark-memory-isolate.",
+                "rss not recorded in these runs — mark the capacity benchmarks with "
+                "@pytest.mark.benchmem(isolate=True) and re-run.",
                 style="yellow",
             )
         )
@@ -448,8 +448,9 @@ def _regressions_for(
 #: Raised when an ``rss`` gate has no data on both sides — `rss` exists only for isolated runs,
 #: so silently passing would be a gate that can never fire. Loud beats a false green in CI.
 _RSS_GATE_EMPTY = (
-    "--fail-on rss: no benchmark carries rss in both runs — rss is recorded only with "
-    "--benchmark-memory-isolate. Re-run the benchmarks isolated, or drop the rss gate."
+    "--fail-on rss: no benchmark carries rss in both runs — rss is recorded only for benchmarks "
+    "marked @pytest.mark.benchmem(isolate=True). Mark the capacity benchmarks, or drop the rss "
+    "gate."
 )
 
 

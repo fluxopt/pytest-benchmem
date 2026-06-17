@@ -177,21 +177,18 @@ def _warmup_from_node(node: Any) -> int:
     return _global_warmup(getattr(node, "config", None))
 
 
-def _global_isolate(config: Any) -> bool:
-    """Suite-wide ``--benchmark-memory-isolate`` (off by default)."""
-    if config is None:
-        return False
-    return bool(config.getoption("--benchmark-memory-isolate"))
-
-
 def _isolate_from_node(node: Any) -> bool:
-    """Resolve isolation: ``@pytest.mark.benchmem(isolate=...)`` wins, else the suite-wide
-    ``--benchmark-memory-isolate``, else ``False``.
+    """Whether to isolate (and record ``rss``) for this test — opt-in **per test only**, via
+    ``@pytest.mark.benchmem(isolate=True)``; off otherwise.
+
+    There is deliberately no suite-wide flag: unlike memray (valid for any benchmark), ``rss``
+    is a whole-process, build+operate number that's only meaningful for capacity benchmarks and
+    untruthful for single-phase ones — so it's a per-benchmark declaration, not a suite mode.
     """
     marker = node.get_closest_marker(MARKER) if node is not None else None
     if marker is not None and "isolate" in marker.kwargs:
         return bool(marker.kwargs["isolate"])
-    return _global_isolate(getattr(node, "config", None))
+    return False
 
 
 def _parse_limit(kwarg: str, value: Any, *, is_bytes: bool) -> float:
@@ -453,9 +450,10 @@ def benchmark_memory(
     run goes first; the pass count then adapts and the headline peak is the **min** across
     passes. ``@pytest.mark.benchmem(repeats=N)`` forces a fixed count and ``warmup=N`` sets the
     warmup runs, overriding ``--benchmark-memory-repeats`` / ``--benchmark-memory-warmup``.
-    ``isolate=True`` (or ``--benchmark-memory-isolate``) runs each pass in a fresh process and
-    also records whole-process ``rss`` (needs a top-level, picklable benchmarked function). For
-    an existing suite, prefer the ``--benchmark-memory`` flag over rewriting tests.
+    ``@pytest.mark.benchmem(isolate=True)`` (per test only — there is no suite-wide flag) runs
+    each pass in a fresh process and also records whole-process ``rss``; it needs a top-level,
+    picklable build+operate benchmarked function (``rss`` is a whole-job capacity number, see the
+    docs). For an existing suite, prefer the ``--benchmark-memory`` flag over rewriting tests.
     """
     return MemoryBenchmark(
         benchmark,
@@ -626,17 +624,6 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "costs (lazy imports, first-touch caches) so the measured passes aren't inflated by "
         "cold start. Overridden per-test by @pytest.mark.benchmem(warmup=N). Default: 1; set 0 "
         "to disable.",
-    )
-    group.addoption(
-        "--benchmark-memory-isolate",
-        action="store_true",
-        default=False,
-        help="Run each memray pass in a fresh process and also record whole-process resident "
-        "memory (RSS, the `rss` metric) — the physical/OOM-relevant peak memray's logical heap "
-        "can't give. Needs a top-level, picklable benchmarked function. Each pass is a fresh "
-        "interpreter re-importing your code + memray, so an isolated run is markedly slower than "
-        "in-process — consider pinning --benchmark-memory-repeats. Overridden per-test by "
-        "@pytest.mark.benchmem(isolate=True/False). Off by default.",
     )
     group.addoption(
         "--benchmark-memory-max-time",

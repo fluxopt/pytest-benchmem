@@ -383,23 +383,29 @@ def _isolated_child(queue: Any, action: Action, setup: Action | None, warmup: in
         queue.put(exc)
 
 
+#: Pickled-action size above which we warn it's shipping heavy pre-built state — a recipe over
+#: lightweight inputs pickles to bytes/KiB; a partial closing over a built object is MiB+, and
+#: then the isolated rss measures *deserializing* it, not building it.
+_HEAVY_PICKLE_WARN_BYTES = 1024 * 1024
+
+
 def _isolated_run(action: Action, setup: Action | None, warmup: int) -> Measurement:
     """One measured pass in a **fresh** spawned process, so the heap is cold and ``ru_maxrss``
     is attributable to the action. Returns the child's :class:`Measurement` incl. ``rss_bytes``.
 
     The action (and ``setup``) must be picklable for ``spawn`` — a top-level callable, not a
     lambda/closure. A non-picklable target, or a child that dies (segfault/OOM), raises an
-    actionable error.
+    actionable error; a heavy pickled payload warns (it'd measure deserialization, not building).
     """
     import multiprocessing
-    from pickle import PicklingError
+    import pickle
+    import warnings
 
-    ctx = multiprocessing.get_context("spawn")
-    queue = ctx.SimpleQueue()
-    proc = ctx.Process(target=_isolated_child, args=(queue, action, setup, warmup))
+    # Pickle up front: catch a non-picklable target with an actionable error, and flag a heavy
+    # payload (closing over pre-built state → rss measures deserializing it, not building).
     try:
-        proc.start()
-    except (PicklingError, AttributeError, TypeError) as exc:
+        payload = pickle.dumps((action, setup))
+    except (pickle.PicklingError, AttributeError, TypeError) as exc:
         raise RuntimeError(
             "isolate=True needs a picklable action — a top-level function that builds what it "
             "operates on from lightweight args, e.g. measure_memory(partial(build_and_write, "
@@ -408,6 +414,18 @@ def _isolated_run(action: Action, setup: Action | None, warmup: int) -> Measurem
             "a whole-job (build+operate) number — the child starts empty, so the construction "
             f"must be inside the callable. Or measure in-process (isolate=False). Pickling: {exc}"
         ) from exc
+    if len(payload) > _HEAVY_PICKLE_WARN_BYTES:
+        warnings.warn(
+            f"isolate=True action pickles to {len(payload) / 1024**2:.1f} MiB — it likely closes "
+            "over heavy pre-built state, so the isolated rss measures *deserializing* that state, "
+            "not building it. Build from lightweight inputs inside the callable (see the docs).",
+            stacklevel=2,
+        )
+
+    ctx = multiprocessing.get_context("spawn")
+    queue = ctx.SimpleQueue()
+    proc = ctx.Process(target=_isolated_child, args=(queue, action, setup, warmup))
+    proc.start()
     proc.join()
     if queue.empty():  # nothing was put → the child died before returning a result
         raise RuntimeError(
