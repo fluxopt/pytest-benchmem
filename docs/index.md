@@ -35,7 +35,7 @@ fails a PR when memory regresses.
 **Look elsewhere when** you want a whole-test memory limit or leak check rather than a
 number on one benchmarked call — that's [pytest-memray](https://pytest-memray.readthedocs.io).
 For where it sits against ASV, CodSpeed, and plain memray, see the
-[README](https://github.com/fluxopt/pytest-benchmem#where-it-sits).
+[README](https://github.com/fluxopt/pytest-benchmem#why-memray-and-where-it-sits).
 
 !!! note "Want memory on specific tests only?"
     `--benchmark-memory` measures the whole suite. To opt in per test instead, swap
