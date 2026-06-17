@@ -34,13 +34,15 @@ DimValue = str | int | float
 #: allocated), ``allocations`` (count). Each names a per-repeat series, so a ``stat``
 #: (see :data:`STATS`) reports its distribution — e.g. ``peak`` with ``--stat max`` is
 #: the worst peak across repeats.
-Metric = Literal["time", "peak", "allocated", "allocations"]
+Metric = Literal["time", "peak", "allocated", "allocations", "rss"]
 
 #: Memory metric → its blob field, which doubles as its ``series`` key (``peak``→``peak_bytes``).
+#: ``rss`` (``rss_bytes``) is present only for isolated runs; benchmarks without it are skipped.
 _METRIC_FIELD = {
     "peak": "peak_bytes",
     "allocated": "total_bytes",
     "allocations": "allocations",
+    "rss": "rss_bytes",
 }
 
 #: ``--stat`` choices → reducer over a per-repeat series. ``pstdev`` (population) so a
@@ -76,7 +78,7 @@ RESERVED_COLUMNS = ("snapshot", "id", "value")
 NODE_DIM_PREFIX = "node."
 
 #: Display unit per memory blob field (count fields have no unit).
-_FIELD_UNIT = {"peak_bytes": "B", "total_bytes": "B", "allocations": ""}
+_FIELD_UNIT = {"peak_bytes": "B", "total_bytes": "B", "allocations": "", "rss_bytes": "B"}
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -249,12 +251,16 @@ def memory_from_pytest_benchmark(
         if reduce is not None:
             series = _field_series(blob, field)
             if series is None:
-                continue
+                continue  # field not in this blob (e.g. rss for an in-process run)
             value = float(reduce(series))
         else:
-            # No stat → the headline scalar: peak = min, allocations/total = the
-            # min-peak run, all exposed as MemoryResult properties named like the field.
-            value = float(getattr(MemoryResult.from_blob(blob), field))
+            # No stat → the headline scalar (a MemoryResult property named like the field):
+            # peak = min, allocations/total = the min-peak run, rss = min ru_maxrss. ``None``
+            # means the field wasn't measured (rss in-process) → skip, as the stat path does.
+            scalar = getattr(MemoryResult.from_blob(blob), field)
+            if scalar is None:
+                continue
+            value = float(scalar)
         samples.append(Sample(id=bm["fullname"], value=value, dims=_all_dims(bm)))
     return p.stem, samples, unit
 

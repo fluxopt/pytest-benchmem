@@ -38,6 +38,7 @@ _FIELD = {
     "peak": ("memory", "peak_bytes", "B"),
     "allocated": ("memory", "total_bytes", "B"),
     "allocations": ("memory", "allocations", ""),
+    "rss": ("memory", "rss_bytes", "B"),
     "time": ("time", "min", "s"),
 }
 
@@ -58,7 +59,7 @@ def _fmt_value(field: str, value: float) -> str:
 
 
 #: Metrics selectable as table columns (each carries its own unit), in canonical order.
-_COLUMN_METRICS: tuple[Metric, ...] = ("time", "peak", "allocated", "allocations")
+_COLUMN_METRICS: tuple[Metric, ...] = ("time", "peak", "allocated", "allocations", "rss")
 
 #: Valid ``--sort`` keys for the comparison table.
 _SORTS = ("name", "value", "change")
@@ -270,6 +271,16 @@ def compare_runs(
         groups.setdefault(_group_of(test_id, dims.get(test_id, {}), group_by), []).append(test_id)
 
     console = Console(file=out or sys.stdout, width=_COMPARE_WIDTH)
+    if "rss" in metrics and not any(col.startswith("rss:") for col in with_data):
+        # rss was asked for but no run carries it — say so, rather than silently dropping the
+        # column (it conflates "timing-only file" with "forgot --benchmark-memory-isolate").
+        console.print(
+            Text(
+                "rss not recorded in these runs — re-run the benchmarks with "
+                "--benchmark-memory-isolate.",
+                style="yellow",
+            )
+        )
     for key in sorted(groups):
         gids = _ordered_ids(groups[key], values, f"{cols[0][0]}:{cols[0][1]}", labels, sort)
         rows = [
@@ -434,17 +445,32 @@ def _regressions_for(
     return out
 
 
+#: Raised when an ``rss`` gate has no data on both sides — `rss` exists only for isolated runs,
+#: so silently passing would be a gate that can never fire. Loud beats a false green in CI.
+_RSS_GATE_EMPTY = (
+    "--fail-on rss: no benchmark carries rss in both runs — rss is recorded only with "
+    "--benchmark-memory-isolate. Re-run the benchmarks isolated, or drop the rss gate."
+)
+
+
 def find_regressions(a: str | Path, b: str | Path, thresholds: list[Threshold]) -> list[Regression]:
     """Ids in both runs whose field grew past a threshold (only growth counts)."""
     regressions: list[Regression] = []
     for th in thresholds:
         base, head = _read_field(a, th.field), _read_field(b, th.field)
+        if th.field == "rss" and not (base.keys() & head.keys()):
+            raise ValueError(_RSS_GATE_EMPTY)
         regressions.extend(_regressions_for(base, head, th))
     return regressions
 
 
 #: Memory-blob key per fail-on field — the fields ``--benchmark-memory-compare-fail`` gates on.
-_BLOB_FIELD = {"peak": "peak_bytes", "allocated": "total_bytes", "allocations": "allocations"}
+_BLOB_FIELD = {
+    "peak": "peak_bytes",
+    "allocated": "total_bytes",
+    "allocations": "allocations",
+    "rss": "rss_bytes",
+}
 
 
 def memory_regressions(
@@ -460,12 +486,16 @@ def memory_regressions(
     from pytest_benchmem.memray import MemoryResult
 
     def headline(blobs: dict[str, dict[str, Any]], attr: str) -> dict[str, float]:
-        # the blob is the per-repeat series; the gate reads its derived headline scalar
-        return {
-            i: float(getattr(MemoryResult.from_blob(b), attr))
-            for i, b in blobs.items()
-            if "peak_bytes" in b
-        }
+        # the blob is the per-repeat series; the gate reads its derived headline scalar.
+        # ``rss`` is ``None`` for in-process blobs — skip those (nothing to gate there).
+        out: dict[str, float] = {}
+        for i, b in blobs.items():
+            if "peak_bytes" not in b:
+                continue
+            scalar = getattr(MemoryResult.from_blob(b), attr)
+            if scalar is not None:
+                out[i] = float(scalar)
+        return out
 
     regressions: list[Regression] = []
     for th in thresholds:
@@ -476,7 +506,8 @@ def memory_regressions(
                 f"(timing is pytest-benchmark's own --benchmark-compare-fail)"
             )
         key = _BLOB_FIELD[th.field]
-        regressions.extend(
-            _regressions_for(headline(base_blobs, key), headline(head_blobs, key), th)
-        )
+        base_h, head_h = headline(base_blobs, key), headline(head_blobs, key)
+        if th.field == "rss" and not (base_h.keys() & head_h.keys()):
+            raise ValueError(_RSS_GATE_EMPTY)
+        regressions.extend(_regressions_for(base_h, head_h, th))
     return regressions

@@ -156,6 +156,22 @@ def test_mem_columns_metric_selection_keeps_order():
     assert headers == ["allocations", "peak (KiB)"]
 
 
+def test_mem_columns_rss_present_for_isolated_omitted_in_process():
+    iso = MemoryResult((Measurement(1024, 1, 10, rss_bytes=2048),))
+    cols = {c.header: c.cell for c in mem_columns([iso], metrics=["peak", "rss"])}
+    assert cols["rss (KiB)"](iso) == "2.00"  # 2048 / 1024
+    inproc = MemoryResult((Measurement(1024, 1, 10),))  # no rss → column dropped entirely
+    assert [c.header for c in mem_columns([inproc], metrics=["peak", "rss"])] == ["peak (KiB)"]
+
+
+def test_mem_columns_rss_placeholder_for_in_process_row_in_mixed_set():
+    iso = MemoryResult((Measurement(1024, 1, 10, rss_bytes=2048),))
+    inproc = MemoryResult((Measurement(1024, 1, 10),))
+    cols = {c.header: c.cell for c in mem_columns([iso, inproc], metrics=["rss"])}
+    assert cols["rss (KiB)"](iso) == "2.00"
+    assert cols["rss (KiB)"](inproc) == "—"  # absent for the in-process row, not a crash
+
+
 def test_mem_columns_stat_selection_adds_stddev_median():
     res = MemoryResult((Measurement(100, 1, 1), Measurement(200, 1, 1), Measurement(300, 1, 1)))
     cols = {
@@ -171,7 +187,9 @@ def test_parse_metrics_and_stats_reject_unknown():
 
     from pytest_benchmem.tables import parse_metrics, parse_stats
 
-    assert parse_metrics(None) == ("peak",)  # peak-only default
+    # default = peak + rss; rss is auto-dropped for in-process runs (no values), so the table is
+    # unchanged there and an isolated run shows its RSS where it was enabled.
+    assert parse_metrics(None) == ("peak", "rss")
     assert parse_stats(None) == ("min", "mean", "max")
     with pytest.raises(ValueError, match="unknown memory metric"):
         parse_metrics(["peak", "bogus"])

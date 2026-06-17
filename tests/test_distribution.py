@@ -35,6 +35,22 @@ def test_from_blob_roundtrips():
     assert MemoryResult.from_blob(res.as_dict()).as_dict() == res.as_dict()
 
 
+def test_optional_rss_series_roundtrips():
+    res = MemoryResult(
+        (Measurement(100, 5, 300, rss_bytes=900), Measurement(80, 4, 250, rss_bytes=850))
+    )
+    blob = res.as_dict()
+    assert blob["rss_bytes"] == [900, 850]  # optional series carried when present
+    assert MemoryResult.from_blob(blob).as_dict() == blob  # round-trips
+    assert MemoryResult.from_blob(blob).rss_bytes == 850  # headline = min across passes
+
+
+def test_blob_omits_rss_when_absent():
+    res = MemoryResult((Measurement(100, 5, 300), Measurement(80, 4, 250)))
+    assert "rss_bytes" not in res.as_dict()  # in-process blob unchanged
+    assert MemoryResult.from_blob(res.as_dict()).rss_bytes is None  # back-compatible
+
+
 _SERIES_BLOB = {
     "peak_bytes": [10, 20, 30],
     "allocations": [1, 1, 1],
@@ -68,3 +84,17 @@ def test_rejects_unknown_stat(tmp_path):
     p = _write_blob(tmp_path, _SERIES_BLOB)
     with pytest.raises(ValueError, match="unknown stat"):
         load_samples(p, metric="peak", stat="p99")
+
+
+def test_rss_metric_reads_isolated_series(tmp_path):
+    blob = {**_SERIES_BLOB, "rss_bytes": [900, 950, 1000]}
+    p = _write_blob(tmp_path, blob)
+    assert load_samples(p, metric="rss")[1][0].value == 900.0  # headline = min
+    assert load_samples(p, metric="rss", stat="mean")[1][0].value == 950.0
+    assert load_samples(p, metric="rss")[2] == "B"  # bytes unit
+
+
+def test_rss_metric_skips_in_process_blobs(tmp_path):
+    p = _write_blob(tmp_path, _SERIES_BLOB)  # no rss_bytes → in-process run
+    assert load_samples(p, metric="rss")[1] == []  # nothing to read, not an error
+    assert load_samples(p, metric="rss", stat="mean")[1] == []

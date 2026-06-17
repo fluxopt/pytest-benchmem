@@ -42,16 +42,24 @@ class MemColumn(NamedTuple):
     cell: Callable[[MemoryResult], str]
 
 
-#: ``label -> (series field, is_byte)`` per memory metric, in canonical order.
+#: ``label -> (series field, is_byte)`` per memory metric, in canonical order. ``rss`` is
+#: optional — present only for isolated runs; its column appears only when something measured
+#: it, and shows ``—`` for any in-process benchmark shown alongside.
 _METRIC_SPEC: dict[str, tuple[str, bool]] = {
     "peak": ("peak_bytes", True),
     "allocated": ("total_bytes", True),
     "allocations": ("allocations", False),
+    "rss": ("rss_bytes", True),
 }
+#: Placeholder cell for a metric a given benchmark didn't measure (e.g. rss in-process).
+_ABSENT = "—"
 #: Every metric, in order — what a direct library render shows.
 ALL_METRICS: tuple[str, ...] = tuple(_METRIC_SPEC)
-#: The default metric shown in a pytest run — peak is the headline; the rest are opt-in.
-DEFAULT_METRICS: tuple[str, ...] = ("peak",)
+#: The default metrics shown in a pytest run. ``peak`` is the headline; ``rss`` is included so an
+#: isolated run's RSS is *visible where it was enabled* — but it's an optional metric, so
+#: :func:`mem_columns` drops it for in-process runs (no values), leaving the table unchanged
+#: there. ``allocated`` / ``allocations`` stay opt-in.
+DEFAULT_METRICS: tuple[str, ...] = ("peak", "rss")
 #: The distribution stats a multi-repeat metric can spread into.
 _STAT_FNS: dict[str, Callable[[Sequence[float]], float]] = {
     "min": min,
@@ -98,13 +106,25 @@ def _formatter(*, is_byte: bool, factor: float) -> Callable[[float], str]:
 def _spread_cell(
     field: str, reduce: Callable[[Sequence[float]], float], fmt: Callable[[float], str]
 ) -> Callable[[MemoryResult], str]:
-    """A cell that reduces ``field``'s per-repeat series with ``reduce`` (min/mean/max)."""
-    return lambda r: fmt(reduce([float(v) for v in r.series(field)]))
+    """A cell that reduces ``field``'s per-repeat series with ``reduce`` (min/mean/max);
+    ``—`` when this benchmark didn't measure the field (an optional metric like rss).
+    """
+
+    def cell(r: MemoryResult) -> str:
+        vals = [float(v) for v in r.series(field) if v is not None]
+        return fmt(reduce(vals)) if vals else _ABSENT
+
+    return cell
 
 
 def _single_cell(field: str, fmt: Callable[[float], str]) -> Callable[[MemoryResult], str]:
-    """A cell for a single-pass metric — just the one measured value."""
-    return lambda r: fmt(float(r.series(field)[0]))
+    """A cell for a single-pass metric — just the one measured value (``—`` if not measured)."""
+
+    def cell(r: MemoryResult) -> str:
+        vals = r.series(field)
+        return fmt(float(vals[0])) if vals and vals[0] is not None else _ABSENT
+
+    return cell
 
 
 def mem_columns(
@@ -115,7 +135,8 @@ def mem_columns(
 ) -> list[MemColumn]:
     """Memory columns for a set of benchmarks.
 
-    ``metrics`` selects which of ``peak`` / ``allocated`` / ``allocations`` appear, in order.
+    ``metrics`` selects which of ``peak`` / ``allocated`` / ``allocations`` / ``rss`` appear, in
+    order (``rss`` only yields a column when an isolated run measured it).
     When any benchmark was measured more than once (``repeats > 1``), every shown metric
     spreads into one column per ``stats`` entry (``min`` / ``mean`` / ``max`` / ``median``
     / ``stddev``) — always, even where the values coincide, so the distribution is honest
@@ -127,10 +148,11 @@ def mem_columns(
     cols: list[MemColumn] = []
     for label in metrics:
         field, is_byte = _METRIC_SPEC[label]
-        per_series = [[float(v) for v in r.series(field)] for r in results]
+        # optional metrics (rss) are absent (None) for in-process results — drop those values
+        per_series = [[float(v) for v in r.series(field) if v is not None] for r in results]
         all_values = [v for series in per_series for v in series]
         if not all_values:
-            continue
+            continue  # nobody measured this metric (e.g. rss with no isolated run) → no column
         unit, factor = byte_unit(all_values) if is_byte else ("", 1.0)
         fmt = _formatter(is_byte=is_byte, factor=factor)
         if any(len(s) > 1 for s in per_series):  # measured more than once → show the spread

@@ -32,6 +32,7 @@ import shutil
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -176,6 +177,23 @@ def _warmup_from_node(node: Any) -> int:
     return _global_warmup(getattr(node, "config", None))
 
 
+def _global_isolate(config: Any) -> bool:
+    """Suite-wide ``--benchmark-memory-isolate`` (off by default)."""
+    if config is None:
+        return False
+    return bool(config.getoption("--benchmark-memory-isolate"))
+
+
+def _isolate_from_node(node: Any) -> bool:
+    """Resolve isolation: ``@pytest.mark.benchmem(isolate=...)`` wins, else the suite-wide
+    ``--benchmark-memory-isolate``, else ``False``.
+    """
+    marker = node.get_closest_marker(MARKER) if node is not None else None
+    if marker is not None and "isolate" in marker.kwargs:
+        return bool(marker.kwargs["isolate"])
+    return _global_isolate(getattr(node, "config", None))
+
+
 def _parse_limit(kwarg: str, value: Any, *, is_bytes: bool) -> float:
     """Parse one ``max_*`` marker value → an absolute ceiling in base units (bytes or count).
 
@@ -255,6 +273,7 @@ def _record_memory(
     setup: Callable[[], None] | None = None,
     repeats: int | None = None,
     warmup: int = 1,
+    isolate: bool = False,
     max_time: float | None = None,
     limits: Mapping[str, float] | None = None,
 ) -> MemoryResult:
@@ -264,19 +283,27 @@ def _record_memory(
     ``--benchmark-memory`` patch and the explicit fixture both fire), reuse it
     rather than measuring twice. ``setup`` runs untracked before each sample (see
     :func:`~pytest_benchmem.memray.measure_memory`); ``repeats`` (``None`` = adaptive),
-    ``warmup`` (untracked dry-runs before measuring), and ``max_time`` pass through too. Any
-    ``max_*`` ``limits`` are enforced on the result (freshly measured or reused), so a breach
-    fails the test once.
+    ``warmup`` (untracked dry-runs before measuring), ``isolate`` (run each pass in a fresh
+    process and record ``rss_bytes``), and ``max_time`` pass through too. Any ``max_*``
+    ``limits`` are enforced on the result (freshly measured or reused), so a breach fails once.
     """
+    if isolate and setup is not None:
+        # pedantic `setup` rebuilds per-sample state via a closure that can't cross the spawn
+        # boundary — and "make it a top-level function" (the generic pickling error) won't help.
+        raise ValueError(
+            "isolate=True can't carry per-sample `setup` state across the process boundary. "
+            "Drop `setup`, or drop isolation for this benchmark."
+        )
     existing = benchmark.extra_info.get(BENCHMEM_KEY)
     if isinstance(existing, Mapping):
         result = MemoryResult.from_blob(existing)
     else:
-        keep_bin = _profile_bin(getattr(benchmark, "fullname", "") or "")
+        keep_bin = None if isolate else _profile_bin(getattr(benchmark, "fullname", "") or "")
         result = measure_memory(
             action,
             repeats=repeats,
             warmup=warmup,
+            isolate=isolate,
             max_time=max_time,
             keep_bin=keep_bin,
             setup=setup,
@@ -302,12 +329,14 @@ class MemoryBenchmark:
         *,
         repeats: int | None = None,
         warmup: int = 1,
+        isolate: bool = False,
         max_time: float | None = None,
         limits: Mapping[str, float] | None = None,
     ) -> None:
         self._benchmark = benchmark
         self._repeats = repeats
         self._warmup = warmup
+        self._isolate = isolate
         self._max_time = max_time
         self._limits = dict(limits or {})
         self.result: MemoryResult | None = None
@@ -331,9 +360,10 @@ class MemoryBenchmark:
         """Record peak memory for ``function_to_benchmark(*args, **kwargs)`` cold, then time it."""
         self.result = _record_memory(
             self._benchmark,
-            lambda: function_to_benchmark(*args, **kwargs),
+            partial(function_to_benchmark, *args, **kwargs),  # picklable when fn is top-level
             repeats=self._repeats,
             warmup=self._warmup,
+            isolate=self._isolate,
             max_time=self._max_time,
             limits=self._limits,
         )
@@ -364,6 +394,7 @@ class MemoryBenchmark:
             setup=mem_setup,
             repeats=self._repeats,
             warmup=self._warmup,
+            isolate=self._isolate,
             max_time=self._max_time,
             limits=self._limits,
         )
@@ -390,15 +421,18 @@ def _pedantic_action(
     counted, and a stateful ``target`` (one that caches on / mutates a carried-over object)
     gets fresh state per sample instead of a decaying or accumulating peak series. If ``setup``
     returns ``(args, kwargs)`` those feed the tracked ``target``, matching pytest-benchmark.
-    Returns ``None`` for the setup when the caller passed none (the action just re-runs).
+    Returns ``None`` for the setup when the caller passed none (the action just re-runs); in
+    that case the tracked action is a :func:`functools.partial`, so it stays picklable for
+    ``isolate=True`` (a ``setup`` that mutates carried-over state is a closure and can't be
+    isolated — that path raises the actionable picklability error).
     """
+    if setup is None:
+        return None, partial(target, *args, **kwargs)
+
     state: dict[str, Any] = {"args": args, "kwargs": dict(kwargs)}
 
     def tracked() -> Any:
         return target(*state["args"], **state["kwargs"])
-
-    if setup is None:
-        return None, tracked
 
     def untracked_setup() -> None:
         produced = setup()
@@ -418,13 +452,16 @@ def benchmark_memory(
     the memray memory pass is added on top and stored in the same entry. An untracked warmup
     run goes first; the pass count then adapts and the headline peak is the **min** across
     passes. ``@pytest.mark.benchmem(repeats=N)`` forces a fixed count and ``warmup=N`` sets the
-    warmup runs, overriding ``--benchmark-memory-repeats`` / ``--benchmark-memory-warmup``. For
+    warmup runs, overriding ``--benchmark-memory-repeats`` / ``--benchmark-memory-warmup``.
+    ``isolate=True`` (or ``--benchmark-memory-isolate``) runs each pass in a fresh process and
+    also records whole-process ``rss`` (needs a top-level, picklable benchmarked function). For
     an existing suite, prefer the ``--benchmark-memory`` flag over rewriting tests.
     """
     return MemoryBenchmark(
         benchmark,
         repeats=_repeats_from_node(request.node),
         warmup=_warmup_from_node(request.node),
+        isolate=_isolate_from_node(request.node),
         max_time=_max_time_from_node(request.node),
         limits=_limits_from_node(request.node),
     )
@@ -484,6 +521,9 @@ def _install_auto_memory() -> None:
     def _warmup(self: BenchmarkFixture) -> int:
         return _warmup_from_node(getattr(self, "_benchmem_node", None))
 
+    def _isolate(self: BenchmarkFixture) -> bool:
+        return _isolate_from_node(getattr(self, "_benchmem_node", None))
+
     def _max_time(self: BenchmarkFixture) -> float | None:
         return _max_time_from_node(getattr(self, "_benchmem_node", None))
 
@@ -495,9 +535,10 @@ def _install_auto_memory() -> None:
     ) -> Any:
         _record_memory(
             self,
-            lambda: function_to_benchmark(*a, **k),
+            partial(function_to_benchmark, *a, **k),  # picklable when fn is top-level
             repeats=_repeats(self),
             warmup=_warmup(self),
+            isolate=_isolate(self),
             max_time=_max_time(self),
             limits=_limits(self),
         )
@@ -521,6 +562,7 @@ def _install_auto_memory() -> None:
             setup=mem_setup,
             repeats=_repeats(self),
             warmup=_warmup(self),
+            isolate=_isolate(self),
             max_time=_max_time(self),
             limits=_limits(self),
         )
@@ -586,6 +628,17 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "to disable.",
     )
     group.addoption(
+        "--benchmark-memory-isolate",
+        action="store_true",
+        default=False,
+        help="Run each memray pass in a fresh process and also record whole-process resident "
+        "memory (RSS, the `rss` metric) — the physical/OOM-relevant peak memray's logical heap "
+        "can't give. Needs a top-level, picklable benchmarked function. Each pass is a fresh "
+        "interpreter re-importing your code + memray, so an isolated run is markedly slower than "
+        "in-process — consider pinning --benchmark-memory-repeats. Overridden per-test by "
+        "@pytest.mark.benchmem(isolate=True/False). Off by default.",
+    )
+    group.addoption(
         "--benchmark-memory-max-time",
         action="store",
         type=float,
@@ -612,8 +665,8 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         action="append",
         metavar="FIELD:THRESHOLD",
         help="Fail the session on a memory regression, e.g. peak:10%, peak:5MiB, "
-        "allocations:5% (repeatable). Fields: peak, allocated, allocations. "
-        "Implies --benchmark-memory-compare.",
+        "allocations:5% (repeatable). Fields: peak, allocated, allocations, rss "
+        "(rss needs isolated runs). Implies --benchmark-memory-compare.",
     )
     group.addoption(
         "--benchmark-memory-profile",
@@ -637,9 +690,10 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--benchmark-memory-columns",
         action="store",
         default=None,
-        metavar="peak,allocated,allocations",
+        metavar="peak,allocated,allocations,rss",
         help="Which memory metrics the table shows, comma-separated and in order: "
-        "peak, allocated, allocations. Default: peak only.",
+        "peak, allocated, allocations, rss (rss only shows for isolated runs). Default: "
+        "peak only.",
     )
     group.addoption(
         "--benchmark-memory-stats",
@@ -656,10 +710,12 @@ def pytest_configure(config: pytest.Config) -> None:
     """Register the ``benchmem`` marker; patch ``benchmark`` if ``--benchmark-memory`` is set."""
     config.addinivalue_line(
         "markers",
-        "benchmem(repeats=N, warmup=N, max_peak=..., max_allocated=..., max_allocations=N): "
+        "benchmem(repeats=N, warmup=N, isolate=True, max_peak=..., max_allocated=..., "
+        "max_allocations=N): "
         "pytest-benchmem peak-memory options — repeats forces a fixed number of memray passes "
         "(the reported peak is the min; default adapts the count); warmup sets the untracked "
-        "dry-runs done before measuring (default 1); max_peak / "
+        "dry-runs done before measuring (default 1); isolate runs each pass in a fresh process "
+        "and records whole-process rss (needs a picklable top-level function); max_peak / "
         "max_allocated / max_allocations fail the "
         "test if the worst measured pass exceeds an absolute ceiling (e.g. "
         "max_peak='100MiB', max_allocations=5000).",
@@ -925,7 +981,11 @@ def pytest_terminal_summary(terminalreporter: Any, config: pytest.Config) -> Non
     if thresholds:
         from pytest_benchmem.compare import Regression, memory_regressions
 
-        regressions: list[Regression] = memory_regressions(baseline, current, thresholds)
+        try:
+            regressions: list[Regression] = memory_regressions(baseline, current, thresholds)
+        except ValueError as exc:  # e.g. an rss gate against non-isolated runs — fail, don't skip
+            write(f"benchmem-compare: {exc}")
+            raise MemoryRegression(str(exc)) from exc
         if regressions:
             write("Memory regressions over threshold:")
             for reg in regressions:
