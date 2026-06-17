@@ -216,6 +216,23 @@ The `.bin` is memray's raw capture, so the same file also feeds `memray tree` / 
 `stats` — pick the lens you want. Off by default (retaining `.bin`s costs disk), and in CI
 it's the natural artifact to upload and render locally on the PR.
 
+#### One-step render — `benchmem flamegraph`
+
+Instead of finding the right `.bin` and remembering the memray subcommand, point `benchmem
+flamegraph` at the profile dir and name the test (an exact id or a unique substring):
+
+```bash
+benchmem flamegraph profiles/ test_solve          # → profiles/test_solve.flamegraph.html
+benchmem flamegraph profiles/ --worst peak --open # auto-pick the heaviest, open it
+benchmem flamegraph profiles/ test_solve --report tree   # terminal lens instead of HTML
+```
+
+`--worst peak|allocated|allocations` reads the metric straight from each `.bin` and renders the
+heaviest, so you don't have to look up the id. `--report` passes through to any memray reporter
+(`flamegraph` default, plus `table` / `tree` / `summary` / `stats`); HTML reports land next to
+the `.bin` (override with `-o`, overwrite with `-f`). `--native` asserts the profile actually
+carries native traces (see below) and errors with the fix if it doesn't.
+
 **Which benchmarks get a profile** follows the gate:
 
 - **with** `--benchmark-memory-compare-fail` → only the **regressing** ids (keep the failing

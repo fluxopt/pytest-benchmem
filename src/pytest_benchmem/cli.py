@@ -1,6 +1,6 @@
-"""pytest-benchmem CLI — ``plot`` and ``compare`` over pytest-benchmark JSON runs.
+"""pytest-benchmem CLI — ``plot`` / ``compare`` / ``sweep`` / ``flamegraph``.
 
-Both commands read the JSON pytest-benchmark writes (``.benchmarks/…``) over the same
+``plot`` and ``compare`` read the JSON pytest-benchmark writes (``.benchmarks/…``) over the same
 metrics: ``time`` from ``stats``; the rest from ``extra_info.benchmem`` — ``peak``,
 ``allocated``, ``allocations``, and ``rss`` (whole-process resident, isolated runs only).
 Both select with ``--columns`` — ``plot`` takes one
@@ -8,12 +8,16 @@ Both select with ``--columns`` — ``plot`` takes one
 ``--stat`` reports a distribution over a metric's per-repeat series (e.g. ``peak
 --stat max`` is the worst peak). Timing comparison/histograms are pytest-benchmark's
 own job; these commands are the memory-aware, dims-aware views on top.
+
+``flamegraph`` works on the kept ``.bin`` profiles from ``--benchmark-memory-profile`` instead:
+it resolves the profile for a test (or ``--worst``) and renders it through memray in one step.
 """
 
 from __future__ import annotations
 
 import importlib.util
 import subprocess
+import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -352,3 +356,163 @@ def sweep(
         typer.echo(f"  plot:    benchmem plot {files} --columns peak")
     if failed:
         raise _fail(f"failed to provision: {', '.join(failed)}", 1)
+
+
+# --- flamegraph: render a kept --benchmark-memory-profile .bin ----------------------
+
+#: memray reporters that emit an HTML file (we pass ``-o`` and can ``--open`` the result);
+#: the rest (``tree`` / ``summary`` / ``stats``) print to the terminal.
+_HTML_REPORTS = frozenset({"flamegraph", "table"})
+_REPORTS = (*sorted(_HTML_REPORTS), "tree", "summary", "stats")
+
+#: ``--worst`` metrics readable straight from a ``.bin`` via memray's own stats — no run JSON
+#: needed. (``rss`` is whole-process and isolated runs keep no ``.bin``, so it's not here.)
+_BIN_METRICS = {
+    "peak": "peak_memory_allocated",
+    "allocated": "total_memory_allocated",
+    "allocations": "total_num_allocations",
+}
+
+
+def _need_memray() -> None:
+    if importlib.util.find_spec("memray") is None:
+        raise _fail("flamegraph needs memray (Linux/macOS): pip install memray", 2)
+
+
+def _bin_metric(binp: Path, metric: str) -> int:
+    """One metric value read straight from a ``.bin`` (the same numbers ``memray stats`` shows)."""
+    from memray._memray import compute_statistics
+
+    s = compute_statistics(str(binp))
+    return int(getattr(s, _BIN_METRICS[metric]))
+
+
+def _has_native_traces(binp: Path) -> bool:
+    import memray
+
+    return bool(memray.FileReader(str(binp)).metadata.has_native_traces)
+
+
+def _resolve_bin(profile_dir: Path, test_id: str | None, worst: str | None) -> Path:
+    """Pick the one ``.bin`` to render: by ``test_id`` (exact sanitized stem, else unique
+    substring), or the heaviest by ``--worst`` metric, or the sole profile if there's only one.
+    Exits with the available ids listed when the choice is missing or ambiguous.
+    """
+    from pytest_benchmem.pytest_plugin import _sanitize_id
+
+    bins = sorted(profile_dir.glob("*.bin"))
+    if not bins:
+        raise _fail(
+            f"no .bin profiles in {profile_dir} — run pytest with "
+            f"--benchmark-memory-profile={profile_dir} first.",
+            2,
+        )
+    avail = "available:\n  " + "\n  ".join(b.stem for b in bins)
+
+    if test_id is not None:
+        want = _sanitize_id(test_id)
+        exact = profile_dir / f"{want}.bin"
+        if exact.exists():
+            return exact
+        matches = [b for b in bins if want in b.stem]
+        if len(matches) == 1:
+            return matches[0]
+        if not matches:
+            raise _fail(f"no profile matches {test_id!r}.\n{avail}", 2)
+        hit = "\n  ".join(b.stem for b in matches)
+        raise _fail(f"{test_id!r} matches several profiles — be more specific:\n  {hit}", 2)
+
+    if worst is not None:
+        if worst not in _BIN_METRICS:
+            raise _fail(f"--worst: unknown metric {worst!r} (use {', '.join(_BIN_METRICS)})", 2)
+        return max(bins, key=lambda b: _bin_metric(b, worst))
+
+    if len(bins) == 1:
+        return bins[0]
+    raise _fail(f"which profile? pass a TEST_ID or --worst <metric>.\n{avail}", 2)
+
+
+@app.command()
+def flamegraph(
+    profile_dir: Annotated[
+        Path, typer.Argument(help="Directory of kept .bin profiles (--benchmark-memory-profile).")
+    ],
+    test_id: Annotated[
+        str | None,
+        typer.Argument(help="Test id (exact, or a unique substring) to render; omit with --worst."),
+    ] = None,
+    worst: Annotated[
+        str | None,
+        typer.Option("--worst", help="Auto-pick the heaviest: peak | allocated | allocations"),
+    ] = None,
+    report: Annotated[
+        str,
+        typer.Option("--report", help=f"memray reporter: {' | '.join(_REPORTS)}"),
+    ] = "flamegraph",
+    native: Annotated[
+        bool,
+        typer.Option(
+            "--native/--no-native",
+            help="Require the profile to carry native traces (captured via "
+            "--benchmark-memory-profile-native); error if it doesn't.",
+        ),
+    ] = False,
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", "-o", help="HTML out path (default: next to the .bin)."),
+    ] = None,
+    open_browser: Annotated[
+        bool, typer.Option("--open/--no-open", help="Open the rendered HTML.")
+    ] = False,
+    force: Annotated[
+        bool, typer.Option("--force", "-f", help="Overwrite an existing render.")
+    ] = False,
+) -> None:
+    """Render a kept memory profile in one step — resolve the ``.bin`` for a test and run memray.
+
+    Closes the "regressed → *where*?" loop after ``--benchmark-memory-profile``: instead of
+    finding the right ``.bin`` and remembering the memray subcommand, point at the profile dir
+    and name the test (or ``--worst peak`` to auto-pick the heaviest). Defaults to an HTML
+    flamegraph written next to the ``.bin``; ``--report tree|summary|stats`` prints to the
+    terminal instead.
+    """
+    _need_memray()
+    if test_id is not None and worst is not None:
+        raise _fail("pass a TEST_ID or --worst <metric>, not both.", 2)
+    if report not in _REPORTS:
+        raise _fail(f"--report: unknown reporter {report!r} (use {', '.join(_REPORTS)})", 2)
+    if not profile_dir.is_dir():
+        raise _fail(f"not a directory: {profile_dir}", 2)
+
+    binp = _resolve_bin(profile_dir, test_id, worst)
+    if native and not _has_native_traces(binp):
+        raise _fail(
+            f"{binp.name} has no native traces — re-run with "
+            "--benchmark-memory-profile-native to attribute C/Rust frames.",
+            2,
+        )
+
+    cmd = [sys.executable, "-m", "memray", report]
+    is_html = report in _HTML_REPORTS
+    out_path: Path | None = None
+    if is_html:
+        out_path = output or binp.with_name(f"{binp.stem}.{report}.html")
+        cmd += ["-o", str(out_path)]
+        if force:
+            cmd.append("-f")
+    elif output is not None or open_browser:
+        typer.secho(
+            f"--output/--open ignored for terminal report {report!r}", fg=typer.colors.YELLOW
+        )
+    cmd.append(str(binp))
+
+    kind = "native" if _has_native_traces(binp) else "python-only"
+    typer.secho(f"rendering {binp.name} ({kind}) → {report}", fg=typer.colors.BLUE)
+    result = subprocess.run(cmd, check=False)
+    if result.returncode != 0:
+        raise _fail(f"memray {report} failed (exit {result.returncode})", result.returncode)
+
+    if out_path is not None:
+        typer.secho(f"wrote {out_path}", fg=typer.colors.GREEN)
+        if open_browser:
+            typer.launch(str(out_path))

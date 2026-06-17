@@ -353,3 +353,93 @@ def test_sweep_exits_1_on_provision_failure(tmp_path, monkeypatch):
     )
     assert result.exit_code == 1
     assert "failed to provision: 1.3.0" in _text(result)
+
+
+# --- flamegraph ------------------------------------------------------------------
+
+memray = pytest.importorskip("memray")
+
+
+def _make_bin(path: Path, *, n: int, native: bool = False) -> Path:
+    """A real memray capture so the command's stats read + render exercise the actual file."""
+    with memray.Tracker(str(path), native_traces=native):
+        _hold = [bytearray(1024) for _ in range(n)]  # noqa: F841 — keep alive past peak
+    return path
+
+
+@pytest.fixture
+def profiles(tmp_path):
+    d = tmp_path / "profiles"
+    d.mkdir()
+    _make_bin(d / "test_small.bin", n=200)
+    _make_bin(d / "test_big.bin", n=4000)
+    return d
+
+
+def test_flamegraph_worst_picks_heaviest(profiles):
+    result = runner.invoke(app, ["flamegraph", str(profiles), "--worst", "peak"])
+    assert result.exit_code == 0, _text(result)
+    assert (profiles / "test_big.flamegraph.html").exists()  # heaviest rendered next to its .bin
+    assert not (profiles / "test_small.flamegraph.html").exists()
+
+
+def test_flamegraph_resolves_by_substring(profiles):
+    result = runner.invoke(app, ["flamegraph", str(profiles), "small"])
+    assert result.exit_code == 0, _text(result)
+    assert (profiles / "test_small.flamegraph.html").exists()
+
+
+def test_flamegraph_custom_output_and_force(profiles, tmp_path):
+    out = tmp_path / "fg.html"
+    runner.invoke(app, ["flamegraph", str(profiles), "test_big", "-o", str(out)])
+    assert out.exists()
+    # a second render refuses to clobber without --force, succeeds with it
+    again = runner.invoke(app, ["flamegraph", str(profiles), "test_big", "-o", str(out)])
+    assert again.exit_code != 0
+    forced = runner.invoke(app, ["flamegraph", str(profiles), "test_big", "-o", str(out), "-f"])
+    assert forced.exit_code == 0
+
+
+def test_flamegraph_ambiguous_without_id_lists_available(profiles):
+    result = runner.invoke(app, ["flamegraph", str(profiles)])
+    assert result.exit_code == 2
+    assert "test_big" in _text(result) and "test_small" in _text(result)
+
+
+def test_flamegraph_unknown_id_errors(profiles):
+    result = runner.invoke(app, ["flamegraph", str(profiles), "nope"])
+    assert result.exit_code == 2
+    assert "no profile matches" in _text(result)
+
+
+def test_flamegraph_id_and_worst_are_mutually_exclusive(profiles):
+    result = runner.invoke(app, ["flamegraph", str(profiles), "test_big", "--worst", "peak"])
+    assert result.exit_code == 2
+    assert "not both" in _text(result)
+
+
+def test_flamegraph_bad_report_errors(profiles):
+    result = runner.invoke(app, ["flamegraph", str(profiles), "test_big", "--report", "bogus"])
+    assert result.exit_code == 2
+    assert "unknown reporter" in _text(result)
+
+
+def test_flamegraph_empty_dir_errors(tmp_path):
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    result = runner.invoke(app, ["flamegraph", str(empty)])
+    assert result.exit_code == 2
+    assert "no .bin profiles" in _text(result)
+
+
+def test_flamegraph_native_guard(tmp_path):
+    d = tmp_path / "p"
+    d.mkdir()
+    _make_bin(d / "test_plain.bin", n=200, native=False)
+    _make_bin(d / "test_native.bin", n=200, native=True)
+    # --native errors on a python-only capture, with the fix hint
+    plain = runner.invoke(app, ["flamegraph", str(d), "test_plain", "--native"])
+    assert plain.exit_code == 2 and "no native traces" in _text(plain)
+    # and passes on a native capture
+    nat = runner.invoke(app, ["flamegraph", str(d), "test_native", "--native"])
+    assert nat.exit_code == 0, _text(nat)
