@@ -193,6 +193,25 @@ def _isolate_from_node(node: Any) -> bool:
     return False
 
 
+def _global_native(config: Any) -> bool:
+    """Suite-wide ``--benchmark-memory-profile-native`` (off by default)."""
+    if config is None:
+        return False
+    return bool(config.getoption("--benchmark-memory-profile-native"))
+
+
+def _native_from_node(node: Any) -> bool:
+    """Resolve native-trace capture for the kept profile: ``@pytest.mark.benchmem(
+    profile_native=...)`` wins, else the suite-wide ``--benchmark-memory-profile-native``,
+    else ``False``. Only takes effect on the ``--benchmark-memory-profile`` path (a kept
+    ``.bin``); off it, there's no profile to enrich.
+    """
+    marker = node.get_closest_marker(MARKER) if node is not None else None
+    if marker is not None and "profile_native" in marker.kwargs:
+        return bool(marker.kwargs["profile_native"])
+    return _global_native(getattr(node, "config", None))
+
+
 def _parse_limit(kwarg: str, value: Any, *, is_bytes: bool) -> float:
     """Parse one ``max_*`` marker value → an absolute ceiling in base units (bytes or count).
 
@@ -273,6 +292,7 @@ def _record_memory(
     repeats: int | None = None,
     warmup: int = 1,
     isolate: bool = False,
+    native: bool = False,
     max_time: float | None = None,
     limits: Mapping[str, float] | None = None,
 ) -> MemoryResult:
@@ -283,8 +303,9 @@ def _record_memory(
     rather than measuring twice. ``setup`` runs untracked before each sample (see
     :func:`~pytest_benchmem.memray.measure_memory`); ``repeats`` (``None`` = adaptive),
     ``warmup`` (untracked dry-runs before measuring), ``isolate`` (run each pass in a fresh
-    process and record ``rss_bytes``), and ``max_time`` pass through too. Any ``max_*``
-    ``limits`` are enforced on the result (freshly measured or reused), so a breach fails once.
+    process and record ``rss_bytes``), ``native`` (capture native stacks in the kept profile),
+    and ``max_time`` pass through too. Any ``max_*`` ``limits`` are enforced on the result
+    (freshly measured or reused), so a breach fails once.
     """
     if isolate and setup is not None:
         # pedantic `setup` rebuilds per-sample state via a closure that can't cross the spawn
@@ -305,6 +326,7 @@ def _record_memory(
             isolate=isolate,
             max_time=max_time,
             keep_bin=keep_bin,
+            native=native and keep_bin is not None,
             setup=setup,
         )
         benchmark.extra_info[BENCHMEM_KEY] = result.as_dict()
@@ -329,6 +351,7 @@ class MemoryBenchmark:
         repeats: int | None = None,
         warmup: int = 1,
         isolate: bool = False,
+        native: bool = False,
         max_time: float | None = None,
         limits: Mapping[str, float] | None = None,
     ) -> None:
@@ -336,6 +359,7 @@ class MemoryBenchmark:
         self._repeats = repeats
         self._warmup = warmup
         self._isolate = isolate
+        self._native = native
         self._max_time = max_time
         self._limits = dict(limits or {})
         self.result: MemoryResult | None = None
@@ -363,6 +387,7 @@ class MemoryBenchmark:
             repeats=self._repeats,
             warmup=self._warmup,
             isolate=self._isolate,
+            native=self._native,
             max_time=self._max_time,
             limits=self._limits,
         )
@@ -394,6 +419,7 @@ class MemoryBenchmark:
             repeats=self._repeats,
             warmup=self._warmup,
             isolate=self._isolate,
+            native=self._native,
             max_time=self._max_time,
             limits=self._limits,
         )
@@ -462,6 +488,7 @@ def benchmark_memory(
         repeats=_repeats_from_node(request.node),
         warmup=_warmup_from_node(request.node),
         isolate=_isolate_from_node(request.node),
+        native=_native_from_node(request.node),
         max_time=_max_time_from_node(request.node),
         limits=_limits_from_node(request.node),
     )
@@ -524,6 +551,9 @@ def _install_auto_memory() -> None:
     def _isolate(self: BenchmarkFixture) -> bool:
         return _isolate_from_node(getattr(self, "_benchmem_node", None))
 
+    def _native(self: BenchmarkFixture) -> bool:
+        return _native_from_node(getattr(self, "_benchmem_node", None))
+
     def _max_time(self: BenchmarkFixture) -> float | None:
         return _max_time_from_node(getattr(self, "_benchmem_node", None))
 
@@ -539,6 +569,7 @@ def _install_auto_memory() -> None:
             repeats=_repeats(self),
             warmup=_warmup(self),
             isolate=_isolate(self),
+            native=_native(self),
             max_time=_max_time(self),
             limits=_limits(self),
         )
@@ -563,6 +594,7 @@ def _install_auto_memory() -> None:
             repeats=_repeats(self),
             warmup=_warmup(self),
             isolate=_isolate(self),
+            native=_native(self),
             max_time=_max_time(self),
             limits=_limits(self),
         )
@@ -668,6 +700,16 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "benchmark. Off by default (disk cost).",
     )
     group.addoption(
+        "--benchmark-memory-profile-native",
+        action="store_true",
+        default=False,
+        help="Capture native (C/C++/Rust) stacks in the kept profile, so the flamegraph "
+        "attributes memory inside extension code (polars/numpy/solver bindings) instead of one "
+        "opaque `??? at ???` bucket. Only affects --benchmark-memory-profile runs; opt-in "
+        "(slower, bigger .bin). Per-test override: @pytest.mark.benchmem(profile_native=True). "
+        "Off by default.",
+    )
+    group.addoption(
         "--benchmark-memory-table",
         action="store",
         choices=["combined", "split"],
@@ -699,20 +741,39 @@ def pytest_configure(config: pytest.Config) -> None:
     """Register the ``benchmem`` marker; patch ``benchmark`` if ``--benchmark-memory`` is set."""
     config.addinivalue_line(
         "markers",
-        "benchmem(repeats=N, warmup=N, isolate=True, max_peak=..., max_allocated=..., "
-        "max_allocations=N): "
+        "benchmem(repeats=N, warmup=N, isolate=True, profile_native=True, max_peak=..., "
+        "max_allocated=..., max_allocations=N): "
         "pytest-benchmem peak-memory options — repeats forces a fixed number of memray passes "
         "(the reported peak is the min; default adapts the count); warmup sets the untracked "
         "dry-runs done before measuring (default 1); isolate runs each pass in a fresh process "
-        "and records whole-process rss (needs a picklable top-level function); max_peak / "
+        "and records whole-process rss (needs a picklable top-level function); profile_native "
+        "captures native stacks in the kept --benchmark-memory-profile .bin; max_peak / "
         "max_allocated / max_allocations fail the "
         "test if the worst measured pass exceeds an absolute ceiling (e.g. "
         "max_peak='100MiB', max_allocations=5000).",
     )
     _memory_column_opts(config)  # validate --benchmark-memory-columns/-stats fail-fast
+    _check_native_needs_profile(config)  # native capture is meaningless without a kept profile
     if config.getoption("--benchmark-memory"):
         _install_auto_memory()
     _configure_profiles(config)
+
+
+def _check_native_needs_profile(config: pytest.Config) -> None:
+    """Fail fast if ``--benchmark-memory-profile-native`` is set without a profile dir — native
+    capture only enriches a *kept* ``.bin``, so on its own it'd silently do nothing.
+
+    (A per-test ``profile_native=True`` marker off the profile path is a no-op by design — it
+    rides with whichever benchmarks are profiled — so only the suite-wide flag is guarded here.)
+    """
+    if config.getoption("--benchmark-memory-profile-native") and (
+        config.getoption("--benchmark-memory-profile") is None
+    ):
+        raise pytest.UsageError(
+            "--benchmark-memory-profile-native needs --benchmark-memory-profile=DIR: native "
+            "stacks are captured into the kept .bin, so there's nothing to enrich without a "
+            "profile dir. Add --benchmark-memory-profile, or drop the -native flag."
+        )
 
 
 def _configure_profiles(config: pytest.Config) -> None:

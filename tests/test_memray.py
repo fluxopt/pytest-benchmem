@@ -53,6 +53,37 @@ def test_measure_memory_keep_bin_retains_first_pass(tmp_path):
     assert binp.exists()  # adaptive/fixed passes still leave exactly the one retained bin
 
 
+def test_native_capture_records_native_traces_in_kept_bin(tmp_path):
+    # native=True flips memray's native_traces on for the kept .bin, so a flamegraph can
+    # attribute C/Rust frames instead of one opaque native bucket.
+    import memray
+
+    binp = tmp_path / "native.bin"
+    _track_once(lambda: [bytearray(1024) for _ in range(100)], keep_bin=binp, native=True)
+    assert memray.FileReader(str(binp)).metadata.has_native_traces
+
+    plain = tmp_path / "plain.bin"
+    _track_once(lambda: [bytearray(1024) for _ in range(100)], keep_bin=plain, native=False)
+    assert not memray.FileReader(str(plain)).metadata.has_native_traces
+
+
+def test_native_ignored_without_kept_bin(tmp_path):
+    # native only enriches a *kept* profile; a discarded pass gains nothing, so it's a no-op
+    # (and must not error). measure_memory with native but no keep_bin still measures cleanly.
+    res = measure_memory(lambda: [bytearray(512) for _ in range(20)], repeats=2, native=True)
+    assert res.peak_bytes > 0
+
+
+def test_measure_memory_native_enriches_only_the_kept_pass(tmp_path):
+    import memray
+
+    binp = tmp_path / "track.bin"
+    measure_memory(
+        lambda: [bytearray(512) for _ in range(40)], repeats=3, keep_bin=binp, native=True
+    )
+    assert memray.FileReader(str(binp)).metadata.has_native_traces
+
+
 def test_kept_bin_is_a_valid_memray_capture(tmp_path):
     # the retained .bin must be renderable by memray's own reporters (flamegraph/tree/…)
     binp = tmp_path / "track.bin"
@@ -144,7 +175,7 @@ def _feed_peaks(monkeypatch, peaks):
     seq = iter(peaks)
     monkeypatch.setattr(m, "_require_memray", lambda: None)
     monkeypatch.setattr(
-        m, "_track_once", lambda action, keep_bin=None: Measurement(next(seq), 1, 1)
+        m, "_track_once", lambda action, keep_bin=None, native=False: Measurement(next(seq), 1, 1)
     )
 
 
