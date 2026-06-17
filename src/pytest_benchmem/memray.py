@@ -401,9 +401,12 @@ def _isolated_run(action: Action, setup: Action | None, warmup: int) -> Measurem
         proc.start()
     except (PicklingError, AttributeError, TypeError) as exc:
         raise RuntimeError(
-            "isolated memory measurement (isolate=True) needs a picklable action and setup — a "
-            "top-level function with picklable args, not a lambda or closure. Use a module-level "
-            f"callable, or measure in-process (isolate=False). Pickling failed: {exc}"
+            "isolate=True needs a picklable action — a top-level function that builds what it "
+            "operates on from lightweight args, e.g. measure_memory(partial(build_and_write, "
+            "spec, n), isolate=True). A lambda/closure can't be pickled; and closing over a "
+            "pre-built object would measure *deserializing* it, not building it. Isolated rss is "
+            "a whole-job (build+operate) number — the child starts empty, so the construction "
+            f"must be inside the callable. Or measure in-process (isolate=False). Pickling: {exc}"
         ) from exc
     proc.join()
     if queue.empty():  # nothing was put → the child died before returning a result
