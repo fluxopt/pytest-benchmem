@@ -79,7 +79,8 @@ def _save_profiles(write: Callable[[str], None], ids: Sequence[str] | None = Non
     """Copy staged ``.bin`` profiles into the output dir — ``ids``, or all measured if ``None``.
 
     Prints a ready-to-paste ``memray flamegraph`` line per saved profile (the same ``.bin``
-    also feeds ``memray tree`` / ``summary`` / ``stats``).
+    also feeds ``memray tree`` / ``summary`` / ``stats``), plus the one-step ``benchmem
+    flamegraph`` equivalent that resolves the ``.bin`` for you.
     """
     st = _PROFILE
     if st is None:
@@ -97,6 +98,7 @@ def _save_profiles(write: Callable[[str], None], ids: Sequence[str] | None = Non
         write(f"benchmem: saved {len(saved)} memory profile(s) to {st.out_dir} — render with:")
         for dest in saved:
             write(f"    memray flamegraph {dest}")
+        write(f"    or: benchmem flamegraph {st.out_dir} --worst peak --open")
 
 
 #: Name of the per-test marker: ``@pytest.mark.benchmem(repeats=N)``.
