@@ -446,6 +446,18 @@ def test_isolate_from_node_marker_wins_else_default():
     assert plugin._isolate_from_node(_FakeNode(None)) is False
 
 
+def test_isolate_with_setup_is_rejected_with_specific_message():
+    """isolate + per-sample setup (a pedantic state closure) fails with a targeted message —
+    'make it top-level' (the generic pickling error) wouldn't help here."""
+
+    class _Bench:
+        extra_info: dict = {}
+        fullname = "t"
+
+    with pytest.raises(ValueError, match="per-sample"):
+        plugin._record_memory(_Bench(), lambda: None, setup=lambda: None, isolate=True)
+
+
 def _result(peak: int, allocs: int = 1, total: int = 1) -> MemoryResult:
     return MemoryResult((Measurement(peak_bytes=peak, allocations=allocs, total_bytes=total),))
 

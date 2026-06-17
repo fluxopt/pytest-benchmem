@@ -2,7 +2,8 @@
 
 Both commands read the JSON pytest-benchmark writes (``.benchmarks/…``) over the same
 metrics: ``time`` from ``stats``; the rest from ``extra_info.benchmem`` — ``peak``,
-``allocated``, and ``allocations``. Both select with ``--columns`` — ``plot`` takes one
+``allocated``, ``allocations``, and ``rss`` (whole-process resident, isolated runs only).
+Both select with ``--columns`` — ``plot`` takes one
 (a single value axis); ``compare`` shows several side by side (default all).
 ``--stat`` reports a distribution over a metric's per-repeat series (e.g. ``peak
 --stat max`` is the worst peak). Timing comparison/histograms are pytest-benchmark's
@@ -34,7 +35,8 @@ MetricOpt = Annotated[
     Metric,
     typer.Option(
         "--columns",
-        help="Metric to plot: time | peak | allocated | allocations. One per figure (a plot "
+        help="Metric to plot: time | peak | allocated | allocations | rss (rss = isolated runs "
+        "only). One per figure (a plot "
         "has a single value axis) — same flag as `compare`; the spread shows as whiskers via "
         "--band.",
     ),
@@ -188,8 +190,9 @@ def compare(
         str | None,
         typer.Option(
             "--columns",
-            help="Comma list of metrics: time | peak | allocated | allocations "
-            "(e.g. peak or time,peak,allocations). Default: time,peak. Each is shown across "
+            help="Comma list of metrics: time | peak | allocated | allocations | rss "
+            "(rss = isolated runs only; e.g. peak or time,peak,rss). Default: time,peak. "
+            "Each is shown across "
             "every --stat; a metric absent from every run is dropped.",
         ),
     ] = None,
@@ -221,7 +224,8 @@ def compare(
         typer.Option(
             "--fail-on",
             help="Exit non-zero on a regression of the first run vs the last. "
-            "FIELD:THRESHOLD, repeatable — e.g. --fail-on peak:10% --fail-on peak:5MiB.",
+            "FIELD:THRESHOLD, repeatable — e.g. --fail-on peak:10% --fail-on peak:5MiB "
+            "--fail-on rss:10% (rss gates only isolated runs).",
         ),
     ] = None,
 ) -> None:
@@ -240,7 +244,8 @@ def compare(
         thresholds = [parse_threshold(expr) for expr in fail_on]
 
     # Gate the first run (base) against the last (head) — oldest vs newest in a sweep.
-    regressions = find_regressions(runs[0], runs[-1], thresholds)
+    with _exit_on_value_error(code=2):  # e.g. an rss gate against non-isolated runs
+        regressions = find_regressions(runs[0], runs[-1], thresholds)
     if regressions:
         typer.secho(f"{len(regressions)} regression(s) over threshold:", fg=typer.colors.RED)
         for reg in regressions:

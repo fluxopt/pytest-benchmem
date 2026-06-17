@@ -187,7 +187,9 @@ def test_parse_metrics_and_stats_reject_unknown():
 
     from pytest_benchmem.tables import parse_metrics, parse_stats
 
-    assert parse_metrics(None) == ("peak",)  # peak-only default
+    # default = peak + rss; rss is auto-dropped for in-process runs (no values), so the table is
+    # unchanged there and an isolated run shows its RSS where it was enabled.
+    assert parse_metrics(None) == ("peak", "rss")
     assert parse_stats(None) == ("min", "mean", "max")
     with pytest.raises(ValueError, match="unknown memory metric"):
         parse_metrics(["peak", "bogus"])

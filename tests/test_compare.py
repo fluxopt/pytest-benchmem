@@ -19,17 +19,18 @@ def _write(path, benchmarks):
     return path
 
 
-def _bm(name, *, t=0.0, peak=None, allocations=0, total_bytes=0):
+def _bm(name, *, t=0.0, peak=None, allocations=0, total_bytes=0, rss=None):
     # real pytest-benchmark files carry every stat; mirror that so --stat all can read them
     bm = {"fullname": name, "stats": {s: t for s in ("min", "max", "mean", "median", "stddev")}}
     if peak is not None:
-        bm["extra_info"] = {
-            "benchmem": {
-                "peak_bytes": [peak],
-                "allocations": [allocations],
-                "total_bytes": [total_bytes],
-            }
+        blob = {
+            "peak_bytes": [peak],
+            "allocations": [allocations],
+            "total_bytes": [total_bytes],
         }
+        if rss is not None:  # an isolated run also carries rss_bytes
+            blob["rss_bytes"] = [rss]
+        bm["extra_info"] = {"benchmem": blob}
     return bm
 
 
@@ -347,6 +348,36 @@ def test_find_regressions_allocated_total_bytes(tmp_path):
     assert find_regressions(a, b, [parse_threshold("allocated:50%")])
     assert find_regressions(a, b, [parse_threshold("allocated:0.5MiB")])  # grew ~1 MiB
     assert not find_regressions(a, b, [parse_threshold("peak:1%")])  # peak unchanged
+
+
+def test_find_regressions_rss_detects_growth(tmp_path):
+    a = _write(tmp_path / "base.json", [_bm("x", peak=10, rss=1000)])
+    b = _write(tmp_path / "head.json", [_bm("x", peak=10, rss=1200)])
+    assert find_regressions(a, b, [parse_threshold("rss:10%")])  # +20%
+    assert not find_regressions(a, b, [parse_threshold("rss:30%")])
+
+
+def test_rss_gate_without_isolated_data_is_loud(tmp_path):
+    # rss exists only for isolated runs; gating it against ordinary runs must ERROR, not
+    # silently pass — a gate that can never fire is worse than one that fails (review #2).
+    from pytest_benchmem.compare import memory_regressions
+
+    a = _write(tmp_path / "base.json", [_bm("x", peak=10)])  # no rss
+    b = _write(tmp_path / "head.json", [_bm("x", peak=10)])
+    with pytest.raises(ValueError, match="--benchmark-memory-isolate"):
+        find_regressions(a, b, [parse_threshold("rss:10%")])
+
+    blob = {"peak_bytes": [10], "allocations": [1], "total_bytes": [10]}  # in-process blob
+    with pytest.raises(ValueError, match="--benchmark-memory-isolate"):
+        memory_regressions({"x": blob}, {"x": blob}, [parse_threshold("rss:10%")])
+
+
+def test_compare_notes_when_rss_requested_but_absent(tmp_path):
+    a = _write(tmp_path / "base.json", [_bm("x", peak=10)])  # no rss
+    b = _write(tmp_path / "head.json", [_bm("x", peak=20)])
+    buf = StringIO()
+    compare_runs([a, b], columns="peak,rss", out=buf)
+    assert "rss not recorded" in buf.getvalue()  # not a silent column drop
 
 
 def test_find_regressions_ignores_improvements(tmp_path):

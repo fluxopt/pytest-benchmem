@@ -55,8 +55,11 @@ _METRIC_SPEC: dict[str, tuple[str, bool]] = {
 _ABSENT = "—"
 #: Every metric, in order — what a direct library render shows.
 ALL_METRICS: tuple[str, ...] = tuple(_METRIC_SPEC)
-#: The default metric shown in a pytest run — peak is the headline; the rest are opt-in.
-DEFAULT_METRICS: tuple[str, ...] = ("peak",)
+#: The default metrics shown in a pytest run. ``peak`` is the headline; ``rss`` is included so an
+#: isolated run's RSS is *visible where it was enabled* — but it's an optional metric, so
+#: :func:`mem_columns` drops it for in-process runs (no values), leaving the table unchanged
+#: there. ``allocated`` / ``allocations`` stay opt-in.
+DEFAULT_METRICS: tuple[str, ...] = ("peak", "rss")
 #: The distribution stats a multi-repeat metric can spread into.
 _STAT_FNS: dict[str, Callable[[Sequence[float]], float]] = {
     "min": min,

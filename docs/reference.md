@@ -36,6 +36,34 @@ def test_build(benchmark_memory):
 | `max_allocated` | — | as `max_peak`, on `allocated` (total bytes). |
 | `max_allocations` | — | as above, on the `allocations` *count* — a bare number (no unit). |
 
+!!! warning "Isolated `rss` measures the *whole job* — build the state inside the callable"
+    The `rss` metric (`isolate=True`) runs the action in a **fresh, empty process**. Two
+    consequences:
+
+    **The build must happen inside the measured callable, and the callable must be a top-level,
+    picklable function.** The child starts with nothing, so it must construct whatever it
+    operates on; and `spawn` serializes the call with standard `pickle`, so a **lambda or closure
+    is rejected** (we don't use cloudpickle) — pass a module-level function plus lightweight args.
+
+    ```python
+    # ✅ ships only the spec (~bytes); the child builds + writes cold = the whole job's RSS
+    benchmark_memory(build_and_write, spec, n)
+
+    # ❌ a lambda/closure — rejected; std pickle can't serialize it (even build-inside)
+    benchmark_memory(lambda: write(build(spec, n)))
+
+    # ❌ a top-level partial over a *pre-built* model pickles fine, but ships the model and
+    #    measures *deserializing* it, not building it — the build never re-runs in the child
+    model = build(spec, n)
+    benchmark_memory(partial(write, model))
+    ```
+
+    **You can't isolate a single sub-phase.** Since the child must build before it can operate,
+    isolated `rss` is a **build-plus-operate capacity number by construction**, never a per-phase
+    figure (e.g. *write-only*). For per-phase memory, use the in-process `peak` metric, which
+    *can* measure a write given an already-built model. So the rule is two-part: **use a
+    top-level function (no lambdas), and don't pass heavy pre-built state — build it inside.**
+
 ### Absolute ceilings — `max_peak` / `max_allocated` / `max_allocations`
 
 ```python

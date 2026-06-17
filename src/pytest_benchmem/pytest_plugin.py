@@ -287,6 +287,13 @@ def _record_memory(
     process and record ``rss_bytes``), and ``max_time`` pass through too. Any ``max_*``
     ``limits`` are enforced on the result (freshly measured or reused), so a breach fails once.
     """
+    if isolate and setup is not None:
+        # pedantic `setup` rebuilds per-sample state via a closure that can't cross the spawn
+        # boundary — and "make it a top-level function" (the generic pickling error) won't help.
+        raise ValueError(
+            "isolate=True can't carry per-sample `setup` state across the process boundary. "
+            "Drop `setup`, or drop isolation for this benchmark."
+        )
     existing = benchmark.extra_info.get(BENCHMEM_KEY)
     if isinstance(existing, Mapping):
         result = MemoryResult.from_blob(existing)
@@ -626,7 +633,9 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=False,
         help="Run each memray pass in a fresh process and also record whole-process resident "
         "memory (RSS, the `rss` metric) — the physical/OOM-relevant peak memray's logical heap "
-        "can't give. Needs a top-level, picklable benchmarked function. Overridden per-test by "
+        "can't give. Needs a top-level, picklable benchmarked function. Each pass is a fresh "
+        "interpreter re-importing your code + memray, so an isolated run is markedly slower than "
+        "in-process — consider pinning --benchmark-memory-repeats. Overridden per-test by "
         "@pytest.mark.benchmem(isolate=True/False). Off by default.",
     )
     group.addoption(
@@ -972,7 +981,11 @@ def pytest_terminal_summary(terminalreporter: Any, config: pytest.Config) -> Non
     if thresholds:
         from pytest_benchmem.compare import Regression, memory_regressions
 
-        regressions: list[Regression] = memory_regressions(baseline, current, thresholds)
+        try:
+            regressions: list[Regression] = memory_regressions(baseline, current, thresholds)
+        except ValueError as exc:  # e.g. an rss gate against non-isolated runs — fail, don't skip
+            write(f"benchmem-compare: {exc}")
+            raise MemoryRegression(str(exc)) from exc
         if regressions:
             write("Memory regressions over threshold:")
             for reg in regressions:
