@@ -222,3 +222,17 @@ def test_in_process_run_has_no_rss():
 def test_isolate_rejects_unpicklable_action():
     with pytest.raises(RuntimeError, match="picklable"):
         measure_memory(lambda: bytearray(1024), repeats=1, warmup=0, isolate=True)
+
+
+def _consume(buf: bytes) -> int:
+    return len(buf)  # module-level so the partial is picklable
+
+
+def test_isolate_warns_on_heavy_pickled_action():
+    # a partial closing over a big pre-built object pickles heavy → rss would measure
+    # deserializing it, not building it. Warn (the build-inside-the-callable rule).
+    from functools import partial
+
+    action = partial(_consume, bytes(2 * 1024 * 1024))  # 2 MiB shipped in the pickle
+    with pytest.warns(UserWarning, match="deserializing"):
+        measure_memory(action, repeats=1, warmup=0, isolate=True)
