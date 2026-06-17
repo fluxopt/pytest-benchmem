@@ -177,6 +177,7 @@ live from the typer app as it actually renders in a terminal:
     :name: benchmem
     :termynal: true
     :subcommands: -1
+    :width: 100
 
 ## Public Python API
 
