@@ -187,8 +187,13 @@ def _compute_statistics() -> Callable[[str], Any]:
 _NESTED_TRACKER_MARKER = "more than one Tracker"
 
 
-def _track_to(out: Path, action: Action) -> Measurement:
+def _track_to(out: Path, action: Action, *, native: bool = False) -> Measurement:
     """Track ``action`` to the ``out`` ``.bin`` (which memray creates) → a :class:`Measurement`.
+
+    With ``native=True`` the tracker also captures native (C/C++/Rust) stacks, so a flamegraph
+    of the kept ``.bin`` attributes memory inside extension code (polars/numpy/solver bindings)
+    instead of collapsing it into one unresolved ``??? at ???`` bucket. It costs runtime and a
+    bigger ``.bin``, so it's only used for a *kept* profile (see :func:`_track_once`).
 
     memray allows only one active ``Tracker`` per process, so if one is already
     running — most often pytest-memray's ``--memray`` profiling the same test — the
@@ -199,7 +204,7 @@ def _track_to(out: Path, action: Action) -> Measurement:
 
     compute_statistics = _compute_statistics()
     try:
-        with memray.Tracker(out):
+        with memray.Tracker(out, native_traces=native):
             action()
     except RuntimeError as exc:
         if _NESTED_TRACKER_MARKER in str(exc):
@@ -219,16 +224,18 @@ def _track_to(out: Path, action: Action) -> Measurement:
     )
 
 
-def _track_once(action: Action, keep_bin: Path | None = None) -> Measurement:
+def _track_once(action: Action, keep_bin: Path | None = None, native: bool = False) -> Measurement:
     """One fresh tracker run → a :class:`Measurement`.
 
     With ``keep_bin`` the profile ``.bin`` is written there and retained (for a later
-    :func:`render_flamegraph`); otherwise it goes to a temp dir and is discarded.
+    :func:`render_flamegraph`); otherwise it goes to a temp dir and is discarded. ``native``
+    capture is honored only for a kept ``.bin`` — a discarded profile gains nothing from the
+    extra runtime and disk cost.
     """
     if keep_bin is not None:
         keep_bin.parent.mkdir(parents=True, exist_ok=True)
         keep_bin.unlink(missing_ok=True)  # memray must create the file itself
-        return _track_to(keep_bin, action)
+        return _track_to(keep_bin, action, native=native)
     with tempfile.TemporaryDirectory(prefix="pytest-benchmem-") as tmp:
         return _track_to(Path(tmp) / "track.bin", action)
 
@@ -256,6 +263,7 @@ def measure_memory(
     max_passes: int = _ADAPTIVE_MAX_PASSES,
     patience: int = _ADAPTIVE_PATIENCE,
     keep_bin: Path | None = None,
+    native: bool = False,
     setup: Action | None = None,
 ) -> MemoryResult:
     """Run ``action()`` under ``memray.Tracker`` → :class:`MemoryResult`, one pass per repeat.
@@ -291,6 +299,9 @@ def measure_memory(
         patience: Stop adaptive sampling after this many consecutive passes with no new min.
         keep_bin: If set, the *first* pass's profile ``.bin`` is retained here (for a later
             :func:`render_flamegraph`); the rest still go to temp dirs and are discarded.
+        native: Capture native (C/C++/Rust) stacks in the **kept** ``.bin`` so a flamegraph can
+            attribute memory inside extension code instead of an opaque native bucket. Costs
+            runtime and disk; only meaningful with ``keep_bin`` (ignored otherwise).
         setup: Optional zero-arg callable run **untracked** before each pass (and each warmup
             run) — its allocations are not measured. Use it to rebuild fresh state so a stateful
             ``action`` (one that caches on or mutates a carried-over object) gives *independent*
@@ -314,7 +325,7 @@ def measure_memory(
     def _one(first: bool) -> Measurement:
         if isolate:
             return _isolated_run(action, setup, warmup)
-        return _run_pass(action, setup=setup, keep_bin=keep_bin if first else None)
+        return _run_pass(action, setup=setup, keep_bin=keep_bin if first else None, native=native)
 
     if repeats is not None:
         samples = [_one(i == 0) for i in range(max(1, repeats))]
@@ -342,12 +353,15 @@ def measure_memory(
 
 
 def _run_pass(
-    action: Action, setup: Action | None = None, keep_bin: Path | None = None
+    action: Action,
+    setup: Action | None = None,
+    keep_bin: Path | None = None,
+    native: bool = False,
 ) -> Measurement:
     """``setup()`` (untracked) then one tracked pass, then a ``gc.collect()`` for a clean heap."""
     if setup is not None:
         setup()  # rebuild fresh state outside the tracker — its memory isn't counted
-    sample = _track_once(action, keep_bin=keep_bin)
+    sample = _track_once(action, keep_bin=keep_bin, native=native)
     gc.collect()
     return sample
 

@@ -620,6 +620,68 @@ def test_profile_no_gate_saves_every_measured(pytester):
     result.stdout.fnmatch_lines(["*saved 2 memory profile(s)*", "*memray flamegraph*"])
 
 
+def test_profile_native_captures_native_traces_in_kept_bin(pytester):
+    """--benchmark-memory-profile-native flips native capture on for the kept .bin, so a
+    flamegraph can attribute extension-code memory (verified via memray's metadata)."""
+    pytester.makepyfile("def test_small(benchmark):\n    benchmark(lambda: [0] * 50_000)\n")
+    out = pytester.path / "profiles"
+    result = pytester.runpytest_subprocess(
+        "--benchmark-only",
+        "--benchmark-memory",
+        f"--benchmark-memory-profile={out}",
+        "--benchmark-memory-profile-native",
+        "-p",
+        "no:cacheprovider",
+    )
+    result.assert_outcomes(passed=1)
+    import memray
+
+    binp = next(out.glob("*.bin"))
+    assert memray.FileReader(str(binp)).metadata.has_native_traces
+
+
+def test_profile_native_per_test_marker(pytester):
+    """@pytest.mark.benchmem(profile_native=True) enables native capture for just that test,
+    even when the suite-wide flag is off."""
+    pytester.makepyfile(
+        "import pytest\n\n"
+        "@pytest.mark.benchmem(profile_native=True)\n"
+        "def test_native(benchmark):\n    benchmark(lambda: [0] * 50_000)\n\n"
+        "def test_plain(benchmark):\n    benchmark(lambda: [0] * 50_000)\n"
+    )
+    out = pytester.path / "profiles"
+    result = pytester.runpytest_subprocess(
+        "--benchmark-only",
+        "--benchmark-memory",
+        f"--benchmark-memory-profile={out}",
+        "-p",
+        "no:cacheprovider",
+    )
+    result.assert_outcomes(passed=2)
+    import memray
+
+    by_native = {
+        ("native" if "test_native" in p.name else "plain"): memray.FileReader(
+            str(p)
+        ).metadata.has_native_traces
+        for p in out.glob("*.bin")
+    }
+    assert by_native == {"native": True, "plain": False}  # only the marked test got native
+
+
+def test_profile_native_without_profile_dir_errors(pytester):
+    """--benchmark-memory-profile-native on its own is a silent no-op trap, so it fails fast."""
+    pytester.makepyfile("def test_x(benchmark):\n    benchmark(lambda: [0] * 1000)\n")
+    result = pytester.runpytest_subprocess(
+        "--benchmark-only",
+        "--benchmark-memory-profile-native",
+        "-p",
+        "no:cacheprovider",
+    )
+    assert result.ret != 0
+    result.stderr.fnmatch_lines(["*needs --benchmark-memory-profile*"])
+
+
 def test_profile_with_gate_saves_offenders_only(pytester):
     """With a fail-gate, only the regressing id's .bin is kept (clean ids get nothing)."""
     storage = str(pytester.path / "store")

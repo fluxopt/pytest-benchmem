@@ -233,6 +233,33 @@ heaviest, so you don't have to look up the id. `--report` passes through to any 
 the `.bin` (override with `-o`, overwrite with `-f`). `--native` asserts the profile actually
 carries native traces (see below) and errors with the fix if it doesn't.
 
+#### Native-backed workloads: attribute the C/Rust memory
+
+By default the capture records **Python** frames only. For a native-backed workload
+(polars/Rust, numpy/C, solver bindings) the bulk of peak memory is allocated *inside* the
+extension, so the flamegraph collapses it into one unresolved `??? at ???` bucket — exactly
+the part you wanted to localize. Add `--benchmark-memory-profile-native` to also capture native
+stacks:
+
+```bash
+pytest --benchmark-only --benchmark-memory \
+       --benchmark-memory-profile profiles/ \
+       --benchmark-memory-profile-native
+```
+
+Now the flamegraph attributes memory to the real frames (e.g. jemalloc `_rjem_je_*` under
+`rayon` workers, reached via the polars write path) instead of an opaque native bucket. It's
+**opt-in** — native traces cost runtime and produce bigger `.bin`s — and only applies on the
+`--benchmark-memory-profile` path (without a kept profile there's nothing to enrich, so the
+flag errors rather than silently doing nothing). Scope it to one test with
+`@pytest.mark.benchmem(profile_native=True)` instead of the suite-wide flag.
+
+!!! note "Symbols sharpen native frames"
+    Native traces resolve against interpreter/library symbols. On a stripped build memray warns
+    `No symbol information was found for the Python interpreter`; frames then show as mangled
+    Rust/`<unknown>` but stay attributable by symbol name (`_rjem_je_*`, `rayon_*`). A
+    debug-symbol interpreter sharpens the picture.
+
 **Which benchmarks get a profile** follows the gate:
 
 - **with** `--benchmark-memory-compare-fail` → only the **regressing** ids (keep the failing
