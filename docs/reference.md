@@ -178,6 +178,7 @@ live from the typer app as it actually renders in a terminal:
     :termynal: true
     :subcommands: -1
     :width: 100
+    :scheme: osx
 
 ## Public Python API
 
