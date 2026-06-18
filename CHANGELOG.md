@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.2](https://github.com/fluxopt/pytest-benchmem/compare/v0.4.1...v0.4.2) (2026-06-18)
+
+
+### Bug Fixes
+
+* **docs:** pin mkdocs-typer2 &gt;=0.4.1 and drop NO_COLOR workaround ([#120](https://github.com/fluxopt/pytest-benchmem/issues/120)) ([db1453f](https://github.com/fluxopt/pytest-benchmem/commit/db1453f8a557b221563e83e8223f3f754c70bdb7))
+
 ## [0.4.1](https://github.com/fluxopt/pytest-benchmem/compare/v0.4.0...v0.4.1) (2026-06-17)
 
 
