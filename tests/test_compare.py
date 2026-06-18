@@ -57,6 +57,38 @@ def test_same_file_twice_errors_cleanly(tmp_path):
         compare_runs([a, a], out=StringIO())
 
 
+def test_single_run_prints_plain_table(tmp_path):
+    # one run is a valid input: a plain readout, no cross-run multiplier or ranking colour
+    a = _write(tmp_path / "run.json", [_bm("test_x", t=1.0, peak=10 * 1024**2)])
+    out = StringIO()
+    compare_runs([a], columns="time,peak", out=out)
+    text = out.getvalue()
+    assert "time (s)" in text and "peak (MiB)" in text  # the columns still render
+    rows = _lines(text, "test_x")
+    assert "(run)" in rows  # the single run's label still names the row
+    assert "(1.0)" not in rows  # nothing to compare against → no relative multiplier
+
+
+def test_single_run_multi_id_has_no_within_run_ranking(tmp_path):
+    # a single run with several ids in one group is still plain — no (N.NN) ranking the
+    # ids against each other (that's reserved for the cross-run comparison).
+    a = _write(
+        tmp_path / "run.json",
+        [_bm("pkg::test_op[n=1]", peak=1024), _bm("pkg::test_op[n=2]", peak=10 * 1024**2)],
+    )
+    out = StringIO()
+    compare_runs([a], columns="peak", group_by="func", out=out)
+    text = out.getvalue()
+    assert "test_op[n=1]" in text and "test_op[n=2]" in text
+    assert "(1.0)" not in text and "(10240.00)" not in text  # no within-run multiplier
+
+
+def test_single_run_empty_file_errors(tmp_path):
+    a = _write(tmp_path / "run.json", [])
+    with pytest.raises(ValueError, match="no benchmarks"):
+        compare_runs([a], out=StringIO())
+
+
 def test_distinct_files_same_stem_disambiguate(tmp_path):
     # two real runs that happen to share a stem (v1/bench.json vs v2/bench.json)
     # is a legit comparison and must not collapse to one series.

@@ -1,11 +1,12 @@
-"""Text comparison of two or more pytest-benchmark runs — keyed on the benchmark id.
+"""Text table for one or more pytest-benchmark runs — keyed on the benchmark id.
 
-:func:`compare_runs` prints the comparison table, modelled on pytest-benchmark's own:
+:func:`compare_runs` prints the table, modelled on pytest-benchmark's own:
 rows are one per ``(benchmark × run)``, columns are ``metric × stat`` (``--columns``
 picks the metrics, default ``time,peak``; ``--stat`` picks the stat, default ``all`` for
-the full min/max/mean/median/stddev spread), every cell carries a relative ``(N.NN)``
-multiplier vs its column's best (best green, worst red), and ``group_by`` splits the rows
-into sub-tables.
+the full min/max/mean/median/stddev spread), and ``group_by`` splits the rows into
+sub-tables. With **two or more** runs every cell carries a relative ``(N.NN)`` multiplier
+vs its column's best (best green, worst red); a **single** run is a plain readout — there's
+no other run to rank against, so the multiplier and colour are dropped.
 
 The rest is the regression gate behind ``benchmem compare --fail-on``: parse a threshold
 like ``peak:10%`` / ``peak:5MiB`` / ``allocations:5%`` / ``time:5%``, find the ids whose
@@ -227,15 +228,15 @@ def compare_runs(
     csv: Path | None = None,
     out: TextIO | None = None,
 ) -> None:
-    """Print a per-(benchmark, run) comparison table across two or more runs.
+    """Print a per-(benchmark, run) table for one or more runs.
 
     Mirrors pytest-benchmark's table model: rows are one per ``(benchmark × run)``,
     ``columns`` selects which metric columns appear (``time`` / ``peak`` / ``allocated``
-    / ``allocations``), each cell carries the value plus a relative ``(N.NN)`` multiplier
-    vs the group's best (best green, worst red), and ``group_by`` splits the rows into
-    sub-tables (``fullname`` / ``name`` / ``func`` / ``group`` / ``module`` / ``class`` /
-    ``param:NAME``, comma-composable). With no ``group_by`` the whole comparison is one
-    table.
+    / ``allocations``). With two or more runs each cell also carries a relative ``(N.NN)``
+    multiplier vs the group's best (best green, worst red); a single run is a plain readout
+    with neither. ``group_by`` splits the rows into sub-tables (``fullname`` / ``name`` /
+    ``func`` / ``group`` / ``module`` / ``class`` / ``param:NAME``, comma-composable). With
+    no ``group_by`` the whole comparison is one table.
 
     Every column is a ``metric × stat`` pair. ``columns`` is a comma list of metric names
     (default ``time,peak``); ``stat`` is one of ``min`` / ``max`` / ``mean`` / ``median`` /
@@ -254,11 +255,16 @@ def compare_runs(
         raise ValueError(f"unknown --sort {sort!r}; use one of {', '.join(_SORTS)}")
     metrics, stats = _resolve_columns(columns), _resolve_stats(stat)
     labels, values, units, dims = _load_columns(runs, metrics, stats)
-    if len(labels) < 2:  # noqa: PLR2004 — a comparison needs two sides
+    if not labels:
+        raise ValueError("no benchmarks found in the given run(s)")
+    if len(labels) < 2 and len(runs) > 1:  # noqa: PLR2004 — distinct paths collapsed to one series
         raise ValueError(
             f"compare needs at least two distinct runs; got {labels!r} "
             f"(the same file more than once?). Pass distinct files."
         )
+    # One run is a plain readout: with no other run to rank against, the (N.NN) multiplier and
+    # the best/worst colour are meaningless (best == worst == the value), so they're dropped.
+    single = len(labels) == 1
     with_data = {col_id for col_id, _i, _lab in values}
     all_cols = [(m, s) for m in metrics for s in stats]
     cols = [(m, s) for m, s in all_cols if f"{m}:{s}" in with_data] or all_cols  # drop empties
@@ -338,7 +344,9 @@ def compare_runs(
                     if unit == ""
                     else f"{v:.4g}"
                 )
-                cells.append(Text(body + _mult(v, best), style=rank_style(v, best, worst) or ""))
+                mult = "" if single else _mult(v, best)
+                style = "" if single else (rank_style(v, best, worst) or "")
+                cells.append(Text(body + mult, style=style))
             table.add_row(*cells)
         console.print(table)
         console.print()  # one blank line between sub-tables
