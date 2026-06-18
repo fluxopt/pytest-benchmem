@@ -1,16 +1,23 @@
 # Choosing a metric
 
-One memray pass yields three numbers, not one. `peak` is the default and the headline, but
-`allocated` and `allocations` often catch what `peak` hides. Pick by the question you're asking:
+A run yields up to four numbers, not one. `peak` is the default and the headline;
+`allocated` and `allocations` often catch what `peak` hides; and `rss` — opt-in — is the
+whole-process *physical* peak. Pick by the question you're asking:
 
 | Metric | What it is | Reach for it when |
 |---|---|---|
 | `peak` | high-water of *live* bytes — the most held at once | headline footprint; "how big did it get?" |
 | `allocated` | sum of *every* allocation over the run | churn / temporary spikes `peak` smooths over |
 | `allocations` | count of allocation calls | a near-deterministic, low-noise CI tripwire |
+| `rss` *(opt-in)* | whole-process resident high-water, OS-level — interpreter baseline included | "will it fit in RAM?" — OOM/capacity headroom, the *physical* number a logical heap can't give |
 
-All three are memray's allocator demand — what your code *requested*, in-process and
+The first three come from **one memray pass** — your code's allocator *demand*, in-process and
 byte-exact, so they see native (numpy / C-extension) allocations, not just Python objects.
+`rss` is the OS counterpart: the **whole process's** resident peak (interpreter + arenas +
+extensions), the figure the OOM killer actually watches. It rides a *separate isolated pass*
+and is **opt-in per test** — mark the build-plus-operate benchmarks you want it on with
+`@pytest.mark.benchmem(isolate=True)` (there's deliberately no suite-wide flag; see the
+[marker reference](reference.md#the-benchmem-marker) for the picklable-callable rule).
 
 ## Three readings of one run
 
