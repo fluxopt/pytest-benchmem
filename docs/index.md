@@ -69,7 +69,7 @@ pytest-benchmark and memray are core deps. The memory pass needs memray, which i
 | If you want to… | Go to |
 |---|---|
 | Run your first benchmark and read both metrics | [Quickstart](getting-started.md) |
-| Know which of peak / allocated / allocations to track | [Choosing a metric](metrics.md) |
+| Know which of peak / allocated / allocations / rss to track | [Choosing a metric](metrics.md) |
 | Diff two runs and fail CI on a regression | [Compare & gate CI](compare-plot.ipynb) |
 | Slice plots and tables by an axis (input size, op, …) | [Grouping by dims](dims.md) |
 | Benchmark across installed versions of a package | [Cross-version sweeps](sweeps.md) |
