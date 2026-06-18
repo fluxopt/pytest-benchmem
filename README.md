@@ -50,7 +50,7 @@ test_build[n=5000]
 ```
 
 Gate inline in the run too (`--benchmark-memory-compare-fail`), and `--benchmark-memory-profile
-DIR` keeps the memray `.bin` of each offender so `memray flamegraph` shows *where* it grew.
+DIR` keeps the memray `.bin` of each offender so `benchmem flamegraph` shows *where* it grew.
 
 **`benchmem plot` / `sweep`** — dims-aware plotly views (scaling vs input size, A/B scatter,
 version sweeps) and cross-version runs from one command:

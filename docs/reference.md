@@ -17,7 +17,7 @@ Timing regressions still use pytest-benchmark's own `--benchmark-compare` /
 `--benchmark-compare-fail`; the `--benchmark-memory-compare*` flags are the memory
 mirror. Their baseline comes from pytest-benchmark's storage (`.benchmarks/`) — save
 one first with `--benchmark-save=NAME` or `--benchmark-autosave`, or the gate finds
-nothing and passes. See [Gate CI on regressions](compare-plot.ipynb#gate-ci-on-regressions).
+nothing and passes. See [Gate CI on a regression](compare-plot.ipynb#gate-ci-on-a-regression).
 
 ## The `benchmem` marker
 

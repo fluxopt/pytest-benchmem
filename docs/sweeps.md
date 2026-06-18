@@ -38,7 +38,7 @@ benchmem plot 1.2.0.json 1.3.0.json main.json --columns peak
 
 `compare` shows `time` and `peak` across every stat by default (pick metrics with
 `--columns`, a stat with `--stat`); `plot` takes one `--columns`. See
-[Compare & gate CI](compare-plot.md) for the other views.
+[Compare & gate CI](compare-plot.ipynb) for the other views.
 
 ---
 
