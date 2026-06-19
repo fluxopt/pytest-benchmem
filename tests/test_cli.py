@@ -60,6 +60,23 @@ def test_compare_prints_table(tmp_path):
     assert "(2.00)" in result.output and "time (s)" in result.output
 
 
+def test_compare_single_run_prints_table(tmp_path):
+    # one run is allowed now: a plain table, no comparison multiplier
+    a = _run(tmp_path, "run.json", [_bm("test_x", t=1.0, peak=10 * 1024**2)])
+    result = runner.invoke(app, ["compare", str(a), "--columns", "time,peak"])
+    assert result.exit_code == 0, _text(result)
+    assert "time (s)" in result.output and "peak (MiB)" in result.output
+    assert "(1.0)" not in result.output  # nothing to rank against
+
+
+def test_compare_single_run_with_fail_on_exits_2(tmp_path):
+    # --fail-on gates growth of one run vs another, so it needs two; refuse, don't silently pass
+    a = _run(tmp_path, "run.json", [_bm("test_x", peak=100)])
+    result = runner.invoke(app, ["compare", str(a), "--fail-on", "peak:10%"])
+    assert result.exit_code == 2
+    assert "at least two runs" in _text(result)
+
+
 def test_compare_columns_selects_time_and_peak(tmp_path):
     a = _run(tmp_path, "base.json", [_bm("test_x", t=1.0, peak=10 * 1024**2)])
     b = _run(tmp_path, "head.json", [_bm("test_x", t=1.0, peak=20 * 1024**2)])

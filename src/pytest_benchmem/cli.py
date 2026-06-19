@@ -188,7 +188,10 @@ def plot(
 def compare(
     runs: Annotated[
         list[Path],
-        typer.Argument(help="Two or more pytest-benchmark runs, oldest → newest (a sweep is N)."),
+        typer.Argument(
+            help="One or more pytest-benchmark runs, oldest → newest. One prints a plain "
+            "table; two or more compare (a sweep is N)."
+        ),
     ],
     columns: Annotated[
         str | None,
@@ -233,9 +236,16 @@ def compare(
         ),
     ] = None,
 ) -> None:
-    """Print a per-id comparison table across two or more runs (and optionally gate CI)."""
-    if len(runs) < 2:  # noqa: PLR2004 — a comparison needs two sides
-        raise _fail("compare needs at least two runs", 2)
+    """Print a per-id table for one run, or compare two or more (and optionally gate CI)."""
+    if not runs:
+        raise _fail("compare needs at least one run", 2)
+    if fail_on and len(runs) < 2:  # noqa: PLR2004 — a growth gate needs a before and an after
+        raise _fail(
+            "compare --fail-on needs at least two runs — it gates growth of the first run vs "
+            "the last. For an absolute ceiling on a single run, use the "
+            "@pytest.mark.benchmem(max_peak=...) marker instead.",
+            2,
+        )
     _require_runs_exist(runs, suggest=False)
     from pytest_benchmem.compare import compare_runs, find_regressions, parse_threshold
 
