@@ -347,9 +347,7 @@ def _stub_view(plotting_mod, monkeypatch, fig):
 
 def test_plot_image_suffix_calls_write_image(tmp_path, monkeypatch):
     """An image suffix routes through write_image (kaleido) instead of write_html."""
-    import pytest_benchmem.cli as cli
-
-    monkeypatch.setattr(cli.importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name: object())
     fig = _FakeFig()
     _stub_view(plotting, monkeypatch, fig)
     r = _run(tmp_path, "r.json", [_bm("x")])
@@ -361,11 +359,9 @@ def test_plot_image_suffix_calls_write_image(tmp_path, monkeypatch):
 
 def test_plot_image_suffix_without_kaleido_exits_2(tmp_path, monkeypatch):
     """A static suffix without kaleido is a clean error naming the extra, not a crash."""
-    import pytest_benchmem.cli as cli
-
     # plotly present (plot gate passes), kaleido absent (image gate fails).
     monkeypatch.setattr(
-        cli.importlib.util,
+        importlib.util,
         "find_spec",
         lambda name: None if name == "kaleido" else object(),
     )
