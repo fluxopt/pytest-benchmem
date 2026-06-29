@@ -48,9 +48,10 @@ build-backend = "hatchling.build"
 source = "vcs"
 
 [dependency-groups]
-# mypy <2.1: 2.1.0 type-checks numpy's bundled stubs against python_version=3.11 and trips on
-# numpy's PEP 695 `type` statement (valid only on 3.12+). Unpin once that regression is resolved.
-dev = ["ruff", "mypy<2.1", "pre-commit", "pytest-benchmem[plot]", { include-group = "docs" }]
+# Dev tools pinned exactly so CI is reproducible (no committed lockfile) — dependabot's "linting"
+# group bumps them via PRs. mypy held at 2.0.0: 2.1.0 type-checks numpy's bundled stubs against
+# python_version=3.11 and trips on numpy's PEP 695 `type` statement (valid only on 3.12+).
+dev = ["ruff==0.15.16", "mypy==2.0.0", "pre-commit==4.6.0", "pytest-benchmem[plot]", { include-group = "docs" }]
 docs = [
     "jupytext",
     "ipykernel",
