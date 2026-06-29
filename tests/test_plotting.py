@@ -84,6 +84,16 @@ def test_scatter_two_runs(tmp_path):
     assert n == 3  # unique ids
 
 
+def test_scatter_drops_redundant_baseline_points(tmp_path):
+    # the baseline series compared against itself is ratio 1.0 — it must not be drawn (it would
+    # double the dots per id and clutter the y=1.0 line); the hline conveys the baseline. (#139)
+    a = _run(tmp_path / "a.json", ROWS_A)
+    b = _run(tmp_path / "b.json", ROWS_B)
+    fig, n = plotting.plot_scatter([a, b])
+    plotted = sum(len(t.y) for t in fig.data if getattr(t, "y", None) is not None)
+    assert plotted == n == 3  # one point per id (candidate only), not 6 (baseline dropped)
+
+
 def test_sweep_three_runs(tmp_path):
     runs = [_run(tmp_path / f"{i}.json", ROWS_A) for i in range(3)]
     fig, n = plotting.plot_sweep(runs)

@@ -275,6 +275,18 @@ def plot_compare(
     return fig, len(df)
 
 
+def _drop_baseline_series(df: pd.DataFrame, baseline_label: str) -> pd.DataFrame:
+    """Drop the baseline series' own rows from a candidate-vs-baseline frame.
+
+    Each baseline row is the baseline compared against itself, so it plots at ``ratio == 1.0`` —
+    a redundant point sitting on the dashed ``y=1.0`` reference line (a second, signal-free dot
+    per id in a 2-series A/B). The hline already conveys the baseline, and in the animated 3+
+    case the baseline frame is likewise all-1.0, so its points are pure clutter. Keys on the
+    canonical ``snapshot`` series column; returns only the candidate rows.
+    """
+    return df[df["snapshot"] != baseline_label]
+
+
 def plot_scatter(
     snapshots: Snapshots,
     *,
@@ -327,10 +339,13 @@ def plot_scatter(
     df = df[df["baseline"] > 0].copy()
     if df.empty:
         raise ValueError(f"no ids shared with baseline ({baseline_label})")
+    df = _drop_baseline_series(df, baseline_label)
+    if df.empty:
+        raise ValueError(f"only the baseline series ({baseline_label}); nothing to compare to it")
 
-    df = df.rename(columns={"snapshot": "version", "value": "candidate"})
-    df["ratio"] = df["candidate"] / df["baseline"]
-    df["delta_abs"] = df["candidate"] - df["baseline"]
+    candidate_labels = labels[1:]  # series order for the animation, baseline excluded
+    df["ratio"] = df["value"] / df["baseline"]
+    df["delta_abs"] = df["value"] - df["baseline"]
     df = df[df["ratio"] > 0]
     y_lo, y_hi = df["ratio"].min(), df["ratio"].max()
     bound = max(y_hi, 1.0 / y_lo, 1.1) ** 1.05
@@ -338,8 +353,8 @@ def plot_scatter(
 
     extra: dict[str, object] = {}
     if len(snapshots) >= 3:
-        extra["animation_frame"] = "version"
-        extra["category_orders"] = {"version": labels}
+        extra["animation_frame"] = "snapshot"
+        extra["category_orders"] = {"snapshot": candidate_labels}
     if facet is not None and facet in df.columns:
         extra["facet_col"] = facet
         extra["facet_col_wrap"] = 3
