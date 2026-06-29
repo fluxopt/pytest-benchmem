@@ -102,6 +102,29 @@ def _axis_kwargs(unit: str) -> dict[str, object]:
     return {"ticksuffix": f" {unit}"}
 
 
+#: Human-friendly metric names for titles/axes — the raw metric is terse (``peak``, ``rss``).
+_METRIC_LABEL = {
+    "time": "time",
+    "peak": "peak memory",
+    "allocated": "memory allocated",
+    "allocations": "allocations",
+    "rss": "RSS (peak)",
+}
+
+#: Spelled-out unit for a title/axis note; the tick suffix keeps the short symbol (``B`` / ``s``).
+_UNIT_NOTE = {"B": "bytes", "s": "seconds"}
+
+
+def _metric_label(metric: str) -> str:
+    """Human-friendly metric name for a title or axis (``peak`` → ``peak memory``)."""
+    return _METRIC_LABEL.get(metric, metric)
+
+
+def _unit_note(unit: str) -> str:
+    """Parenthetical unit note for a title/axis: " (bytes)", " (seconds)", or "" for counts."""
+    return f" ({_UNIT_NOTE[unit]})" if unit in _UNIT_NOTE else ""
+
+
 def _carry_dims(df: pd.DataFrame) -> list[str]:
     """Every analysis dim in the frame (params/extra_info + ``node.*``), minus fixed axes.
 
@@ -207,7 +230,7 @@ def plot_compare(
         snapshots[:2], metric=metric, labels=_labels_head(labels, 2), pivot=pivot
     )
     df_long = _apply_where(df_long, where)
-    vlabel = metric
+    vlabel = _metric_label(metric)
     labels = df_long["snapshot"].drop_duplicates().tolist()
     if len(labels) < 2:
         if pivot:
@@ -244,10 +267,10 @@ def plot_compare(
     x_col = "delta_abs" if sort == "absolute" else "delta_pct"
     df = df.sort_values(x_col).reset_index(drop=True)
 
-    x_label = f"{vlabel} delta ({unit})" if sort == "absolute" else f"{vlabel} delta %"
+    x_label = f"Δ {vlabel}{_unit_note(unit)}" if sort == "absolute" else f"Δ {vlabel} (%)"
     text_fmt = (".2s" if unit in ("s", "B") else ".2f") if sort == "absolute" else ".1f"
     direction = "slower" if unit == "s" else "more memory"
-    title = f"{vlabel} delta ({sort}): {a_label} → {b_label} (positive = {direction})"
+    title = f"{vlabel} change ({sort}): {a_label} → {b_label} — positive = {direction}"
 
     facet_kwargs: dict[str, object] = {}
     if facet is not None and facet in df.columns:
@@ -271,7 +294,9 @@ def plot_compare(
         fig.update_xaxes(**_axis_kwargs(unit))
     _free_facet_axes(fig, faceted=bool(facet_kwargs), free_axes=free_axes)
     fig.update_traces(textposition="outside", cliponaxis=False)
-    fig.update_layout(height=max(500, len(df) * 22), showlegend=False)
+    # The bar's x-position already encodes the delta, so the colour scale is redundant — hide the
+    # colourbar (the green→red fill still reads as improvement→regression) to declutter.
+    fig.update_layout(height=max(500, len(df) * 22), showlegend=False, coloraxis_showscale=False)
     return fig, len(df)
 
 
@@ -328,7 +353,7 @@ def plot_scatter(
 
     df_long, unit = load_long_df(snapshots, metric=metric, labels=labels, pivot=pivot)
     df_long = _apply_where(df_long, where)
-    vlabel = metric
+    vlabel = _metric_label(metric)
     labels = df_long["snapshot"].drop_duplicates().tolist()
     baseline_label = labels[0]
 
@@ -371,10 +396,11 @@ def plot_scatter(
         log_y=True,
         range_y=[1.0 / bound, bound],
         hover_name="id",
-        title=f"{vlabel} scatter vs baseline ({baseline_label}) — top-right = regressed",
+        title=f"{vlabel}: candidate vs baseline ({baseline_label}) — top-right = regressed",
         labels={
-            "baseline": f"baseline {vlabel} ({unit}, log)",
-            "ratio": "ratio (candidate / baseline, log)",
+            "baseline": f"baseline {vlabel}{_unit_note(unit)}, log",
+            "ratio": "ratio: candidate / baseline (log)",
+            "delta_abs": f"Δ {vlabel}{_unit_note(unit)}",  # colourbar (else the raw column name)
         },
         **extra,
     )
@@ -409,7 +435,7 @@ def plot_sweep(
 
     df_long, unit = load_long_df(snapshots, metric=metric, labels=labels)
     df_long = _apply_where(df_long, where)
-    vlabel = metric
+    vlabel = _metric_label(metric)
     versions = df_long["snapshot"].drop_duplicates().tolist()
     baseline = versions[0]
 
@@ -533,7 +559,7 @@ def plot_scaling(
     snap_label = head[0] if head else snapshots[0].stem
     df_long, unit = load_long_df(snapshots[:1], metric=metric, labels=head)
     df_long = _apply_where(df_long, where)
-    vlabel = metric
+    vlabel = _metric_label(metric)
     x, color, facet = _infer_roles(df_long, x, color, facet)
     df = df_long.dropna(subset=[x]).sort_values([c for c in (facet, color, x) if c])
     if df.empty:
@@ -560,8 +586,8 @@ def plot_scaling(
         log_x=use_log,
         log_y=use_log,
         markers=True,
-        labels={"value": f"{vlabel} ({unit})", x: x},
-        title=f"Scaling: {vlabel} ({unit}) vs {x} ({snap_label})",
+        labels={"value": f"{vlabel}{_unit_note(unit)}", x: x},
+        title=f"Scaling: {vlabel} vs {x} ({snap_label})",
         **err,
     )
     _free_facet_axes(fig, faceted=facet is not None, free_axes=free_axes)

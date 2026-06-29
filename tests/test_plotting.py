@@ -21,7 +21,7 @@ def _run(path, rows, *, memory=False):
         if memory:
             peak = int(v * 1024**2)
             bm["extra_info"] = {
-                "benchmem": {"peak_bytes": [peak], "allocations": [0], "total_bytes": [peak]}
+                "benchmem": {"peak_bytes": [peak], "allocations": [int(n)], "total_bytes": [peak]}
             }
         benchmarks.append(bm)
     path.write_text(json.dumps({"benchmarks": benchmarks}))
@@ -121,6 +121,39 @@ def test_metric_memory_unit_in_title(tmp_path):
     a = _run(tmp_path / "a.json", ROWS_A, memory=True)
     fig, _n = plotting.plot_scaling([a], metric="peak")
     assert "peak" in fig.layout.title.text.lower()  # vlabel for MiB is "peak"
+
+
+def test_scaling_axis_uses_friendly_label_and_spelled_unit(tmp_path):
+    a = _run(tmp_path / "a.json", ROWS_A, memory=True)
+    fig, _n = plotting.plot_scaling([a], metric="peak")
+    assert fig.layout.yaxis.title.text == "peak memory (bytes)"  # not "peak (B)"
+
+
+def test_scatter_colourbar_is_labelled_not_raw_column(tmp_path):
+    # regression: the colourbar used to read the raw frame column "delta_abs"
+    a = _run(tmp_path / "a.json", ROWS_A, memory=True)
+    b = _run(tmp_path / "b.json", ROWS_B, memory=True)
+    fig, _n = plotting.plot_scatter([a, b], metric="peak")
+    cbar = fig.layout.coloraxis.colorbar.title.text
+    assert cbar == "Δ peak memory (bytes)" and "delta_abs" not in cbar
+
+
+def test_compare_hides_redundant_colourbar(tmp_path):
+    # the bar x-position already encodes the delta, so the colour scale is hidden
+    a = _run(tmp_path / "a.json", ROWS_A, memory=True)
+    b = _run(tmp_path / "b.json", ROWS_B, memory=True)
+    fig, _n = plotting.plot_compare([a, b], metric="peak")
+    assert fig.layout.coloraxis.showscale is False
+
+
+def test_count_metric_omits_unit_note(tmp_path):
+    # allocations is a count — no "(bytes)"/"(seconds)" note on the baseline axis
+    a, b = (
+        _run(tmp_path / "a.json", ROWS_A, memory=True),
+        _run(tmp_path / "b.json", ROWS_B, memory=True),
+    )
+    fig, _n = plotting.plot_scatter([a, b], metric="allocations")
+    assert fig.layout.xaxis.title.text == "baseline allocations, log"
 
 
 def test_node_dims_carried_but_not_auto_inferred(tmp_path):
