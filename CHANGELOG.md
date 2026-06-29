@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.5](https://github.com/fluxopt/pytest-benchmem/compare/v0.4.4...v0.4.5) (2026-06-29)
+
+
+### Bug Fixes
+
+* plot --view scatter drew the baseline series as redundant ratio-1.0 points ([#140](https://github.com/fluxopt/pytest-benchmem/issues/140)) ([aa24710](https://github.com/fluxopt/pytest-benchmem/commit/aa24710e54bb1d1bc290ee34558b57a18d61fb8f)), closes [#139](https://github.com/fluxopt/pytest-benchmem/issues/139)
+
 ## [0.4.4](https://github.com/fluxopt/pytest-benchmem/compare/v0.4.3...v0.4.4) (2026-06-29)
 
 
