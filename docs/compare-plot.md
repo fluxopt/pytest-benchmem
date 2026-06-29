@@ -154,6 +154,12 @@ pytest benchmarks/ --benchmark-only --benchmark-memory --benchmark-json=build.js
 benchmem compare build.json --pivot param:semantics --fail-on peak:10%
 ```
 
+The **base** (the `--fail-on` reference, and the first row) is the dim's *first* value in
+parametrize / collection order — the `--pivot` analogue of file argument order. So
+`parametrize("semantics", ["legacy", "v1"])` gates `v1` against `legacy`; reorder the list to
+flip it. (The table's `(1.0)` annotation is separate — it marks each column's *best* value,
+green, exactly as the run-file table does, not the base.)
+
 > A `--pivot` param is lifted out of the id when rows fold (`test_build[legacy-100]` → `test_build[100]`),
 > matched by value. A param given a custom `pytest.param(id=…)` whose label differs from its
 > value won't fold — use a plain parametrize value, or an `extra_info` dim (which isn't in the

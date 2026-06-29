@@ -393,6 +393,20 @@ def test_pivot_unknown_dim_errors_with_available(tmp_path):
         compare_runs([run], columns="peak", pivot="param:nope", out=StringIO())
 
 
+def test_pivot_warns_when_nothing_pairs(tmp_path):
+    # custom-id style: the id token (L/V) differs from the param value, so the value never strips
+    # out of the id → rows stay unpaired. Warn rather than silently show a pile of singletons.
+    run = _write(
+        tmp_path / "r.json",
+        [
+            _bm_dim("t[L]", {"semantics": "legacy"}, peak=100),
+            _bm_dim("t[V]", {"semantics": "v1"}, peak=200),
+        ],
+    )
+    with pytest.warns(UserWarning, match="left every row unpaired"):
+        compare_runs([run], columns="peak", pivot="param:semantics", out=StringIO())
+
+
 def test_pivot_gate_flags_growth_first_value_vs_last(tmp_path):
     # the gate generalizes along the pivot axis: base = first dim value (legacy), head = last
     # (v1), paired per folded id. legacy→v1 grows 100→130 (+30%) for n=1, 100→105 (+5%) for n=2.

@@ -139,7 +139,13 @@ def plot(
     """Render an interactive plotly view from one or more pytest-benchmark runs."""
     _require_runs_exist(runs, suggest=True)
 
-    chosen = view or ("scaling" if len(runs) == 1 else "scatter" if len(runs) == 2 else "sweep")
+    # --pivot's natural home is the A/B compare view, so when --view is unset it defaults there
+    # (otherwise one run would default to scaling, which has no series axis to pivot). An explicit
+    # --view still wins in both cases; the guard below rejects a non-paired view under --pivot.
+    if pivot is not None:
+        chosen = view or "compare"
+    else:
+        chosen = view or ("scaling" if len(runs) == 1 else "scatter" if len(runs) == 2 else "sweep")
     # --pivot re-points the series axis at a dim; only the paired views (compare/scatter) have a
     # series axis to re-point. For scaling/sweep the dim is a normal x/colour/facet axis.
     if pivot is not None and chosen not in ("compare", "scatter"):

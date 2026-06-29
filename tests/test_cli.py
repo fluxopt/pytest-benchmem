@@ -163,6 +163,26 @@ def test_plot_pivot_rejected_for_scaling_view(tmp_path):
     assert "compare or scatter" in _text(result)
 
 
+def test_plot_pivot_defaults_to_compare_view(tmp_path, monkeypatch):
+    # one run + --pivot with no --view must default to compare, not scaling (which rejects --pivot)
+    calls = []
+
+    def _stub(name):
+        def _fn(*a, **k):
+            calls.append(name)
+            return _FakeFig(), 2
+
+        return _fn
+
+    for name in ("plot_compare", "plot_scatter", "plot_sweep", "plot_scaling"):
+        monkeypatch.setattr(plotting, name, _stub(name))
+    run = _run(tmp_path, "build.json", [_bm("t[legacy]", peak=1024), _bm("t[v1]", peak=2048)])
+    args = ["plot", str(run), "--pivot", "param:semantics", "-o", str(tmp_path / "o.html")]
+    result = runner.invoke(app, args)
+    assert result.exit_code == 0, _text(result)
+    assert calls == ["plot_compare"]  # not plot_scaling
+
+
 # --- plot view auto-selection ----------------------------------------------------
 
 

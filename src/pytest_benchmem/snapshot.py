@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import statistics
+import warnings
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
@@ -374,7 +375,19 @@ def _pivot_to_series(df: pd.DataFrame, pivot: str) -> pd.DataFrame:
     df = df.copy()
     df["id"] = [_strip_pivot_from_id(i, v) for i, v in zip(df["id"], df[col], strict=True)]
     df["snapshot"] = df[col].astype(str)
-    return df.drop(columns=[col])
+    out = df.drop(columns=[col])
+    # If no id recurs across pivot values, nothing paired — the comparison collapses to a pile of
+    # one-series rows with no error. The usual cause is a custom ``pytest.param(id=…)`` whose label
+    # differs from its value, so the value never strips out of the id. Warn rather than mislead.
+    if len(out) > 1 and not out["id"].duplicated().any():
+        warnings.warn(
+            f"--pivot {pivot!r} left every row unpaired (no benchmark has two values of {col!r} "
+            f"sharing an id) — the table/plot will show singletons, not an A/B. A custom "
+            f"pytest.param(id=…) whose label differs from its value won't fold; use a plain "
+            f"parametrize value or an extra_info dim as the pivot axis.",
+            stacklevel=2,
+        )
+    return out
 
 
 def load_long_df(
