@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.4](https://github.com/fluxopt/pytest-benchmem/compare/v0.4.3...v0.4.4) (2026-06-29)
+
+
+### Features
+
+* `--pivot` comparison axis for compare/plot (fold one run along a config dim) ([#137](https://github.com/fluxopt/pytest-benchmem/issues/137)) ([d0672f7](https://github.com/fluxopt/pytest-benchmem/commit/d0672f74d7040b4f777df342c346052fc9f77678))
+
 ## [0.4.3](https://github.com/fluxopt/pytest-benchmem/compare/v0.4.2...v0.4.3) (2026-06-29)
 
 
