@@ -21,11 +21,14 @@ import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Literal
 
 import typer
 
 from pytest_benchmem.snapshot import Metric, discover_runs
+
+if TYPE_CHECKING:
+    from plotly.graph_objects import Figure
 
 #: Which facet axes to unmatch from the shared default (see ``benchmem plot``).
 FreeAxes = Literal["x", "y", "both"]
@@ -84,7 +87,7 @@ _IMAGE_SUFFIXES = frozenset({".png", ".svg", ".pdf", ".jpg", ".jpeg", ".webp"})
 _HTML_SUFFIXES = frozenset({"", ".html", ".htm"})
 
 
-def _write_figure(fig: object, output: Path) -> None:
+def _write_figure(fig: Figure, output: Path) -> None:
     """Export ``fig`` to ``output``, choosing write_image vs write_html by the suffix.
 
     Image suffixes need kaleido (the ``[plot-static]`` extra); raise a clear Exit(2) naming
@@ -99,9 +102,9 @@ def _write_figure(fig: object, output: Path) -> None:
                 f"(or use an .html output for the interactive plot)",
                 2,
             )
-        fig.write_image(output)  # type: ignore[attr-defined]
+        fig.write_image(output)
     elif suffix in _HTML_SUFFIXES:
-        fig.write_html(output)  # type: ignore[attr-defined]
+        fig.write_html(output)
     else:
         supported = ", ".join(sorted(_IMAGE_SUFFIXES | {".html"}))
         raise _fail(f"unsupported output suffix {suffix!r}; use one of: {supported}", 2)
