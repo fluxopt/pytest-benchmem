@@ -49,7 +49,7 @@ jobs:
       name: pypi
       url: https://pypi.org/project/pytest-benchmem
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || needs.release-please.outputs.tag_name }}
           fetch-depth: 0
