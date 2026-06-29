@@ -276,13 +276,13 @@ def plot_compare(
 
 
 def _drop_baseline_series(df: pd.DataFrame, baseline_label: str) -> pd.DataFrame:
-    """Drop the baseline series' own rows from a candidate-vs-baseline frame.
+    """Drop the baseline series' own rows from a *static* candidate-vs-baseline scatter.
 
-    Each baseline row is the baseline compared against itself, so it plots at ``ratio == 1.0`` —
-    a redundant point sitting on the dashed ``y=1.0`` reference line (a second, signal-free dot
-    per id in a 2-series A/B). The hline already conveys the baseline, and in the animated 3+
-    case the baseline frame is likewise all-1.0, so its points are pure clutter. Keys on the
-    canonical ``snapshot`` series column; returns only the candidate rows.
+    The baseline compared against itself is ``ratio == 1.0`` — a redundant dot per id overplotting
+    the dashed ``y=1.0`` reference line (the "two dots per id" in a 2-series A/B); the hline
+    already conveys it. Only for the non-animated view: in the animated 3+ sweep the baseline is
+    its own frame, not overplotted, and is kept as the t0 "all at parity" anchor the eye starts
+    from. Keys on the canonical ``snapshot`` series column; returns only the candidate rows.
     """
     return df[df["snapshot"] != baseline_label]
 
@@ -339,11 +339,12 @@ def plot_scatter(
     df = df[df["baseline"] > 0].copy()
     if df.empty:
         raise ValueError(f"no ids shared with baseline ({baseline_label})")
-    df = _drop_baseline_series(df, baseline_label)
-    if df.empty:
-        raise ValueError(f"only the baseline series ({baseline_label}); nothing to compare to it")
+    animate = len(snapshots) >= 3  # noqa: PLR2004 — 3+ series animate; the baseline is the t0 frame
+    if not animate:
+        df = _drop_baseline_series(df, baseline_label)
+        if df.empty:
+            raise ValueError(f"only the baseline series ({baseline_label}); nothing to compare to")
 
-    candidate_labels = labels[1:]  # series order for the animation, baseline excluded
     df["ratio"] = df["value"] / df["baseline"]
     df["delta_abs"] = df["value"] - df["baseline"]
     df = df[df["ratio"] > 0]
@@ -352,9 +353,9 @@ def plot_scatter(
     color_clip = _symmetric_clip(df["delta_abs"].to_numpy(), clip)
 
     extra: dict[str, object] = {}
-    if len(snapshots) >= 3:
+    if animate:
         extra["animation_frame"] = "snapshot"
-        extra["category_orders"] = {"snapshot": candidate_labels}
+        extra["category_orders"] = {"snapshot": labels}
     if facet is not None and facet in df.columns:
         extra["facet_col"] = facet
         extra["facet_col_wrap"] = 3
