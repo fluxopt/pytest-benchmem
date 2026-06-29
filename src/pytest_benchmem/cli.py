@@ -78,6 +78,35 @@ def _need_plotly() -> None:
         raise _fail("plotting needs extras: pip install 'pytest-benchmem[plot]'", 2)
 
 
+# Static raster/vector suffixes go through kaleido's write_image; .html (or a bare name) stays
+# interactive HTML. Anything else is a typo we refuse rather than silently writing HTML.
+_IMAGE_SUFFIXES = frozenset({".png", ".svg", ".pdf", ".jpg", ".jpeg", ".webp"})
+_HTML_SUFFIXES = frozenset({"", ".html", ".htm"})
+
+
+def _write_figure(fig: object, output: Path) -> None:
+    """Export ``fig`` to ``output``, choosing write_image vs write_html by the suffix.
+
+    Image suffixes need kaleido (the ``[plot-static]`` extra); raise a clear Exit(2) naming
+    the install when it is absent. An unrecognised suffix is rejected rather than silently
+    written as HTML.
+    """
+    suffix = output.suffix.lower()
+    if suffix in _IMAGE_SUFFIXES:
+        if importlib.util.find_spec("kaleido") is None:
+            raise _fail(
+                f"{suffix} export needs kaleido: pip install 'pytest-benchmem[plot-static]' "
+                f"(or use an .html output for the interactive plot)",
+                2,
+            )
+        fig.write_image(output)  # type: ignore[attr-defined]
+    elif suffix in _HTML_SUFFIXES:
+        fig.write_html(output)  # type: ignore[attr-defined]
+    else:
+        supported = ", ".join(sorted(_IMAGE_SUFFIXES | {".html"}))
+        raise _fail(f"unsupported output suffix {suffix!r}; use one of: {supported}", 2)
+
+
 def _parse_where(items: list[str] | None) -> dict[str, str] | None:
     """Parse repeatable ``KEY=VALUE`` filters into a dict; Exit(2) on a malformed entry."""
     if not items:
@@ -133,7 +162,14 @@ def plot(
             "--label", "-l", help="Series label per run, in order (repeat). Default: stem."
         ),
     ] = None,
-    output: Annotated[Path | None, typer.Option("--output", "-o", help="HTML out.")] = None,
+    output: Annotated[
+        Path | None,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Out file; .html is interactive, .png/.svg/.pdf/.jpg/.webp export a static image.",
+        ),
+    ] = None,
     open_browser: Annotated[bool, typer.Option("--open/--no-open")] = False,
 ) -> None:
     """Render an interactive plotly view from one or more pytest-benchmark runs."""
@@ -202,7 +238,7 @@ def plot(
 
     output = output or Path(".benchmarks") / "plots" / f"{chosen}-{metric}.html"
     output.parent.mkdir(parents=True, exist_ok=True)
-    fig.write_html(output)
+    _write_figure(fig, output)
     typer.secho(f"{chosen} ({metric}): {n} ids → {output}", fg=typer.colors.GREEN)
     if open_browser:
         import webbrowser
