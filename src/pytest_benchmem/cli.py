@@ -260,24 +260,31 @@ def compare(
         list[str] | None,
         typer.Option(
             "--fail-on",
-            help="Exit non-zero on a regression of the first run vs the last. "
-            "FIELD:THRESHOLD, repeatable — e.g. --fail-on peak:10% --fail-on peak:5MiB "
-            "--fail-on rss:10% (rss gates only isolated runs).",
+            help="Exit non-zero on a regression of the first run vs the last (or, with --pivot, "
+            "the first dim value vs the last). FIELD:THRESHOLD, repeatable — e.g. --fail-on "
+            "peak:10% --fail-on peak:5MiB --fail-on rss:10% (rss gates only isolated runs).",
         ),
     ] = None,
 ) -> None:
     """Print a per-id table for one run, or compare two or more (and optionally gate CI)."""
     if not runs:
         raise _fail("compare needs at least one run", 2)
-    if fail_on and len(runs) < 2:  # noqa: PLR2004 — a growth gate needs a before and an after
+    # A growth gate needs a base and a head: two runs, or one run folded along --pivot (which
+    # supplies the two sides from one file). Without either, refuse rather than silently pass.
+    if fail_on and len(runs) < 2 and pivot is None:  # noqa: PLR2004
         raise _fail(
             "compare --fail-on needs at least two runs — it gates growth of the first run vs "
-            "the last. For an absolute ceiling on a single run, use the "
-            "@pytest.mark.benchmem(max_peak=...) marker instead.",
+            "the last. To gate one combined run, add --pivot DIM (first dim value vs last); for "
+            "an absolute ceiling, use the @pytest.mark.benchmem(max_peak=...) marker instead.",
             2,
         )
     _require_runs_exist(runs, suggest=False)
-    from pytest_benchmem.compare import compare_runs, find_regressions, parse_threshold
+    from pytest_benchmem.compare import (
+        compare_runs,
+        find_pivot_regressions,
+        find_regressions,
+        parse_threshold,
+    )
 
     with _exit_on_value_error():
         compare_runs(
@@ -289,9 +296,14 @@ def compare(
     with _exit_on_value_error(code=2):
         thresholds = [parse_threshold(expr) for expr in fail_on]
 
-    # Gate the first run (base) against the last (head) — oldest vs newest in a sweep.
+    # Gate base vs head: the first run vs the last (oldest vs newest in a sweep), or — with
+    # --pivot — the first value of the dim vs the last, folded out of the one run.
     with _exit_on_value_error(code=2):  # e.g. an rss gate against non-isolated runs
-        regressions = find_regressions(runs[0], runs[-1], thresholds)
+        regressions = (
+            find_pivot_regressions(runs[0], pivot, thresholds)
+            if pivot is not None
+            else find_regressions(runs[0], runs[-1], thresholds)
+        )
     if regressions:
         typer.secho(f"{len(regressions)} regression(s) over threshold:", fg=typer.colors.RED)
         for reg in regressions:

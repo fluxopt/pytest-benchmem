@@ -139,6 +139,22 @@ def test_compare_pivot_with_multiple_runs_exits_1(tmp_path):
     assert "folds a single run" in _text(result)
 
 
+def test_compare_pivot_fail_on_gates_along_dim(tmp_path):
+    # --fail-on generalizes along the pivot axis: gate the first dim value (legacy) vs the last
+    # (v1) from one combined run — no second file needed.
+    def _b(sem, peak):
+        b = _bm(f"t[{sem}]", peak=peak)
+        b["params"] = {"semantics": sem}
+        return b
+
+    run = _run(tmp_path, "build.json", [_b("legacy", 100), _b("v1", 130)])  # +30%
+    args = ["compare", str(run), "--columns", "peak", "--pivot", "param:semantics"]
+    over = runner.invoke(app, [*args, "--fail-on", "peak:10%"])
+    assert over.exit_code == 1 and "regression" in _text(over)
+    under = runner.invoke(app, [*args, "--fail-on", "peak:50%"])
+    assert under.exit_code == 0 and "no regressions" in _text(under)
+
+
 def test_plot_pivot_rejected_for_scaling_view(tmp_path):
     # --pivot re-points the comparison series; scaling/sweep have no series axis to re-point
     run = _run(tmp_path, "a.json", [_bm("test_x", peak=1024)])

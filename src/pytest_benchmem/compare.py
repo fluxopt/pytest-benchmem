@@ -488,6 +488,39 @@ def find_regressions(a: str | Path, b: str | Path, thresholds: list[Threshold]) 
     return regressions
 
 
+def find_pivot_regressions(
+    run: str | Path, pivot: str, thresholds: list[Threshold]
+) -> list[Regression]:
+    """Regressions along a ``--pivot`` axis within *one* run — the gate generalized the same way
+    the table is: with run-files the base is ``runs[0]`` and the head ``runs[-1]``; here the base
+    is the first value of the ``pivot`` dim and the head the last (mirroring oldest→newest). Each
+    fold-collapsed id is paired across them and flagged only on growth, reusing
+    :func:`_regressions_for`.
+    """
+    regressions: list[Regression] = []
+    for th in thresholds:
+        # ``pivot`` folds the run so ``snapshot`` carries the dim's values and ``id`` is the
+        # collapsed pairing key; the fail-on field doubles as the metric to read (headline scalar).
+        df, _unit = load_long_df(run, metric=cast("Metric", th.field), pivot=pivot)
+        labels = list(dict.fromkeys(df["snapshot"]))
+        if len(labels) < 2:  # noqa: PLR2004 — a growth gate needs a base value and a head value
+            raise ValueError(
+                f"--fail-on with --pivot {pivot!r} needs two distinct values to gate; got "
+                f"{labels}. Does the run vary {pivot!r}?"
+            )
+        base_label, head_label = labels[0], labels[-1]
+        rows = zip(df["id"], df["value"], df["snapshot"], strict=True)
+        side: dict[str, dict[str, float]] = {base_label: {}, head_label: {}}
+        for test_id, value, label in rows:
+            if label in side:
+                side[label][test_id] = float(value)
+        base, head = side[base_label], side[head_label]
+        if th.field == "rss" and not (base.keys() & head.keys()):
+            raise ValueError(_RSS_GATE_EMPTY)
+        regressions.extend(_regressions_for(base, head, th))
+    return regressions
+
+
 #: Memory-blob key per fail-on field — the fields ``--benchmark-memory-compare-fail`` gates on.
 _BLOB_FIELD = {
     "peak": "peak_bytes",

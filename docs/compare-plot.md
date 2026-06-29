@@ -144,6 +144,16 @@ it applies to `--view compare`/`scatter`; for `scaling`/`sweep` the dim is a nor
 plot, *and* an external per-id gate (e.g. CodSpeed, which wants the config value in the node id
 of one run) — no file-splitting, no per-config reruns.
 
+`--fail-on` follows the same axis: it normally gates the first run vs the last, but with
+`--pivot` it gates the **first dim value vs the last** (e.g. `legacy` → `v1`) out of the one
+run — so the combined run also gates itself in CI, no second file required:
+
+```bash
+# fail if v1's peak grew >10% over legacy, for any benchmark, from one run:
+pytest benchmarks/ --benchmark-only --benchmark-memory --benchmark-json=build.json
+benchmem compare build.json --pivot param:semantics --fail-on peak:10%
+```
+
 > A `--pivot` param is lifted out of the id when rows fold (`test_build[legacy-100]` → `test_build[100]`),
 > matched by value. A param given a custom `pytest.param(id=…)` whose label differs from its
 > value won't fold — use a plain parametrize value, or an `extra_info` dim (which isn't in the

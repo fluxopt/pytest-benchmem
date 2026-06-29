@@ -9,6 +9,7 @@ pytest.importorskip("pandas")
 
 from pytest_benchmem.compare import (
     compare_runs,
+    find_pivot_regressions,
     find_regressions,
     parse_threshold,
 )
@@ -390,6 +391,30 @@ def test_pivot_unknown_dim_errors_with_available(tmp_path):
     run = _write(tmp_path / "r.json", [_bm_dim("t[100]", {"n": 100}, peak=1024)])
     with pytest.raises(ValueError, match="not a dim"):
         compare_runs([run], columns="peak", pivot="param:nope", out=StringIO())
+
+
+def test_pivot_gate_flags_growth_first_value_vs_last(tmp_path):
+    # the gate generalizes along the pivot axis: base = first dim value (legacy), head = last
+    # (v1), paired per folded id. legacy→v1 grows 100→130 (+30%) for n=1, 100→105 (+5%) for n=2.
+    run = _write(
+        tmp_path / "build.json",
+        [
+            _bm_dim("t[legacy-1]", {"semantics": "legacy", "n": 1}, peak=100),
+            _bm_dim("t[v1-1]", {"semantics": "v1", "n": 1}, peak=130),
+            _bm_dim("t[legacy-2]", {"semantics": "legacy", "n": 2}, peak=100),
+            _bm_dim("t[v1-2]", {"semantics": "v1", "n": 2}, peak=105),
+        ],
+    )
+    regs = find_pivot_regressions(run, "param:semantics", [parse_threshold("peak:10%")])
+    # only the n=1 folded id grew past 10%; the folded id has semantics lifted out of the token
+    assert [(r.id, round(r.pct)) for r in regs] == [("t[1]", 30)]
+
+
+def test_pivot_gate_needs_two_values(tmp_path):
+    # one combined run that doesn't actually vary the pivot dim → nothing to gate, loud error
+    run = _write(tmp_path / "build.json", [_bm_dim("t[legacy]", {"semantics": "legacy"}, peak=100)])
+    with pytest.raises(ValueError, match="two distinct values"):
+        find_pivot_regressions(run, "param:semantics", [parse_threshold("peak:10%")])
 
 
 # --- the regression gate (--fail-on) ---------------------------------------------
