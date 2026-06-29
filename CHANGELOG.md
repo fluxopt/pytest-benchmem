@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.6](https://github.com/fluxopt/pytest-benchmem/compare/v0.4.5...v0.4.6) (2026-06-29)
+
+
+### Features
+
+* plot -o exports a static image when the suffix is png/svg/pdf/... ([#145](https://github.com/fluxopt/pytest-benchmem/issues/145)) ([#146](https://github.com/fluxopt/pytest-benchmem/issues/146)) ([ab2ab2c](https://github.com/fluxopt/pytest-benchmem/commit/ab2ab2c06193d68a90413acf28fcfff6c0e1d76e))
+
+
+### Bug Fixes
+
+* keep the baseline frame in the animated scatter (drop only when static) ([#142](https://github.com/fluxopt/pytest-benchmem/issues/142)) ([e600841](https://github.com/fluxopt/pytest-benchmem/commit/e600841b3cb3561c98e9a74dc36bf569bbe97ca0))
+
 ## [0.4.5](https://github.com/fluxopt/pytest-benchmem/compare/v0.4.4...v0.4.5) (2026-06-29)
 
 
