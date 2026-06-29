@@ -10,9 +10,6 @@ build/
 .pytest_cache/
 *.bin
 
-# lockfile not tracked for a library — resolve fresh against current deps
-uv.lock
-
 # jupytext-built notebooks (source is the .md) + mkdocs build
 docs/*.ipynb
 site/

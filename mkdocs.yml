@@ -39,6 +39,7 @@ nav:
       - Grouping by dims: dims.md
       - Cross-version sweeps: sweeps.md
   - Reference: reference.md
+  - Release notes: changelog.md
 
 plugins:
   - search
@@ -93,6 +94,10 @@ markdown_extensions:
       anchor_linenums: true
       use_pygments: true
   - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      # Pull docs/changelog.md's `--8<-- "CHANGELOG.md"` from the repo root.
+      base_path: ["."]
+      check_paths: true
   - pymdownx.superfences
   - pymdownx.details
   - pymdownx.tabbed:

@@ -48,7 +48,8 @@ build-backend = "hatchling.build"
 source = "vcs"
 
 [dependency-groups]
-dev = ["ruff", "mypy", "pre-commit", "pytest-benchmem[plot]", { include-group = "docs" }]
+# mypy <2.1: 2.1.0 errors on numpy's PEP 695 stub under python_version=3.11. Lift once fixed upstream.
+dev = ["ruff", "mypy<2.2", "pre-commit", "pytest-benchmem[plot]", { include-group = "docs" }]
 docs = [
     "jupytext",
     "ipykernel",
