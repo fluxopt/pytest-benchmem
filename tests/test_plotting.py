@@ -94,6 +94,14 @@ def test_scatter_drops_redundant_baseline_points(tmp_path):
     assert plotted == n == 3  # one point per id (candidate only), not 6 (baseline dropped)
 
 
+def test_scatter_animation_keeps_baseline_frame(tmp_path):
+    # 3+ runs animate: the baseline is its own t0 frame (points at parity), not overplotted — it's
+    # kept as the reference frame, unlike the static-A/B baseline points dropped above. (#139)
+    runs = [_run(tmp_path / f"{i}.json", ROWS_A) for i in range(3)]
+    fig, _n = plotting.plot_scatter(runs)
+    assert "0" in {f.name for f in fig.frames}  # baseline ('0') is the first animation frame
+
+
 def test_sweep_three_runs(tmp_path):
     runs = [_run(tmp_path / f"{i}.json", ROWS_A) for i in range(3)]
     fig, n = plotting.plot_sweep(runs)
