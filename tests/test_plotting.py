@@ -112,6 +112,76 @@ def test_node_dims_carried_but_not_auto_inferred(tmp_path):
     assert "n" in plotting._dim_columns(df)  # the real param still auto-inferable
 
 
+# --- --pivot: the series axis is a dim, not just the run-file ------------------------
+
+
+def _combined_run(path):
+    """One run where ``semantics`` is a param in the id (test_build[legacy-100]) and a dim —
+    the combined-run shape ``--pivot`` targets (one pytest invocation, A/B encoded in the id).
+    """
+    cells = [("legacy", 100, 10.0), ("v1", 100, 12.0), ("legacy", 200, 20.0), ("v1", 200, 30.0)]
+
+    def _blob(peak):
+        return {"peak_bytes": [int(peak * 1024**2)], "allocations": [0], "total_bytes": [0]}
+
+    benchmarks = [
+        {
+            "fullname": f"m.py::test_build[{sem}-{n}]",
+            "params": {"semantics": sem, "n": n},
+            "stats": {"min": 1.0},
+            "extra_info": {"benchmem": _blob(peak)},
+        }
+        for sem, n, peak in cells
+    ]
+    path.write_text(json.dumps({"benchmarks": benchmarks}))
+    return path
+
+
+def test_compare_pivot_pairs_along_dim_within_one_run(tmp_path):
+    # --view compare on a single run, folded along semantics: pairs legacy↔v1 per (id, n),
+    # the A/B a two-file compare gives — without splitting into two runs.
+    run = _combined_run(tmp_path / "build.json")
+    fig, n = plotting.plot_compare([run], metric="peak", pivot="param:semantics")
+    assert n == 2  # two folded rows: n=100 and n=200 (semantics lifted out of the id)
+    assert "legacy → v1" in fig.layout.title.text  # series = the dim's values, not file stems
+
+
+def test_scatter_pivot_accepts_single_run(tmp_path):
+    # scatter's "needs 2 snapshots" rule is waived under --pivot: the series come from the dim.
+    run = _combined_run(tmp_path / "build.json")
+    fig, n = plotting.plot_scatter([run], metric="peak", pivot="param:semantics")
+    assert n == 2  # ids paired against the legacy baseline
+
+
+def test_one_run_drives_both_table_and_compare_plot(tmp_path):
+    # the headline acceptance: a single combined run feeds the A/B table and the A/B plot,
+    # both folded along the same dim — no file-splitting, no env-var reruns.
+    from io import StringIO
+
+    from pytest_benchmem.compare import compare_runs
+
+    run = _combined_run(tmp_path / "build.json")
+    out = StringIO()
+    compare_runs([run], columns="peak", pivot="param:semantics", out=out)
+    assert "(legacy)" in out.getvalue() and "(v1)" in out.getvalue()
+    fig, n = plotting.plot_compare([run], metric="peak", pivot="param:semantics")
+    assert n == 2
+
+
+def test_compare_pivot_with_single_dim_value_errors(tmp_path):
+    # a run that doesn't vary the pivot dim has nothing to pair → a clear error, not an empty plot.
+    run = _run(tmp_path / "a.json", ROWS_A, memory=True)  # only the dim 'n', no 'semantics'
+    with pytest.raises(ValueError, match="not a dim"):
+        plotting.plot_compare([run], metric="peak", pivot="param:semantics")
+
+
+def test_pivot_with_multiple_runs_errors_in_plot(tmp_path):
+    a = _combined_run(tmp_path / "a.json")
+    b = _combined_run(tmp_path / "b.json")
+    with pytest.raises(ValueError, match="folds a single run"):
+        plotting.plot_compare([a, b], metric="peak", pivot="param:semantics")
+
+
 def test_plot_scaling_explicit_node_facet(tmp_path):
     p = _run_two_funcs(tmp_path / "a.json")
     fig, n = plotting.plot_scaling(p, facet="node.func")  # node.func selectable by name

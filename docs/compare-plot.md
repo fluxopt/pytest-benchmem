@@ -99,6 +99,56 @@ Pick the metrics with `--columns` (a comma list of `time` / `peak` / `allocated`
 `module` | `class` | `param:NAME`, comma-composable); pass it to cluster param-variants
 (`--group-by func`) or collapse everything into one table.
 
+## One run, two configs — `--pivot`
+
+Everything above compares **run-files**: `compare a.json b.json` lays one file against
+another. But the file is just the *series axis* — the thing whose values sit side by side and
+get the `(N.NN)` multiplier. **The series axis is a [dim](dims.md)**, and the run-file is only
+the default one.
+
+`--pivot DIM` re-points it at a data dim, so a **single combined run** is A/B'd along that dim —
+the role a file-pair plays today, without splitting into N runs. Say `semantics` is a param
+(so it's in the node id, `test_build[legacy-100]`, *and* a dim):
+
+```python
+@pytest.mark.parametrize("semantics", ["legacy", "v1"])
+@pytest.mark.parametrize("n", [100, 200])
+def test_build(benchmark, semantics, n):
+    benchmark(build, semantics=semantics, n=n)
+```
+
+One `pytest` invocation produces one `build.json`; `--pivot param:semantics` folds it so rows
+that differ *only* in `semantics` pair up (`legacy` ↔ `v1`) per `n`:
+
+```bash
+pytest benchmarks/ --benchmark-only --benchmark-memory --benchmark-json=build.json
+benchmem compare build.json --pivot param:semantics --columns time,peak   # the A/B table
+benchmem plot    build.json --pivot param:semantics --columns peak --view compare   # the A/B bars
+benchmem plot    build.json --x n --facet semantics --columns peak     # --pivot optional here
+```
+
+Don't confuse it with `--group-by`, which touches the *other* axis: `--group-by` **partitions
+rows** into sub-tables along a dim while the compared series stays the run-files (`legacy` and
+`v1` would sit in separate sections, never set against each other); `--pivot` makes the dim
+*itself* the compared series, folding rows that differ only in it into one ranked A/B row. They
+compose on orthogonal axes — `--pivot param:semantics --group-by node.func` folds `legacy` ↔ `v1`
+*and* clusters the folded rows into per-function sub-tables. In short: `--group-by` says which
+rows belong together; `--pivot` says what you're comparing.
+
+`--pivot` accepts the same dims as `--group-by`/`--facet` — `param:NAME` or a bare `extra_info`
+name — and composes with `--columns`, `--stat`, `--facet`, `--where`, and `--sort` unchanged.
+It's mutually exclusive with multiple runs (an A/B view has *one* series axis: comparing files
+*and* folding a dim would be a 2-D matrix), and only the paired views consume it — on `plot`
+it applies to `--view compare`/`scatter`; for `scaling`/`sweep` the dim is a normal `--x` /
+`--facet` axis instead. One combined run then drives the A/B table, the A/B plot, the scaling
+plot, *and* an external per-id gate (e.g. CodSpeed, which wants the config value in the node id
+of one run) — no file-splitting, no per-config reruns.
+
+> A `--pivot` param is lifted out of the id when rows fold (`test_build[legacy-100]` → `test_build[100]`),
+> matched by value. A param given a custom `pytest.param(id=…)` whose label differs from its
+> value won't fold — use a plain parametrize value, or an `extra_info` dim (which isn't in the
+> id at all), for the comparison axis.
+
 ## Gate CI on a regression
 
 `--fail-on` exits non-zero past a threshold — drop it into CI after the run. Thresholds are
@@ -289,6 +339,8 @@ A minimal GitHub Actions job using the two-file approach, caching the baseline a
 | 2 | `compare` (`--view compare`) | ranked — what moved *most*, in native units? |
 | 3+ | `sweep` | fold-change across versions, one cell per (id, run) |
 
+`--pivot` re-points the series axis of the paired views (`compare`/`scatter`) from the run-file
+onto a dim, folding a single run along it (see [One run, two configs](#one-run-two-configs-pivot)).
 `--facet` splits any view into small multiples by a [dim](dims.md) (including `node.*`),
 `--where` keeps only rows matching a `dim=value` filter (repeatable, AND-combined),
 `--free-axes` unmatches a faceted axis from the shared default, and `--label`/`-l` names

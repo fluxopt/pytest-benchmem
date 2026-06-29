@@ -173,20 +173,27 @@ def plot_compare(
     where: Mapping[str, str] | None = None,
     free_axes: FreeAxes | None = None,
     labels: Sequence[str] | None = None,
+    pivot: str | None = None,
 ) -> tuple[Figure, int]:
     """Bar chart of per-id delta, sorted by the chosen Δ (biggest regressions on top).
 
-    The first two snapshots are compared; the first is the baseline.
+    The first two series are compared; the first is the baseline. The series axis is the
+    run-file by default (the first two files); ``pivot`` re-points it at a data dim, folding a
+    single run so its first two dim-values become the A and B series instead (see
+    :func:`load_long_df`).
 
     Args:
-        snapshots: Run JSON path(s); only the first two are used.
+        snapshots: Run JSON path(s); only the first two are used (one run when ``pivot`` is set).
         metric: Which metric to plot (``time`` / ``peak`` / ``allocated`` / ``allocations``).
         sort: ``absolute`` plots ``b - a`` in the native unit; ``relative`` plots percent change.
         facet: Dim to split into subplots.
         clip: Clamp the colour scale (default symmetric p95).
         where: Keep only rows matching these ``dim=value`` pairs.
         free_axes: Give each facet its own axes instead of sharing.
-        labels: Series names for the two runs (default: file stems).
+        labels: Series names for the two runs (default: file stems). Ignored when ``pivot`` is set
+            (the series are the dim's values).
+        pivot: Use this dim as the series axis instead of the run-file (``param:NAME`` or a bare
+            ``extra_info`` name); requires a single run.
 
     Returns:
         ``(figure, n_ids)`` — the plotly figure and the number of ids plotted.
@@ -196,11 +203,18 @@ def plot_compare(
     import plotly.express as px
 
     snapshots = _as_paths(snapshots)
-    df_long, unit = load_long_df(snapshots[:2], metric=metric, labels=_labels_head(labels, 2))
+    df_long, unit = load_long_df(
+        snapshots[:2], metric=metric, labels=_labels_head(labels, 2), pivot=pivot
+    )
     df_long = _apply_where(df_long, where)
     vlabel = metric
     labels = df_long["snapshot"].drop_duplicates().tolist()
     if len(labels) < 2:
+        if pivot:
+            raise ValueError(
+                f"compare --pivot needs two distinct values of {pivot!r} to pair; got only "
+                f"{labels[0]!r}. Does the run vary {pivot!r}?"
+            )
         raise ValueError(
             f"compare needs two distinct snapshots; both resolve to {labels[0]!r} "
             f"(the same file given twice?). Pass two different files, or labels=."
@@ -270,20 +284,26 @@ def plot_scatter(
     where: Mapping[str, str] | None = None,
     free_axes: FreeAxes | None = None,
     labels: Sequence[str] | None = None,
+    pivot: str | None = None,
 ) -> tuple[Figure, int]:
     """Baseline cost (log-x) vs candidate/baseline ratio (log-y).
 
-    Top-right = slow *and* slower (the regressed corner). The first snapshot is the
-    baseline; with 3+, the rest animate. Colour encodes the absolute Δ.
+    Top-right = slow *and* slower (the regressed corner). The first series is the baseline;
+    with 3+, the rest animate. Colour encodes the absolute Δ. The series axis is the run-file
+    by default; ``pivot`` re-points it at a data dim, folding a single run so its dim-values are
+    the series (the first being the baseline) instead of the files (see :func:`load_long_df`).
 
     Args:
-        snapshots: Run JSON path(s); the first is the baseline, extras animate.
+        snapshots: Run JSON path(s); the first is the baseline, extras animate (one run when
+            ``pivot`` is set — the dim's values play that role).
         metric: Which metric to plot (``time`` / ``peak`` / ``allocated`` / ``allocations``).
         facet: Dim to split into subplots.
         clip: Clamp the colour scale (default p95).
         where: Keep only rows matching these ``dim=value`` pairs.
         free_axes: Give each facet its own axes instead of sharing.
-        labels: Series names per run (default: file stems).
+        labels: Series names per run (default: file stems). Ignored when ``pivot`` is set.
+        pivot: Use this dim as the series axis instead of the run-file (``param:NAME`` or a bare
+            ``extra_info`` name); requires a single run.
 
     Returns:
         ``(figure, n_ids)`` — the plotly figure and the number of ids plotted.
@@ -291,10 +311,10 @@ def plot_scatter(
     import plotly.express as px
 
     snapshots = _as_paths(snapshots)
-    if len(snapshots) < 2:
-        raise ValueError("scatter needs at least 2 snapshots (baseline + 1)")
+    if pivot is None and len(snapshots) < 2:
+        raise ValueError("scatter needs at least 2 snapshots (baseline + 1), or --pivot a dim")
 
-    df_long, unit = load_long_df(snapshots, metric=metric, labels=labels)
+    df_long, unit = load_long_df(snapshots, metric=metric, labels=labels, pivot=pivot)
     df_long = _apply_where(df_long, where)
     vlabel = metric
     labels = df_long["snapshot"].drop_duplicates().tolist()

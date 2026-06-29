@@ -100,6 +100,16 @@ def plot(
         typer.Option(help="compare | scatter | sweep | scaling (default: by count)."),
     ] = None,
     facet: Annotated[str | None, typer.Option(help="Dim to facet by.")] = None,
+    pivot: Annotated[
+        str | None,
+        typer.Option(
+            "--pivot",
+            help="Comparison axis for --view compare/scatter: fold a single run along this dim "
+            "instead of across run-files (param:NAME or a bare extra_info name); its values "
+            "become the compared series. Like --group-by but it sets what's *compared*, not how "
+            "rows cluster. Mutually exclusive with multiple runs.",
+        ),
+    ] = None,
     x: Annotated[str | None, typer.Option(help="scaling: dim for the x-axis.")] = None,
     clip: Annotated[float | None, typer.Option(help="Clamp the colour scale.")] = None,
     where: Annotated[
@@ -130,6 +140,14 @@ def plot(
     _require_runs_exist(runs, suggest=True)
 
     chosen = view or ("scaling" if len(runs) == 1 else "scatter" if len(runs) == 2 else "sweep")
+    # --pivot re-points the series axis at a dim; only the paired views (compare/scatter) have a
+    # series axis to re-point. For scaling/sweep the dim is a normal x/colour/facet axis.
+    if pivot is not None and chosen not in ("compare", "scatter"):
+        raise _fail(
+            f"--pivot re-points the comparison series and applies to --view compare or scatter, "
+            f"not {chosen!r}; for scaling/sweep use --x / --facet to place the dim.",
+            2,
+        )
     _need_plotly()
     from pytest_benchmem import plotting
 
@@ -145,6 +163,7 @@ def plot(
                 where=filters,
                 free_axes=free_axes,
                 labels=labels,
+                pivot=pivot,
             )
         elif chosen == "scatter":
             fig, n = plotting.plot_scatter(
@@ -155,6 +174,7 @@ def plot(
                 where=filters,
                 free_axes=free_axes,
                 labels=labels,
+                pivot=pivot,
             )
         elif chosen == "sweep":
             fig, n = plotting.plot_sweep(
@@ -222,6 +242,16 @@ def compare(
         str,
         typer.Option(help="Row order: name (id) | value (largest in the last run) | change."),
     ] = "name",
+    pivot: Annotated[
+        str | None,
+        typer.Option(
+            "--pivot",
+            help="Comparison axis: fold a single run along this dim instead of across run-files "
+            "— param:NAME or a bare extra_info name. Rows differing only in it pair up and its "
+            "values become the compared series. Like --group-by but it sets what's *compared*, "
+            "not how rows cluster. Mutually exclusive with multiple runs.",
+        ),
+    ] = None,
     csv: Annotated[
         Path | None,
         typer.Option(help="Also write the raw (unscaled) comparison to this CSV file."),
@@ -250,7 +280,9 @@ def compare(
     from pytest_benchmem.compare import compare_runs, find_regressions, parse_threshold
 
     with _exit_on_value_error():
-        compare_runs(runs, columns=columns, group_by=group_by, stat=stat, sort=sort, csv=csv)
+        compare_runs(
+            runs, columns=columns, group_by=group_by, stat=stat, sort=sort, pivot=pivot, csv=csv
+        )
 
     if not fail_on:
         return

@@ -142,14 +142,18 @@ def _short(test_id: str) -> str:
 
 
 def _load_columns(
-    runs: Sequence[str | Path], metrics: Sequence[Metric], stats: Sequence[str]
+    runs: Sequence[str | Path],
+    metrics: Sequence[Metric],
+    stats: Sequence[str],
+    pivot: str | None = None,
 ) -> tuple[list[str], dict[tuple[str, str, str], float], dict[str, str], dict[str, dict[str, Any]]]:
     """Load each ``metric × stat`` column into ``(labels, values, units, dims)``.
 
-    Columns are keyed by a ``"metric:stat"`` id; ``values`` maps ``(col_id, id, run) →
-    value``, ``units`` maps ``metric → unit``. Runs keep file order (oldest → newest).
-    Each stat reads pytest-benchmark's own ``stats`` for ``time`` and reduces the
-    per-repeat series for the memory metrics.
+    Columns are keyed by a ``"metric:stat"`` id; ``values`` maps ``(col_id, id, series) →
+    value``, ``units`` maps ``metric → unit``. The series labels keep their natural order —
+    file order (oldest → newest) for run-files, or dim-value order when ``pivot`` folds a single
+    run along a dim. Each stat reads pytest-benchmark's own ``stats`` for ``time`` and reduces
+    the per-repeat series for the memory metrics.
     """
     paths = [Path(r) for r in runs]
     labels: list[str] = []
@@ -158,7 +162,7 @@ def _load_columns(
     dims: dict[str, dict[str, Any]] = {}
     for metric in metrics:
         for stat in stats:
-            df, unit = load_long_df(paths, metric=metric, stat=stat)
+            df, unit = load_long_df(paths, metric=metric, stat=stat, pivot=pivot)
             units[metric] = unit
             if df.empty:  # metric absent from every run (e.g. memory on timing-only files)
                 continue
@@ -225,25 +229,36 @@ def compare_runs(
     stat: str | None = None,
     group_by: str | None = "fullname",
     sort: str = "name",
+    pivot: str | None = None,
     csv: Path | None = None,
     out: TextIO | None = None,
 ) -> None:
-    """Print a per-(benchmark, run) table for one or more runs.
+    """Print a per-(benchmark, series) table for one or more runs.
 
-    Mirrors pytest-benchmark's table model: rows are one per ``(benchmark × run)``,
-    ``columns`` selects which metric columns appear (``time`` / ``peak`` / ``allocated``
-    / ``allocations``). With two or more runs each cell also carries a relative ``(N.NN)``
-    multiplier vs the group's best (best green, worst red); a single run is a plain readout
-    with neither. ``group_by`` splits the rows into sub-tables (``fullname`` / ``name`` /
-    ``func`` / ``group`` / ``module`` / ``class`` / ``param:NAME``, comma-composable). With
-    no ``group_by`` the whole comparison is one table.
+    Mirrors pytest-benchmark's table model: rows are one per ``(benchmark × series)``, where
+    the **series axis** is the run-file by default (one column-group per run). With two or more
+    series each cell carries a relative ``(N.NN)`` multiplier vs the group's best (best green,
+    worst red); a single series is a plain readout with neither. ``columns`` selects which metric
+    columns appear (``time`` / ``peak`` / ``allocated`` / ``allocations``). ``group_by`` splits
+    the rows into sub-tables (``fullname`` / ``name`` / ``func`` / ``group`` / ``module`` /
+    ``class`` / ``param:NAME``, comma-composable); with no ``group_by`` the whole comparison is
+    one table.
+
+    ``pivot`` re-points the series axis from the run-file onto a data dim (``param:NAME`` or a
+    bare ``extra_info`` name), folding a *single* combined run along that dim: rows that differ
+    only in it pair up and its values become the compared series — the A/B a run-file pair gives
+    you today, without splitting the data into N files. Distinct from ``group_by`` (which only
+    clusters rows into sub-tables, leaving the run-files as the compared series): ``pivot`` sets
+    *what* is compared, ``group_by`` sets how rows cluster. It composes with ``columns`` /
+    ``stat`` / ``sort`` / ``group_by`` unchanged and is mutually exclusive with multiple runs
+    (one series axis per table).
 
     Every column is a ``metric × stat`` pair. ``columns`` is a comma list of metric names
     (default ``time,peak``); ``stat`` is one of ``min`` / ``max`` / ``mean`` / ``median`` /
     ``stddev`` or ``all`` (the default), which expands each metric into its full stat
     spread — so no single statistic is privileged. A metric absent from every run is
     dropped rather than shown all dashes (so timing-only runs collapse to just ``time``).
-    ``sort`` orders rows within a group: ``name``, ``value`` (largest in the last run), or
+    ``sort`` orders rows within a group: ``name``, ``value`` (largest in the last series), or
     ``change`` (biggest growth first). ``csv`` also writes the raw (unscaled) comparison.
     """
     from rich import box
@@ -254,7 +269,7 @@ def compare_runs(
     if sort not in _SORTS:
         raise ValueError(f"unknown --sort {sort!r}; use one of {', '.join(_SORTS)}")
     metrics, stats = _resolve_columns(columns), _resolve_stats(stat)
-    labels, values, units, dims = _load_columns(runs, metrics, stats)
+    labels, values, units, dims = _load_columns(runs, metrics, stats, pivot)
     if not labels:
         raise ValueError("no benchmarks found in the given run(s)")
     if len(labels) < 2 and len(runs) > 1:  # noqa: PLR2004 — distinct paths collapsed to one series

@@ -323,6 +323,73 @@ def test_three_runs_stack_as_rows_with_multipliers(tmp_path):
     assert "change" not in text  # no delta column in the relative-multiplier model
 
 
+# --- --pivot: fold one run along a dim as the comparison series ----------------------
+
+
+def _bm_dim(name, dims, *, peak):
+    """A benchmark whose params (and thus its node-id payload) carry analysis dims."""
+    bm = _bm(name, peak=peak)
+    bm["params"] = dims
+    return bm
+
+
+def test_pivot_param_folds_single_run_along_the_dim(tmp_path):
+    # semantics is a param *in the id* (test_build[legacy-100]) and a dim; --pivot param:semantics
+    # pairs legacy↔v1 within one run — the role a run-file pair plays today — and the (N.NN)
+    # multiplier ranks the dim values, not files.
+    run = _write(
+        tmp_path / "build.json",
+        [
+            _bm_dim("m.py::test_build[legacy-100]", {"semantics": "legacy", "n": 100}, peak=10 * 1024**2),  # noqa: E501
+            _bm_dim("m.py::test_build[v1-100]", {"semantics": "v1", "n": 100}, peak=12 * 1024**2),
+        ],
+    )
+    out = StringIO()
+    compare_runs([run], columns="peak", pivot="param:semantics", out=out)
+    text = out.getvalue()
+    # the pivot token is lifted out of the id, so both rows fold under one group
+    assert "m.py::test_build[100]" in text
+    assert "(legacy)" in text and "(v1)" in text  # series = the dim's values
+    assert "(1.20)" in text  # v1 peak 12 MiB is 1.20× the best (legacy 10 MiB)
+
+
+def test_pivot_accepts_bare_extra_info_dim_not_in_id(tmp_path):
+    # an extra_info dim isn't in the node id, so both rows already share an id and pair without
+    # any id surgery; the bare name resolves the same as param:NAME.
+    def _bm_mode(mode, peak):
+        return {
+            "fullname": "test_build",
+            "stats": {s: 0.0 for s in ("min", "max", "mean", "median", "stddev")},
+            "extra_info": {
+                "benchmem": {"peak_bytes": [peak], "allocations": [1], "total_bytes": [1]},
+                "mode": mode,
+            },
+        }
+
+    rows = [_bm_mode("legacy", 10 * 1024**2), _bm_mode("v1", 15 * 1024**2)]
+    run = _write(tmp_path / "build.json", rows)
+    out = StringIO()
+    compare_runs([run], columns="peak", pivot="mode", out=out)
+    text = out.getvalue()
+    assert "(legacy)" in text and "(v1)" in text
+    assert "(1.50)" in text  # 15 MiB is 1.50× the best (10 MiB)
+
+
+def test_pivot_with_multiple_runs_is_an_error(tmp_path):
+    # one series axis per table: a dim within each run *and* runs-as-series is a 2-D matrix the
+    # A/B view can't render, so --pivot + >1 run is rejected (scoped to a single combined run).
+    a = _write(tmp_path / "a.json", [_bm_dim("t[legacy]", {"semantics": "legacy"}, peak=1024)])
+    b = _write(tmp_path / "b.json", [_bm_dim("t[v1]", {"semantics": "v1"}, peak=2048)])
+    with pytest.raises(ValueError, match="folds a single run"):
+        compare_runs([a, b], columns="peak", pivot="param:semantics", out=StringIO())
+
+
+def test_pivot_unknown_dim_errors_with_available(tmp_path):
+    run = _write(tmp_path / "r.json", [_bm_dim("t[100]", {"n": 100}, peak=1024)])
+    with pytest.raises(ValueError, match="not a dim"):
+        compare_runs([run], columns="peak", pivot="param:nope", out=StringIO())
+
+
 # --- the regression gate (--fail-on) ---------------------------------------------
 
 

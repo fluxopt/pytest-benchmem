@@ -116,6 +116,37 @@ def test_compare_bad_threshold_exits_2(tmp_path):
     assert "unknown field" in _text(result)
 
 
+def test_compare_pivot_folds_run_along_dim(tmp_path):
+    # --pivot makes a param the comparison series within one run (the A/B a file-pair gives)
+    def _b(sem, peak):
+        b = _bm(f"m.py::test_build[{sem}]", peak=peak)
+        b["params"] = {"semantics": sem}
+        return b
+
+    run = _run(tmp_path, "build.json", [_b("legacy", 10 * 1024**2), _b("v1", 12 * 1024**2)])
+    args = ["compare", str(run), "--columns", "peak", "--pivot", "param:semantics"]
+    result = runner.invoke(app, args)
+    assert result.exit_code == 0, _text(result)
+    assert "(legacy)" in result.output and "(v1)" in result.output
+    assert "(1.20)" in result.output  # v1 is 1.20× the best (legacy)
+
+
+def test_compare_pivot_with_multiple_runs_exits_1(tmp_path):
+    a = _run(tmp_path, "a.json", [_bm("test_x", peak=1024)])
+    b = _run(tmp_path, "b.json", [_bm("test_x", peak=2048)])
+    result = runner.invoke(app, ["compare", str(a), str(b), "--pivot", "param:x"])
+    assert result.exit_code == 1
+    assert "folds a single run" in _text(result)
+
+
+def test_plot_pivot_rejected_for_scaling_view(tmp_path):
+    # --pivot re-points the comparison series; scaling/sweep have no series axis to re-point
+    run = _run(tmp_path, "a.json", [_bm("test_x", peak=1024)])
+    result = runner.invoke(app, ["plot", str(run), "--view", "scaling", "--pivot", "param:n"])
+    assert result.exit_code == 2
+    assert "compare or scatter" in _text(result)
+
+
 # --- plot view auto-selection ----------------------------------------------------
 
 
