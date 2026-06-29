@@ -181,6 +181,10 @@ live from the typer app as it actually renders in a terminal:
     :width: 100
     :scheme: osx
 
+`plot -o` picks the writer from the suffix: `.html` (the default) is an interactive plotly
+page, while `.png` / `.svg` / `.pdf` / `.jpg` / `.webp` export a static image for a PR comment,
+README, or docs page. Static export needs kaleido — install `pytest-benchmem[plot-static]`.
+
 ## Public Python API
 
 Light to import — `pytest_benchmem` re-exports only the engine and the readers;

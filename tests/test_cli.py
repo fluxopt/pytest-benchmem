@@ -46,6 +46,11 @@ def _bm(name, *, t=1.0, peak=None):
 class _FakeFig:
     def write_html(self, path):
         self.path = path
+        self.kind = "html"
+
+    def write_image(self, path):
+        self.path = path
+        self.kind = "image"
 
 
 # --- compare ---------------------------------------------------------------------
@@ -332,6 +337,57 @@ def test_plot_missing_file_exits_2(tmp_path):
     result = runner.invoke(app, ["plot", str(tmp_path / "nope.json")])
     assert result.exit_code == 2
     assert "missing" in _text(result)
+
+
+def _stub_view(plotting_mod, monkeypatch, fig):
+    """Point every plot_* view at a stub returning ``fig``, so -o export is what's exercised."""
+    for name in ("plot_compare", "plot_scatter", "plot_sweep", "plot_scaling"):
+        monkeypatch.setattr(plotting_mod, name, lambda *a, _f=fig, **k: (_f, 1))
+
+
+def test_plot_image_suffix_calls_write_image(tmp_path, monkeypatch):
+    """An image suffix routes through write_image (kaleido) instead of write_html."""
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name: object())
+    fig = _FakeFig()
+    _stub_view(plotting, monkeypatch, fig)
+    r = _run(tmp_path, "r.json", [_bm("x")])
+    out = tmp_path / "out.png"
+    result = runner.invoke(app, ["plot", str(r), "-o", str(out)])
+    assert result.exit_code == 0, _text(result)
+    assert fig.kind == "image" and fig.path == out
+
+
+def test_plot_image_suffix_without_kaleido_exits_2(tmp_path, monkeypatch):
+    """A static suffix without kaleido is a clean error naming the extra, not a crash."""
+    # plotly present (plot gate passes), kaleido absent (image gate fails).
+    monkeypatch.setattr(
+        importlib.util,
+        "find_spec",
+        lambda name: None if name == "kaleido" else object(),
+    )
+    _stub_view(plotting, monkeypatch, _FakeFig())
+    r = _run(tmp_path, "r.json", [_bm("x")])
+    result = runner.invoke(app, ["plot", str(r), "-o", str(tmp_path / "out.png")])
+    assert result.exit_code == 2
+    assert "kaleido" in _text(result) and "plot-static" in _text(result)
+
+
+def test_plot_unsupported_suffix_exits_2(tmp_path, monkeypatch):
+    """A typo'd suffix is rejected rather than silently written as HTML."""
+    _stub_view(plotting, monkeypatch, _FakeFig())
+    r = _run(tmp_path, "r.json", [_bm("x")])
+    result = runner.invoke(app, ["plot", str(r), "-o", str(tmp_path / "out.pong")])
+    assert result.exit_code == 2
+    assert "unsupported output suffix" in _text(result)
+
+
+def test_plot_html_suffix_calls_write_html(tmp_path, monkeypatch):
+    fig = _FakeFig()
+    _stub_view(plotting, monkeypatch, fig)
+    r = _run(tmp_path, "r.json", [_bm("x")])
+    result = runner.invoke(app, ["plot", str(r), "-o", str(tmp_path / "out.html")])
+    assert result.exit_code == 0, _text(result)
+    assert fig.kind == "html"
 
 
 def test_plot_value_error_exits_1(tmp_path, monkeypatch):
