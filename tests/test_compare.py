@@ -340,7 +340,9 @@ def test_pivot_param_folds_single_run_along_the_dim(tmp_path):
     run = _write(
         tmp_path / "build.json",
         [
-            _bm_dim("m.py::test_build[legacy-100]", {"semantics": "legacy", "n": 100}, peak=10 * 1024**2),  # noqa: E501
+            _bm_dim(
+                "m.py::test_build[legacy-100]", {"semantics": "legacy", "n": 100}, peak=10 * 1024**2
+            ),
             _bm_dim("m.py::test_build[v1-100]", {"semantics": "v1", "n": 100}, peak=12 * 1024**2),
         ],
     )
