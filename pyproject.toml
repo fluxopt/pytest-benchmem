@@ -48,7 +48,9 @@ build-backend = "hatchling.build"
 source = "vcs"
 
 [dependency-groups]
-dev = ["ruff", "mypy", "pre-commit", "pytest-benchmem[plot]", { include-group = "docs" }]
+# mypy <2.1: 2.1.0 type-checks numpy's bundled stubs against python_version=3.11 and trips on
+# numpy's PEP 695 `type` statement (valid only on 3.12+). Unpin once that regression is resolved.
+dev = ["ruff", "mypy<2.1", "pre-commit", "pytest-benchmem[plot]", { include-group = "docs" }]
 docs = [
     "jupytext",
     "ipykernel",
