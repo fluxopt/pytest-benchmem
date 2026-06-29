@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.3](https://github.com/fluxopt/pytest-benchmem/compare/v0.4.2...v0.4.3) (2026-06-29)
+
+
+### Features
+
+* benchmem compare accepts a single run (plain table) ([#123](https://github.com/fluxopt/pytest-benchmem/issues/123)) ([96275d9](https://github.com/fluxopt/pytest-benchmem/commit/96275d93628323ffd4f3cc74decdebdcb132004e))
+
 ## [0.4.2](https://github.com/fluxopt/pytest-benchmem/compare/v0.4.1...v0.4.2) (2026-06-18)
 
 
