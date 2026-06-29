@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import statistics
+import warnings
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
@@ -326,18 +327,93 @@ def _default_labels(paths: list[Path]) -> list[str]:
     return [f"{p.parent.name}/{p.stem}" if p.stem in clashing else p.stem for p in paths]
 
 
+def _resolve_pivot(pivot: str) -> str:
+    """The dim column a ``--pivot`` axis names — ``param:NAME`` and the bare extra_info name
+    both resolve to the same column (params and extra_info share one flat dim namespace).
+    """
+    return pivot[len("param:") :] if pivot.startswith("param:") else pivot
+
+
+def _strip_pivot_from_id(test_id: str, pivot_value: DimValue) -> str:
+    """Lift the ``--pivot`` value back out of an opaque node id, so rows differing *only* in
+    the pivot dim collapse to one pairing key (``test_build[legacy-100]`` → ``test_build[100]``).
+
+    A param is duplicated into pytest's id payload (``[legacy-100]``); promoting it to the
+    series axis means removing its token there too, not just from the dims. The token is
+    matched by value (``str(pivot_value)``, integral floats rendered without ``.0`` so a
+    NaN-upcast ``100.0`` column still matches the ``100`` token). A pivot dim that *isn't* in
+    the id (an ``extra_info`` dim, or a custom ``pytest.param(id=…)`` whose token differs
+    from the value) leaves the id untouched — extra_info rows already share an id, so they
+    pair without this; a custom-id param simply won't fold (documented limitation).
+    """
+    head, sep, rest = test_id.partition("[")
+    if not sep:  # no params payload → pivot dim lives outside the id (extra_info); nothing to strip
+        return test_id
+    payload = rest[:-1] if rest.endswith("]") else rest
+    tokens = payload.split("-")
+    integral = isinstance(pivot_value, float) and pivot_value.is_integer()
+    token = str(int(pivot_value)) if integral else str(pivot_value)
+    if token in tokens:
+        tokens.remove(token)
+    return f"{head}[{'-'.join(tokens)}]" if tokens else head
+
+
+def _pivot_to_series(df: pd.DataFrame, pivot: str) -> pd.DataFrame:
+    """Re-key a long frame so the ``pivot`` dim becomes the series axis (the role the run-file
+    ``snapshot`` plays by default): its values land in ``snapshot``, and the dim is lifted
+    out of every row's identity (dropped from the dim columns and stripped from the id) so
+    rows that differ only in it pair up. See :func:`load_long_df`.
+    """
+    col = _resolve_pivot(pivot)
+    if df.empty:  # a metric absent from the run (e.g. memory on a timing-only file) — caller skips
+        return df
+    dims = [c for c in df.columns if c not in RESERVED_COLUMNS]
+    if col not in dims:
+        raise ValueError(
+            f"--pivot {pivot!r} is not a dim in this run; available dims: {sorted(dims)}"
+        )
+    df = df.copy()
+    df["id"] = [_strip_pivot_from_id(i, v) for i, v in zip(df["id"], df[col], strict=True)]
+    df["snapshot"] = df[col].astype(str)
+    out = df.drop(columns=[col])
+    # If no id recurs across pivot values, nothing paired — the comparison collapses to a pile of
+    # one-series rows with no error. The usual cause is a custom ``pytest.param(id=…)`` whose label
+    # differs from its value, so the value never strips out of the id. Warn rather than mislead.
+    if len(out) > 1 and not out["id"].duplicated().any():
+        warnings.warn(
+            f"--pivot {pivot!r} left every row unpaired (no benchmark has two values of {col!r} "
+            f"sharing an id) — the table/plot will show singletons, not an A/B. A custom "
+            f"pytest.param(id=…) whose label differs from its value won't fold; use a plain "
+            f"parametrize value or an extra_info dim as the pivot axis.",
+            stacklevel=2,
+        )
+    return out
+
+
 def load_long_df(
     runs: str | Path | Sequence[str | Path],
     *,
     metric: Metric = "time",
     stat: str | None = None,
     labels: Sequence[str] | None = None,
+    pivot: str | None = None,
 ) -> tuple[pd.DataFrame, str]:
     """Stack pytest-benchmark files (one path or a sequence) into one long frame → ``(df, unit)``.
 
     One row per ``(run, id)`` for the chosen ``metric``. Columns: ``snapshot``
-    (the series/version label), ``id``, ``value``, then one column per dim key seen
-    (missing dims are ``NaN``). Every plot view pivots this frame.
+    (the **series axis** — see below), ``id`` (the pairing key), ``value``, then one column
+    per dim key seen (missing dims are ``NaN``). Every plot view and the compare table pivots
+    this frame, pairing rows on ``id`` and laying ``snapshot`` values side by side.
+
+    The series axis is just a dim. By default it's the run-file (``snapshot`` = each file's
+    label), which is why a run-file *is* a comparison axis: ``compare a.json b.json`` ranks
+    one file against another. ``pivot`` re-points that axis at a real data dim instead — its
+    values become ``snapshot`` and it's lifted out of each row's identity (dropped from the
+    dims and stripped from the id) so rows differing *only* in it pair up. That lets one
+    combined run be A/B'd along a config dim (``--pivot param:semantics``) exactly as two files
+    are A/B'd today — the run-file is an *external* series axis, ``pivot`` promotes an
+    *internal* dim to the same role. The two are mutually exclusive (an A/B view has one series
+    axis), so ``pivot`` with more than one run is an error.
 
     Args:
         runs: One path or a sequence of pytest-benchmark JSON files.
@@ -345,6 +421,8 @@ def load_long_df(
         stat: Distribution stat over the per-repeat series; ``None`` reads the headline scalar.
         labels: Overrides the ``snapshot`` label per run (one per path, same order),
             decoupling the display name from the filename; defaults to each file's stem.
+        pivot: Use this dim as the series axis instead of the run-file (``param:NAME`` or a bare
+            ``extra_info`` name). Requires a single run.
 
     Returns:
         ``(df, unit)`` — the long-form frame and the metric's unit.
@@ -352,6 +430,11 @@ def load_long_df(
     import pandas as pd
 
     paths = _as_paths(runs)
+    if pivot is not None and len(paths) > 1:
+        raise ValueError(
+            f"--pivot folds a single run along a dim; got {len(paths)} runs. Pass one run "
+            "to compare its dim values, or drop --pivot to compare the runs as the series."
+        )
     if labels is not None and len(labels) != len(paths):
         raise ValueError(f"labels has {len(labels)} entries but there are {len(paths)} snapshot(s)")
     label_list = list(labels) if labels is not None else _default_labels(paths)
@@ -362,4 +445,5 @@ def load_long_df(
         _stem, samples, unit = load_samples(path, metric=metric, stat=stat)
         for s in samples:
             rows.append({"snapshot": label, "id": s.id, "value": s.value, **s.dims})
-    return pd.DataFrame(rows), unit
+    df = pd.DataFrame(rows)
+    return (_pivot_to_series(df, pivot) if pivot is not None else df), unit

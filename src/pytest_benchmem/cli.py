@@ -100,6 +100,16 @@ def plot(
         typer.Option(help="compare | scatter | sweep | scaling (default: by count)."),
     ] = None,
     facet: Annotated[str | None, typer.Option(help="Dim to facet by.")] = None,
+    pivot: Annotated[
+        str | None,
+        typer.Option(
+            "--pivot",
+            help="Comparison axis for --view compare/scatter: fold a single run along this dim "
+            "instead of across run-files (param:NAME or a bare extra_info name); its values "
+            "become the compared series. Like --group-by but it sets what's *compared*, not how "
+            "rows cluster. Mutually exclusive with multiple runs.",
+        ),
+    ] = None,
     x: Annotated[str | None, typer.Option(help="scaling: dim for the x-axis.")] = None,
     clip: Annotated[float | None, typer.Option(help="Clamp the colour scale.")] = None,
     where: Annotated[
@@ -129,7 +139,21 @@ def plot(
     """Render an interactive plotly view from one or more pytest-benchmark runs."""
     _require_runs_exist(runs, suggest=True)
 
-    chosen = view or ("scaling" if len(runs) == 1 else "scatter" if len(runs) == 2 else "sweep")
+    # --pivot's natural home is the A/B compare view, so when --view is unset it defaults there
+    # (otherwise one run would default to scaling, which has no series axis to pivot). An explicit
+    # --view still wins in both cases; the guard below rejects a non-paired view under --pivot.
+    if pivot is not None:
+        chosen = view or "compare"
+    else:
+        chosen = view or ("scaling" if len(runs) == 1 else "scatter" if len(runs) == 2 else "sweep")
+    # --pivot re-points the series axis at a dim; only the paired views (compare/scatter) have a
+    # series axis to re-point. For scaling/sweep the dim is a normal x/colour/facet axis.
+    if pivot is not None and chosen not in ("compare", "scatter"):
+        raise _fail(
+            f"--pivot re-points the comparison series and applies to --view compare or scatter, "
+            f"not {chosen!r}; for scaling/sweep use --x / --facet to place the dim.",
+            2,
+        )
     _need_plotly()
     from pytest_benchmem import plotting
 
@@ -145,6 +169,7 @@ def plot(
                 where=filters,
                 free_axes=free_axes,
                 labels=labels,
+                pivot=pivot,
             )
         elif chosen == "scatter":
             fig, n = plotting.plot_scatter(
@@ -155,6 +180,7 @@ def plot(
                 where=filters,
                 free_axes=free_axes,
                 labels=labels,
+                pivot=pivot,
             )
         elif chosen == "sweep":
             fig, n = plotting.plot_sweep(
@@ -222,6 +248,16 @@ def compare(
         str,
         typer.Option(help="Row order: name (id) | value (largest in the last run) | change."),
     ] = "name",
+    pivot: Annotated[
+        str | None,
+        typer.Option(
+            "--pivot",
+            help="Comparison axis: fold a single run along this dim instead of across run-files "
+            "— param:NAME or a bare extra_info name. Rows differing only in it pair up and its "
+            "values become the compared series. Like --group-by but it sets what's *compared*, "
+            "not how rows cluster. Mutually exclusive with multiple runs.",
+        ),
+    ] = None,
     csv: Annotated[
         Path | None,
         typer.Option(help="Also write the raw (unscaled) comparison to this CSV file."),
@@ -230,36 +266,50 @@ def compare(
         list[str] | None,
         typer.Option(
             "--fail-on",
-            help="Exit non-zero on a regression of the first run vs the last. "
-            "FIELD:THRESHOLD, repeatable — e.g. --fail-on peak:10% --fail-on peak:5MiB "
-            "--fail-on rss:10% (rss gates only isolated runs).",
+            help="Exit non-zero on a regression of the first run vs the last (or, with --pivot, "
+            "the first dim value vs the last). FIELD:THRESHOLD, repeatable — e.g. --fail-on "
+            "peak:10% --fail-on peak:5MiB --fail-on rss:10% (rss gates only isolated runs).",
         ),
     ] = None,
 ) -> None:
     """Print a per-id table for one run, or compare two or more (and optionally gate CI)."""
     if not runs:
         raise _fail("compare needs at least one run", 2)
-    if fail_on and len(runs) < 2:  # noqa: PLR2004 — a growth gate needs a before and an after
+    # A growth gate needs a base and a head: two runs, or one run folded along --pivot (which
+    # supplies the two sides from one file). Without either, refuse rather than silently pass.
+    if fail_on and len(runs) < 2 and pivot is None:  # noqa: PLR2004
         raise _fail(
             "compare --fail-on needs at least two runs — it gates growth of the first run vs "
-            "the last. For an absolute ceiling on a single run, use the "
-            "@pytest.mark.benchmem(max_peak=...) marker instead.",
+            "the last. To gate one combined run, add --pivot DIM (first dim value vs last); for "
+            "an absolute ceiling, use the @pytest.mark.benchmem(max_peak=...) marker instead.",
             2,
         )
     _require_runs_exist(runs, suggest=False)
-    from pytest_benchmem.compare import compare_runs, find_regressions, parse_threshold
+    from pytest_benchmem.compare import (
+        compare_runs,
+        find_pivot_regressions,
+        find_regressions,
+        parse_threshold,
+    )
 
     with _exit_on_value_error():
-        compare_runs(runs, columns=columns, group_by=group_by, stat=stat, sort=sort, csv=csv)
+        compare_runs(
+            runs, columns=columns, group_by=group_by, stat=stat, sort=sort, pivot=pivot, csv=csv
+        )
 
     if not fail_on:
         return
     with _exit_on_value_error(code=2):
         thresholds = [parse_threshold(expr) for expr in fail_on]
 
-    # Gate the first run (base) against the last (head) — oldest vs newest in a sweep.
+    # Gate base vs head: the first run vs the last (oldest vs newest in a sweep), or — with
+    # --pivot — the first value of the dim vs the last, folded out of the one run.
     with _exit_on_value_error(code=2):  # e.g. an rss gate against non-isolated runs
-        regressions = find_regressions(runs[0], runs[-1], thresholds)
+        regressions = (
+            find_pivot_regressions(runs[0], pivot, thresholds)
+            if pivot is not None
+            else find_regressions(runs[0], runs[-1], thresholds)
+        )
     if regressions:
         typer.secho(f"{len(regressions)} regression(s) over threshold:", fg=typer.colors.RED)
         for reg in regressions:
