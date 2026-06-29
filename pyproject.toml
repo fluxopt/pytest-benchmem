@@ -49,7 +49,7 @@ source = "vcs"
 
 [dependency-groups]
 # mypy <2.1: 2.1.0 errors on numpy's PEP 695 stub under python_version=3.11. Lift once fixed upstream.
-dev = ["ruff", "mypy<2.1", "pre-commit", "pytest-benchmem[plot]", { include-group = "docs" }]
+dev = ["ruff", "mypy<2.2", "pre-commit", "pytest-benchmem[plot]", { include-group = "docs" }]
 docs = [
     "jupytext",
     "ipykernel",
