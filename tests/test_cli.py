@@ -116,6 +116,15 @@ def test_compare_bad_threshold_exits_2(tmp_path):
     assert "unknown field" in _text(result)
 
 
+def test_compare_format_md_emits_markdown(tmp_path):
+    a = _run(tmp_path, "base.json", [_bm("test_x", peak=10 * 1024**2)])
+    b = _run(tmp_path, "head.json", [_bm("test_x", peak=12 * 1024**2)])
+    result = runner.invoke(app, ["compare", str(a), str(b), "--columns", "peak", "--format", "md"])
+    assert result.exit_code == 0, _text(result)
+    assert "#### test_x" in result.output and "| name |" in result.output
+    assert "(1.20)" in result.output  # multiplier carried; no colour needed
+
+
 def test_compare_pivot_folds_run_along_dim(tmp_path):
     # --pivot makes a param the comparison series within one run (the A/B a file-pair gives)
     def _b(sem, peak):

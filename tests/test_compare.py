@@ -431,6 +431,36 @@ def test_pivot_gate_needs_two_values(tmp_path):
         find_pivot_regressions(run, "param:semantics", [parse_threshold("peak:10%")])
 
 
+# --- --format md: GitHub-flavored markdown ----------------------------------------
+
+
+def test_markdown_format_emits_github_table(tmp_path):
+    a = _write(tmp_path / "base.json", [_bm("pkg::test_x", t=1.0, peak=10 * 1024**2)])
+    b = _write(tmp_path / "head.json", [_bm("pkg::test_x", t=1.0, peak=12 * 1024**2)])
+    out = StringIO()
+    compare_runs([a, b], columns="peak", stat="min", out_format="md", out=out)
+    text = out.getvalue()
+    assert "#### pkg::test_x" in text  # one section per group (default group-by fullname)
+    assert "| name | peak (MiB) min |" in text  # header with the scaled unit
+    assert "| :--- | ---: |" in text  # left-aligned name, right-aligned metric
+    assert "| (head) | 12.00 (1.20) |" in text  # value + multiplier, no colour
+    assert "\x1b[" not in text and "─" not in text  # no ANSI, no rich box-drawing
+
+
+def test_markdown_escapes_pipes_in_ids(tmp_path):
+    # a literal pipe in a node id must not break the table grid; multi-id group → id is a row cell
+    a = _write(tmp_path / "a.json", [_bm("test_x[a|b]", peak=1024), _bm("test_y", peak=2048)])
+    out = StringIO()
+    compare_runs([a], columns="peak", group_by=None, out_format="md", out=out)
+    assert r"test_x[a\|b] (a)" in out.getvalue()  # pipe escaped inside the cell
+
+
+def test_unknown_format_raises(tmp_path):
+    a = _write(tmp_path / "a.json", [_bm("x", peak=1)])
+    with pytest.raises(ValueError, match="unknown --format"):
+        compare_runs([a], out_format="xml", out=StringIO())
+
+
 # --- the regression gate (--fail-on) ---------------------------------------------
 
 
