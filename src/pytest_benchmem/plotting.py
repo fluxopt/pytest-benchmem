@@ -443,7 +443,9 @@ def _infer_roles(
     if x is None:
         if len(numeric) != 1:
             raise ValueError(
-                f"scaling needs exactly one numeric dim for x (found {numeric}); pass x= explicitly"
+                "scaling needs exactly one numeric dim for the x-axis "
+                f"(found {numeric or 'none'}); pass --x DIM to pick one. To A/B a "
+                "categorical dim instead, use --pivot DIM (one run) or pass two runs."
             )
         x = numeric[0]
     leftover = [d for d in dims if d != x]

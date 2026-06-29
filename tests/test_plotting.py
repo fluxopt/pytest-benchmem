@@ -182,6 +182,25 @@ def test_pivot_with_multiple_runs_errors_in_plot(tmp_path):
         plotting.plot_compare([a, b], metric="peak", pivot="param:semantics")
 
 
+def test_scaling_no_numeric_dim_points_to_pivot(tmp_path):
+    # a single run whose only dim is categorical (semantics) can't auto-scale — the error should
+    # guide toward --pivot (the categorical-A/B path), not just "pass x=".
+    blob = {"peak_bytes": [10], "allocations": [0], "total_bytes": [0]}
+    bms = [
+        {
+            "fullname": f"t[{sem}]",
+            "params": {"semantics": sem},
+            "stats": {"min": 1.0},
+            "extra_info": {"benchmem": blob},
+        }
+        for sem in ("legacy", "v1")
+    ]
+    run = tmp_path / "build.json"
+    run.write_text(json.dumps({"benchmarks": bms}))
+    with pytest.raises(ValueError, match="--pivot"):
+        plotting.plot_scaling([run], metric="peak")
+
+
 def test_plot_scaling_explicit_node_facet(tmp_path):
     p = _run_two_funcs(tmp_path / "a.json")
     fig, n = plotting.plot_scaling(p, facet="node.func")  # node.func selectable by name
