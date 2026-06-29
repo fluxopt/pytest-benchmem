@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.7](https://github.com/fluxopt/pytest-benchmem/compare/v0.4.6...v0.4.7) (2026-06-29)
+
+
+### Features
+
+* **plot:** clearer titles, axis labels, unit notes, and colorbars ([#148](https://github.com/fluxopt/pytest-benchmem/issues/148)) ([9a7b66e](https://github.com/fluxopt/pytest-benchmem/commit/9a7b66e28e23183eca176280eb1929a15855c7c9))
+
 ## [0.4.6](https://github.com/fluxopt/pytest-benchmem/compare/v0.4.5...v0.4.6) (2026-06-29)
 
 
