@@ -225,25 +225,48 @@ def test_plot_columns_selects_metric(tmp_path, capture_view):
     assert captured["metric"] == "peak"
 
 
-@pytest.mark.parametrize(
-    "args, needle",
-    [
-        (["--metric", "peak"], "No such option"),  # --metric renamed to --columns pre-1.0
-        (["--columns", "time,peak"], ("not one of", "Invalid value")),  # one value axis only
-        (["--free-axes", "diagonal"], None),  # out-of-choice value; typer rejects
-        (["--where", "noequals"], "KEY=VALUE"),  # malformed --where needs KEY=VALUE
-        (["--view", "bogus"], "unknown view"),
-    ],
-)
-def test_plot_flag_errors_exit_2(tmp_path, args, needle):
+def test_plot_metric_flag_removed(tmp_path):
+    """--metric is gone (pre-1.0 rename to --columns, matching compare)."""
     r = write_run(tmp_path / "r.json", [bm("x")])
-    result = runner.invoke(app, ["plot", str(r), *args, "-o", str(tmp_path / "o.html")])
+    result = runner.invoke(
+        app, ["plot", str(r), "--metric", "peak", "-o", str(tmp_path / "o.html")]
+    )
     assert result.exit_code == 2
-    text = _text(result)
-    if isinstance(needle, tuple):
-        assert any(nd in text for nd in needle)  # message wording varies across click/typer
-    elif needle:
-        assert needle in text
+    assert "No such option" in _text(result)
+
+
+def test_plot_columns_rejects_multiple_metrics(tmp_path):
+    """A plot has one value axis — multiple metrics is a clean usage error, not a crash."""
+    r = write_run(tmp_path / "r.json", [bm("x")])
+    result = runner.invoke(
+        app, ["plot", str(r), "--columns", "time,peak", "-o", str(tmp_path / "o.html")]
+    )
+    assert result.exit_code == 2
+    assert "not one of" in _text(result) or "Invalid value" in _text(result)
+
+
+def test_plot_free_axes_rejects_bad_choice(tmp_path):
+    r = write_run(tmp_path / "r.json", [bm("x")])
+    result = runner.invoke(
+        app, ["plot", str(r), "--free-axes", "diagonal", "-o", str(tmp_path / "o.html")]
+    )
+    assert result.exit_code == 2  # typer rejects an out-of-choice value
+
+
+def test_plot_where_malformed_exits_2(tmp_path):
+    r = write_run(tmp_path / "r.json", [bm("x")])
+    result = runner.invoke(
+        app, ["plot", str(r), "--where", "noequals", "-o", str(tmp_path / "o.html")]
+    )
+    assert result.exit_code == 2
+    assert "KEY=VALUE" in _text(result)
+
+
+def test_plot_unknown_view_exits_2(tmp_path):
+    r = write_run(tmp_path / "r.json", [bm("x")])
+    result = runner.invoke(app, ["plot", str(r), "--view", "bogus", "-o", str(tmp_path / "o.html")])
+    assert result.exit_code == 2
+    assert "unknown view" in _text(result)
 
 
 def test_plot_where_parses_into_dict(tmp_path, capture_view):
