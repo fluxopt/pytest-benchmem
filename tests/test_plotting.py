@@ -427,25 +427,19 @@ def test_facet_axes_shared_by_default(tmp_path):
     assert _x_axes_matched(fig)  # plotly's matched default — the squish #49 describes
 
 
-def test_free_axes_x_unmatches_only_x(tmp_path):
+@pytest.mark.parametrize(
+    "free_axes, x_freed, y_freed",
+    [
+        ("x", True, False),  # x freed → each sweep its own range; y still shared
+        ("y", False, True),  # y freed → per-facet cost scale (the function case)
+        ("both", True, True),
+    ],
+)
+def test_free_axes_unmatches_selected_axes(tmp_path, free_axes, x_freed, y_freed):
     p = _run_mixed_axes(tmp_path / "a.json")
-    fig, _n = plotting.plot_scaling(p, x="v", facet="axis", free_axes="x")
-    assert not _x_axes_matched(fig)  # x freed → each sweep its own range
-    assert _y_axes_matched(fig)  # y still shared
-
-
-def test_free_axes_y_unmatches_only_y(tmp_path):
-    p = _run_mixed_axes(tmp_path / "a.json")
-    fig, _n = plotting.plot_scaling(p, x="v", facet="axis", free_axes="y")
-    assert _x_axes_matched(fig)
-    assert not _y_axes_matched(fig)  # y freed → per-facet cost scale (the function case)
-
-
-def test_free_axes_both_unmatches_both(tmp_path):
-    p = _run_mixed_axes(tmp_path / "a.json")
-    fig, _n = plotting.plot_scaling(p, x="v", facet="axis", free_axes="both")
-    assert not _x_axes_matched(fig)
-    assert not _y_axes_matched(fig)
+    fig, _n = plotting.plot_scaling(p, x="v", facet="axis", free_axes=free_axes)
+    assert _x_axes_matched(fig) is not x_freed
+    assert _y_axes_matched(fig) is not y_freed
 
 
 def test_free_axes_noop_without_facet(tmp_path):
