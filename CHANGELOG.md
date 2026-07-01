@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.8](https://github.com/fluxopt/pytest-benchmem/compare/v0.4.7...v0.4.8) (2026-07-01)
+
+
+### Bug Fixes
+
+* scaling overlays multiple runs + CLI axis/series controls ([#150](https://github.com/fluxopt/pytest-benchmem/issues/150)) ([#151](https://github.com/fluxopt/pytest-benchmem/issues/151)) ([ab0140e](https://github.com/fluxopt/pytest-benchmem/commit/ab0140e9523bbedd6c9060a1a31e1919d9ae404c))
+
 ## [0.4.7](https://github.com/fluxopt/pytest-benchmem/compare/v0.4.6...v0.4.7) (2026-06-29)
 
 
