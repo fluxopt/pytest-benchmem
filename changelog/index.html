@@ -1,0 +1,2044 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="The memory companion to pytest-benchmark — a memray peak-memory pass on the same test.">
+      
+      
+      
+        <link rel="canonical" href="https://pytest-benchmem.readthedocs.io/en/latest/changelog/">
+      
+      
+        <link rel="prev" href="../reference/">
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Release notes - pytest-benchmem</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../stylesheets/extra.css">
+    
+      <link rel="stylesheet" href="../termynal.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#changelog" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="pytest-benchmem" class="md-header__button md-logo" aria-label="pytest-benchmem" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            pytest-benchmem
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Release notes
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/fluxopt/pytest-benchmem" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+                
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" hidden>
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="pytest-benchmem" class="md-nav__button md-logo" aria-label="pytest-benchmem" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    pytest-benchmem
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/fluxopt/pytest-benchmem" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../metrics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Choosing a metric
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../compare-plot/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compare &amp; gate CI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../dims/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Grouping by dims
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sweeps/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cross-version sweeps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release notes
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release notes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#048-2026-07-01" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.4.8 (2026-07-01)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.4.8 (2026-07-01)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bug-fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bug Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#047-2026-06-29" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.4.7 (2026-06-29)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.4.7 (2026-06-29)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#046-2026-06-29" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.4.6 (2026-06-29)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.4.6 (2026-06-29)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#features_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bug-fixes_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bug Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#045-2026-06-29" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.4.5 (2026-06-29)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.4.5 (2026-06-29)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bug-fixes_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bug Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#044-2026-06-29" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.4.4 (2026-06-29)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.4.4 (2026-06-29)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#features_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#043-2026-06-29" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.4.3 (2026-06-29)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.4.3 (2026-06-29)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#features_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#042-2026-06-18" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.4.2 (2026-06-18)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.4.2 (2026-06-18)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bug-fixes_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bug Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#041-2026-06-17" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.4.1 (2026-06-17)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.4.1 (2026-06-17)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#features_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#040-2026-06-16" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.4.0 (2026-06-16)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.4.0 (2026-06-16)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ⚠ BREAKING CHANGES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#features_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#030-2026-06-16" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.3.0 (2026-06-16)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.3.0 (2026-06-16)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ⚠ BREAKING CHANGES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#features_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bug-fixes_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bug Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#021-2026-06-13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.2.1 (2026-06-13)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.2.1 (2026-06-13)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#features_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bug-fixes_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bug Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reverts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reverts
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#020-2026-06-13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.2.0 (2026-06-13)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.2.0 (2026-06-13)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ⚠ BREAKING CHANGES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#features_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bug-fixes_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bug Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#010-2026-06-13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.1.0 (2026-06-13)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.1.0 (2026-06-13)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ⚠ BREAKING CHANGES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#features_9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#miscellaneous-chores" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Miscellaneous Chores
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#code-refactoring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Code Refactoring
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#010-2026-06-13_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.1.0 (2026-06-13)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.1.0 (2026-06-13)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ⚠ BREAKING CHANGES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#features_10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#miscellaneous-chores_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Miscellaneous Chores
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#code-refactoring_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Code Refactoring
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#001-2026-06-13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.0.1 (2026-06-13)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.0.1 (2026-06-13)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#features_11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+                
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#048-2026-07-01" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.4.8 (2026-07-01)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.4.8 (2026-07-01)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bug-fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bug Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#047-2026-06-29" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.4.7 (2026-06-29)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.4.7 (2026-06-29)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#046-2026-06-29" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.4.6 (2026-06-29)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.4.6 (2026-06-29)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#features_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bug-fixes_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bug Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#045-2026-06-29" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.4.5 (2026-06-29)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.4.5 (2026-06-29)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bug-fixes_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bug Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#044-2026-06-29" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.4.4 (2026-06-29)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.4.4 (2026-06-29)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#features_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#043-2026-06-29" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.4.3 (2026-06-29)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.4.3 (2026-06-29)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#features_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#042-2026-06-18" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.4.2 (2026-06-18)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.4.2 (2026-06-18)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bug-fixes_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bug Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#041-2026-06-17" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.4.1 (2026-06-17)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.4.1 (2026-06-17)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#features_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#040-2026-06-16" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.4.0 (2026-06-16)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.4.0 (2026-06-16)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ⚠ BREAKING CHANGES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#features_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#030-2026-06-16" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.3.0 (2026-06-16)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.3.0 (2026-06-16)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ⚠ BREAKING CHANGES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#features_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bug-fixes_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bug Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#021-2026-06-13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.2.1 (2026-06-13)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.2.1 (2026-06-13)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#features_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bug-fixes_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bug Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reverts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reverts
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#020-2026-06-13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.2.0 (2026-06-13)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.2.0 (2026-06-13)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ⚠ BREAKING CHANGES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#features_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bug-fixes_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bug Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#010-2026-06-13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.1.0 (2026-06-13)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.1.0 (2026-06-13)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ⚠ BREAKING CHANGES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#features_9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#miscellaneous-chores" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Miscellaneous Chores
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#code-refactoring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Code Refactoring
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#010-2026-06-13_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.1.0 (2026-06-13)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.1.0 (2026-06-13)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ⚠ BREAKING CHANGES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#features_10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#miscellaneous-chores_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Miscellaneous Chores
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#code-refactoring_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Code Refactoring
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#001-2026-06-13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.0.1 (2026-06-13)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.0.1 (2026-06-13)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#features_11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+  
+
+
+
+  
+  
+
+
+<!-- Rendered from the repo-root CHANGELOG.md (release-please source of truth) so the
+     published release notes can't drift from the tagged releases. -->
+
+<h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
+<h2 id="048-2026-07-01"><a href="https://github.com/fluxopt/pytest-benchmem/compare/v0.4.7...v0.4.8">0.4.8</a> (2026-07-01)<a class="headerlink" href="#048-2026-07-01" title="Permanent link">&para;</a></h2>
+<h3 id="bug-fixes">Bug Fixes<a class="headerlink" href="#bug-fixes" title="Permanent link">&para;</a></h3>
+<ul>
+<li>scaling overlays multiple runs + CLI axis/series controls (<a href="https://github.com/fluxopt/pytest-benchmem/issues/150">#150</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/issues/151">#151</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/commit/ab0140e9523bbedd6c9060a1a31e1919d9ae404c">ab0140e</a>)</li>
+</ul>
+<h2 id="047-2026-06-29"><a href="https://github.com/fluxopt/pytest-benchmem/compare/v0.4.6...v0.4.7">0.4.7</a> (2026-06-29)<a class="headerlink" href="#047-2026-06-29" title="Permanent link">&para;</a></h2>
+<h3 id="features">Features<a class="headerlink" href="#features" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>plot:</strong> clearer titles, axis labels, unit notes, and colorbars (<a href="https://github.com/fluxopt/pytest-benchmem/issues/148">#148</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/commit/9a7b66e28e23183eca176280eb1929a15855c7c9">9a7b66e</a>)</li>
+</ul>
+<h2 id="046-2026-06-29"><a href="https://github.com/fluxopt/pytest-benchmem/compare/v0.4.5...v0.4.6">0.4.6</a> (2026-06-29)<a class="headerlink" href="#046-2026-06-29" title="Permanent link">&para;</a></h2>
+<h3 id="features_1">Features<a class="headerlink" href="#features_1" title="Permanent link">&para;</a></h3>
+<ul>
+<li>plot -o exports a static image when the suffix is png/svg/pdf/... (<a href="https://github.com/fluxopt/pytest-benchmem/issues/145">#145</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/issues/146">#146</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/commit/ab2ab2c06193d68a90413acf28fcfff6c0e1d76e">ab2ab2c</a>)</li>
+</ul>
+<h3 id="bug-fixes_1">Bug Fixes<a class="headerlink" href="#bug-fixes_1" title="Permanent link">&para;</a></h3>
+<ul>
+<li>keep the baseline frame in the animated scatter (drop only when static) (<a href="https://github.com/fluxopt/pytest-benchmem/issues/142">#142</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/commit/e600841b3cb3561c98e9a74dc36bf569bbe97ca0">e600841</a>)</li>
+</ul>
+<h2 id="045-2026-06-29"><a href="https://github.com/fluxopt/pytest-benchmem/compare/v0.4.4...v0.4.5">0.4.5</a> (2026-06-29)<a class="headerlink" href="#045-2026-06-29" title="Permanent link">&para;</a></h2>
+<h3 id="bug-fixes_2">Bug Fixes<a class="headerlink" href="#bug-fixes_2" title="Permanent link">&para;</a></h3>
+<ul>
+<li>plot --view scatter drew the baseline series as redundant ratio-1.0 points (<a href="https://github.com/fluxopt/pytest-benchmem/issues/140">#140</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/commit/aa24710e54bb1d1bc290ee34558b57a18d61fb8f">aa24710</a>), closes <a href="https://github.com/fluxopt/pytest-benchmem/issues/139">#139</a></li>
+</ul>
+<h2 id="044-2026-06-29"><a href="https://github.com/fluxopt/pytest-benchmem/compare/v0.4.3...v0.4.4">0.4.4</a> (2026-06-29)<a class="headerlink" href="#044-2026-06-29" title="Permanent link">&para;</a></h2>
+<h3 id="features_2">Features<a class="headerlink" href="#features_2" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>--pivot</code> comparison axis for compare/plot (fold one run along a config dim) (<a href="https://github.com/fluxopt/pytest-benchmem/issues/137">#137</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/commit/d0672f74d7040b4f777df342c346052fc9f77678">d0672f7</a>)</li>
+</ul>
+<h2 id="043-2026-06-29"><a href="https://github.com/fluxopt/pytest-benchmem/compare/v0.4.2...v0.4.3">0.4.3</a> (2026-06-29)<a class="headerlink" href="#043-2026-06-29" title="Permanent link">&para;</a></h2>
+<h3 id="features_3">Features<a class="headerlink" href="#features_3" title="Permanent link">&para;</a></h3>
+<ul>
+<li>benchmem compare accepts a single run (plain table) (<a href="https://github.com/fluxopt/pytest-benchmem/issues/123">#123</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/commit/96275d93628323ffd4f3cc74decdebdcb132004e">96275d9</a>)</li>
+</ul>
+<h2 id="042-2026-06-18"><a href="https://github.com/fluxopt/pytest-benchmem/compare/v0.4.1...v0.4.2">0.4.2</a> (2026-06-18)<a class="headerlink" href="#042-2026-06-18" title="Permanent link">&para;</a></h2>
+<h3 id="bug-fixes_3">Bug Fixes<a class="headerlink" href="#bug-fixes_3" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>docs:</strong> pin mkdocs-typer2 &gt;=0.4.1 and drop NO_COLOR workaround (<a href="https://github.com/fluxopt/pytest-benchmem/issues/120">#120</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/commit/db1453f8a557b221563e83e8223f3f754c70bdb7">db1453f</a>)</li>
+</ul>
+<h2 id="041-2026-06-17"><a href="https://github.com/fluxopt/pytest-benchmem/compare/v0.4.0...v0.4.1">0.4.1</a> (2026-06-17)<a class="headerlink" href="#041-2026-06-17" title="Permanent link">&para;</a></h2>
+<h3 id="features_4">Features<a class="headerlink" href="#features_4" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>benchmem flamegraph</code> — one-step render of a kept profile (closes <a href="https://github.com/fluxopt/pytest-benchmem/issues/114">#114</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/issues/118">#118</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/commit/95d2f8d127bbc64b43423a3555893f1fd61c8a01">95d2f8d</a>)</li>
+<li>isolated RSS metric — opt-in whole-process peak memory (Phase 1 of <a href="https://github.com/fluxopt/pytest-benchmem/issues/109">#109</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/issues/110">#110</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/commit/782fec9f853c914ea9d11a09a7aa67b48437c73a">782fec9</a>)</li>
+<li>native-trace capture for the kept memory profile (closes <a href="https://github.com/fluxopt/pytest-benchmem/issues/113">#113</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/issues/117">#117</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/commit/9ff5f2ad6e001d8cb907f8d153842eb0a02218ab">9ff5f2a</a>)</li>
+<li>reuse pedantic <code>setup</code> for memory samples — stateful benchmarks stay accurate (closes <a href="https://github.com/fluxopt/pytest-benchmem/issues/105">#105</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/issues/106">#106</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/commit/d1de57a9b33ff7a43e2060b6f5f3288ccff5a0c8">d1de57a</a>)</li>
+<li>rss isolate is marker-only opt-in; warn on heavy pickled actions (<a href="https://github.com/fluxopt/pytest-benchmem/issues/115">#115</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/commit/fc2e4cfbe377e6f1d519f8c13642d60ba607a221">fc2e4cf</a>)</li>
+<li>warmup pass + measure memory before timing (cold floor) (<a href="https://github.com/fluxopt/pytest-benchmem/issues/108">#108</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/commit/95c021b50755d8a88b0a606eee0a6005b7d9c72a">95c021b</a>)</li>
+</ul>
+<h2 id="040-2026-06-16"><a href="https://github.com/fluxopt/pytest-benchmem/compare/v0.3.0...v0.4.0">0.4.0</a> (2026-06-16)<a class="headerlink" href="#040-2026-06-16" title="Permanent link">&para;</a></h2>
+<h3 id="breaking-changes">⚠ BREAKING CHANGES<a class="headerlink" href="#breaking-changes" title="Permanent link">&para;</a></h3>
+<ul>
+<li>benchmem plot --metric is removed; use --columns (e.g. 'plot run.json --columns peak'). Mirrors the compare --metric -&gt; --columns rename.</li>
+</ul>
+<h3 id="features_5">Features<a class="headerlink" href="#features_5" title="Permanent link">&para;</a></h3>
+<ul>
+<li>plot selects the metric via --columns (parity with compare) + 0.3.0 README refresh (<a href="https://github.com/fluxopt/pytest-benchmem/issues/102">#102</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/commit/85443dd57548e0801e5d33555bc6e3c6c62d41f3">85443dd</a>)</li>
+<li>timed|untimed divider in compare; CLI-showcase README + Python 3.14 (<a href="https://github.com/fluxopt/pytest-benchmem/issues/104">#104</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/commit/411987f32f6e1a54e53cc9a56f675f8182bb6ba6">411987f</a>)</li>
+</ul>
+<h2 id="030-2026-06-16"><a href="https://github.com/fluxopt/pytest-benchmem/compare/v0.2.1...v0.3.0">0.3.0</a> (2026-06-16)<a class="headerlink" href="#030-2026-06-16" title="Permanent link">&para;</a></h2>
+<p>This release reshapes how a memory measurement is taken, stored, and reported. Each
+<code>benchmark_memory</code> run now <strong>samples adaptively</strong> and keeps its <strong>full per-repeat series</strong>
+instead of a single number — so you can ask how noisy a metric is (<code>--stat
+min|mean|max|median|stddev</code>) — and the terminal prints <strong>one combined timing + memory
+table</strong>. <code>benchmem compare</code> is <strong>rebuilt on pytest-benchmark's table model</strong> (rows per
+benchmark × run, a metric × stat column grid, relative <code>(×)</code> multipliers, <code>--group-by</code> /
+<code>--columns</code>). Plus a <code>benchmem sweep</code> CLI for cross-version runs, <code>--where</code> / <code>--free-axes</code>
+plot controls, action-scoped memory ceilings (<code>@pytest.mark.benchmem(max_peak=...)</code>), and
+<code>--benchmark-memory-profile</code> to keep a memray <code>.bin</code> for regressions.</p>
+<p>Consolidating the metric surface around the per-repeat series retired a few redundant
+knobs — see the migration notes below.</p>
+<h3 id="breaking-changes_1">⚠ BREAKING CHANGES<a class="headerlink" href="#breaking-changes_1" title="Permanent link">&para;</a></h3>
+<p>Pre-1.0 changes vs 0.2.1, each quick to migrate:</p>
+<ul>
+<li><strong>Saved memory JSON from 0.2.x no longer loads.</strong> The blob under
+  <code>extra_info["benchmem"]</code> is now three flat per-repeat arrays (<code>peak_bytes</code> /
+  <code>allocations</code> / <code>total_bytes</code>), with the headline derived on read; the old denormalized
+  shape is not parsed. <strong>Migrate:</strong> re-run the suite with <code>--benchmark-memory</code> to
+  regenerate the runs. Timing-only pytest-benchmark files are unaffected. (<a href="https://github.com/fluxopt/pytest-benchmem/issues/75">#75</a>)</li>
+<li><strong>The <code>peak_max</code> metric is removed</strong> — it was <code>peak</code> reduced by max (a stat of a stat), so
+  it couldn't itself take a <code>--stat</code>. <strong>Migrate:</strong> <code>--columns peak --stat max</code>. (<a href="https://github.com/fluxopt/pytest-benchmem/issues/75">#75</a>)</li>
+<li><strong>The <code>memory</code> alias for <code>peak</code> is removed</strong> — it read like a category, not a synonym.
+  <strong>Migrate:</strong> <code>--columns peak</code>. (<a href="https://github.com/fluxopt/pytest-benchmem/issues/75">#75</a>)</li>
+<li><strong>The <code>gross</code> metric and the per-blob <code>mode</code> tag are removed</strong> — both were leftovers of the
+  reverted RSS engine (<code>gross</code> had no producer and always errored; <code>mode</code> was a constant).
+  Reading a legacy blob ignores a stray <code>mode</code> key, so <strong>no migration is needed</strong>. (<a href="https://github.com/fluxopt/pytest-benchmem/issues/67">#67</a>)</li>
+<li><strong><code>benchmem compare</code> selects metrics with <code>--columns</code>, not <code>--metric</code>.</strong> The table is now a
+  metric × stat grid, so a comma list of metrics (<code>--columns</code>) paired with <code>--stat</code> replaces the
+  single <code>--metric</code>. <strong>Migrate:</strong> <code>--metric peak</code> → <code>--columns peak</code>. (<a href="https://github.com/fluxopt/pytest-benchmem/issues/98">#98</a>, <a href="https://github.com/fluxopt/pytest-benchmem/issues/101">#101</a>)</li>
+</ul>
+<h3 id="features_6">Features<a class="headerlink" href="#features_6" title="Permanent link">&para;</a></h3>
+<p><strong>Memory measurement</strong>
+* <strong>Adaptive sampling</strong> — passes run until the peak floor settles instead of a fixed count; <code>--benchmark-memory-repeats</code> still forces a fixed count for reproducible gating. (<a href="https://github.com/fluxopt/pytest-benchmem/issues/97">#97</a>, <a href="https://github.com/fluxopt/pytest-benchmem/issues/79">#79</a>)
+* <strong>Per-repeat series</strong> with <code>--stat</code> distributions, min/mean/max spread columns, and <code>--benchmark-memory-columns</code> / <code>-stats</code> selection. (<a href="https://github.com/fluxopt/pytest-benchmem/issues/72">#72</a>, <a href="https://github.com/fluxopt/pytest-benchmem/issues/76">#76</a>)
+* <strong>Action-scoped absolute ceilings</strong> via <code>@pytest.mark.benchmem(max_peak=…, max_allocated=…, max_allocations=…)</code>. (<a href="https://github.com/fluxopt/pytest-benchmem/issues/86">#86</a>)
+* <strong><code>--benchmark-memory-profile DIR</code></strong> keeps the memray <code>.bin</code> for regressions (or every measured benchmark), to render with <code>memray flamegraph</code>. (<a href="https://github.com/fluxopt/pytest-benchmem/issues/100">#100</a>, closes <a href="https://github.com/fluxopt/pytest-benchmem/issues/24">#24</a>)
+* Actionable error when a memray <code>Tracker</code> is already active (e.g. pytest-memray on the same test). (<a href="https://github.com/fluxopt/pytest-benchmem/issues/89">#89</a>)</p>
+<p><strong>Tables &amp; compare</strong>
+* <strong>One combined timing + memory table</strong> by default. (<a href="https://github.com/fluxopt/pytest-benchmem/issues/65">#65</a>, <a href="https://github.com/fluxopt/pytest-benchmem/issues/68">#68</a>)
+* <strong><code>benchmem compare</code> rebuilt on pytest-benchmark's table model</strong> — rows per (benchmark × run), a metric × stat column grid with <code>--columns</code> / <code>--group-by</code> / <code>--metric both</code>, relative <code>(×)</code> multipliers, plus <code>--csv</code> / <code>--sort</code>. (<a href="https://github.com/fluxopt/pytest-benchmem/issues/98">#98</a>, <a href="https://github.com/fluxopt/pytest-benchmem/issues/101">#101</a>, <a href="https://github.com/fluxopt/pytest-benchmem/issues/74">#74</a>)</p>
+<p><strong>Plotting</strong>
+* <strong><code>--where KEY=VALUE</code></strong> row filter, <strong><code>--free-axes x|y|both</code></strong> for faceted views, and min…max spread whiskers on scaling plots. (<a href="https://github.com/fluxopt/pytest-benchmem/issues/93">#93</a>, <a href="https://github.com/fluxopt/pytest-benchmem/issues/95">#95</a>, <a href="https://github.com/fluxopt/pytest-benchmem/issues/99">#99</a>)</p>
+<p><strong>CLI</strong>
+* <strong><code>benchmem sweep</code></strong> — cross-version sweeps without a harness. (<a href="https://github.com/fluxopt/pytest-benchmem/issues/87">#87</a>)
+* Caller-labelled snapshots, decoupling series names from filenames. (<a href="https://github.com/fluxopt/pytest-benchmem/issues/57">#57</a>)</p>
+<h3 id="bug-fixes_4">Bug Fixes<a class="headerlink" href="#bug-fixes_4" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>compare</code> no longer crashes when two runs share a file stem. (<a href="https://github.com/fluxopt/pytest-benchmem/issues/64">#64</a>)</li>
+</ul>
+<h2 id="021-2026-06-13"><a href="https://github.com/fluxopt/pytest-benchmem/compare/v0.2.0...v0.2.1">0.2.1</a> (2026-06-13)<a class="headerlink" href="#021-2026-06-13" title="Permanent link">&para;</a></h2>
+<h3 id="features_7">Features<a class="headerlink" href="#features_7" title="Permanent link">&para;</a></h3>
+<ul>
+<li>add <code>rss</code> memory mode — kernel resident high-water via a forked child (<a href="https://github.com/fluxopt/pytest-benchmem/issues/51">#51</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/commit/c4ccd1267b9b795d88f377e005b6b6f060ccc40a">c4ccd12</a>)</li>
+<li>add peak_max and gross metrics; error on metric/mode mismatch (<a href="https://github.com/fluxopt/pytest-benchmem/issues/55">#55</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/commit/df45d1fc44ece79db297ae5b0dbc1537f5cb3e8f">df45d1f</a>)</li>
+<li>built-in node.* dims (module/func/class/group), selectable in plots (<a href="https://github.com/fluxopt/pytest-benchmem/issues/54">#54</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/commit/937ca0f470d467046d81d1db549a51cfa44dfdd0">937ca0f</a>)</li>
+<li>tag memory blobs with a <code>mode</code> and refuse to mix modes (<a href="https://github.com/fluxopt/pytest-benchmem/issues/40">#40</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/commit/4251e16a79d4ec66d5b39a41c924633c256287ee">4251e16</a>)</li>
+</ul>
+<h3 id="bug-fixes_5">Bug Fixes<a class="headerlink" href="#bug-fixes_5" title="Permanent link">&para;</a></h3>
+<ul>
+<li>accept str and single-path snapshots in plot_* and load_long_df (<a href="https://github.com/fluxopt/pytest-benchmem/issues/52">#52</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/commit/fdbc3432c8709ba0c3ed2f4c85df6ff4f45a4a30">fdbc343</a>)</li>
+<li>keep only scalar dims, dropping unserializable and structured values (<a href="https://github.com/fluxopt/pytest-benchmem/issues/45">#45</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/commit/71cb05d464d66bb55699e582103261f335a3e1a3">71cb05d</a>)</li>
+<li>metric ergonomics — correct allocated label, accept memory alias (<a href="https://github.com/fluxopt/pytest-benchmem/issues/53">#53</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/commit/a61c9befb6aae6feca5f504f9fb9e16b35ed5f3f">a61c9be</a>)</li>
+</ul>
+<h3 id="reverts">Reverts<a class="headerlink" href="#reverts" title="Permanent link">&para;</a></h3>
+<ul>
+<li>remove the <code>rss</code> memory mode (<a href="https://github.com/fluxopt/pytest-benchmem/issues/51">#51</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/issues/56">#56</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/commit/99d908d582094d982f421cc381639f53b6585a56">99d908d</a>)</li>
+</ul>
+<h2 id="020-2026-06-13"><a href="https://github.com/fluxopt/pytest-benchmem/compare/v0.1.0...v0.2.0">0.2.0</a> (2026-06-13)<a class="headerlink" href="#020-2026-06-13" title="Permanent link">&para;</a></h2>
+<h3 id="breaking-changes_2">⚠ BREAKING CHANGES<a class="headerlink" href="#breaking-changes_2" title="Permanent link">&para;</a></h3>
+<ul>
+<li>mirror memray's metrics — add total memory allocated (<a href="https://github.com/fluxopt/pytest-benchmem/issues/39">#39</a>)</li>
+<li>memory regression gate, @pytest.mark.benchmem, bytes blob migration (<a href="https://github.com/fluxopt/pytest-benchmem/issues/32">#32</a>)</li>
+</ul>
+<h3 id="features_8">Features<a class="headerlink" href="#features_8" title="Permanent link">&para;</a></h3>
+<ul>
+<li>empirical scaling fit — report O(n^x) over a size sweep (<a href="https://github.com/fluxopt/pytest-benchmem/issues/36">#36</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/commit/4bc6e4683142c46c9c60765dbf1f8e39adb3388f">4bc6e46</a>)</li>
+<li>memory regression gate, <a href="https://github.com/pytest">@pytest</a>.mark.benchmem, bytes blob migration (<a href="https://github.com/fluxopt/pytest-benchmem/issues/32">#32</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/commit/654c582a15a8f8ef8e79a7c1d41767660d5f962a">654c582</a>)</li>
+<li>mirror memray's metrics — add total memory allocated (<a href="https://github.com/fluxopt/pytest-benchmem/issues/39">#39</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/commit/0b6fad6f90ef124b1c80ca368c1d4db6fe5b34af">0b6fad6</a>)</li>
+</ul>
+<h3 id="bug-fixes_6">Bug Fixes<a class="headerlink" href="#bug-fixes_6" title="Permanent link">&para;</a></h3>
+<ul>
+<li>correct release-please pre-major key so feat! bumps 0.2.0 not 1.0.0 (<a href="https://github.com/fluxopt/pytest-benchmem/issues/41">#41</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/commit/fac21e08bfaf5816f067fd78da57aa623c1b563d">fac21e0</a>)</li>
+</ul>
+<h2 id="010-2026-06-13"><a href="https://github.com/fluxopt/pytest-benchmem/compare/v0.1.0...v0.1.0">0.1.0</a> (2026-06-13)<a class="headerlink" href="#010-2026-06-13" title="Permanent link">&para;</a></h2>
+<h3 id="breaking-changes_3">⚠ BREAKING CHANGES<a class="headerlink" href="#breaking-changes_3" title="Permanent link">&para;</a></h3>
+<ul>
+<li>rename package peakbench → pytest-benchmem (<a href="https://github.com/fluxopt/pytest-benchmem/issues/10">#10</a>)</li>
+<li>pivot to the memory companion to pytest-benchmark (<a href="https://github.com/fluxopt/pytest-benchmem/issues/7">#7</a>)</li>
+</ul>
+<h3 id="features_9">Features<a class="headerlink" href="#features_9" title="Permanent link">&para;</a></h3>
+<ul>
+<li>--benchmark-memory flag to augment existing benchmark() calls (<a href="https://github.com/fluxopt/pytest-benchmem/issues/16">#16</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/commit/aff17c76ad742cedc963e7914bd575846ddc6035">aff17c7</a>)</li>
+<li>pivot to the memory companion to pytest-benchmark (<a href="https://github.com/fluxopt/pytest-benchmem/issues/7">#7</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/commit/52f2b6b56af1ee61f84fcd0ab9dc0947004fd31d">52f2b6b</a>)</li>
+<li>resolve <a href="https://github.com/fluxopt/pytest-benchmem/issues/2">#2</a> — drop select=, bless filter-before-convert (<a href="https://github.com/fluxopt/pytest-benchmem/commit/89fbfcdde439eb6f1535df8e65d2295b2ea69add">89fbfcd</a>)</li>
+</ul>
+<h3 id="miscellaneous-chores">Miscellaneous Chores<a class="headerlink" href="#miscellaneous-chores" title="Permanent link">&para;</a></h3>
+<ul>
+<li>release pytest-benchmem as 0.1.0 (<a href="https://github.com/fluxopt/pytest-benchmem/issues/13">#13</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/commit/8e51760d7bdfe4e44ea77856e8a0c4e158de0099">8e51760</a>)</li>
+</ul>
+<h3 id="code-refactoring">Code Refactoring<a class="headerlink" href="#code-refactoring" title="Permanent link">&para;</a></h3>
+<ul>
+<li>rename package peakbench → pytest-benchmem (<a href="https://github.com/fluxopt/pytest-benchmem/issues/10">#10</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/commit/1e482590bef2767df1619bcae15a6d132f4cc610">1e48259</a>)</li>
+</ul>
+<h2 id="010-2026-06-13_1"><a href="https://github.com/fluxopt/pytest-benchmem/compare/v0.0.1...v0.1.0">0.1.0</a> (2026-06-13)<a class="headerlink" href="#010-2026-06-13_1" title="Permanent link">&para;</a></h2>
+<h3 id="breaking-changes_4">⚠ BREAKING CHANGES<a class="headerlink" href="#breaking-changes_4" title="Permanent link">&para;</a></h3>
+<ul>
+<li>rename package peakbench → pytest-benchmem (<a href="https://github.com/fluxopt/pytest-benchmem/issues/10">#10</a>)</li>
+<li>pivot to the memory companion to pytest-benchmark (<a href="https://github.com/fluxopt/pytest-benchmem/issues/7">#7</a>)</li>
+</ul>
+<h3 id="features_10">Features<a class="headerlink" href="#features_10" title="Permanent link">&para;</a></h3>
+<ul>
+<li>pivot to the memory companion to pytest-benchmark (<a href="https://github.com/fluxopt/pytest-benchmem/issues/7">#7</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/commit/52f2b6b56af1ee61f84fcd0ab9dc0947004fd31d">52f2b6b</a>)</li>
+</ul>
+<h3 id="miscellaneous-chores_1">Miscellaneous Chores<a class="headerlink" href="#miscellaneous-chores_1" title="Permanent link">&para;</a></h3>
+<ul>
+<li>release pytest-benchmem as 0.1.0 (<a href="https://github.com/fluxopt/pytest-benchmem/issues/13">#13</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/commit/8e51760d7bdfe4e44ea77856e8a0c4e158de0099">8e51760</a>)</li>
+</ul>
+<h3 id="code-refactoring_1">Code Refactoring<a class="headerlink" href="#code-refactoring_1" title="Permanent link">&para;</a></h3>
+<ul>
+<li>rename package peakbench → pytest-benchmem (<a href="https://github.com/fluxopt/pytest-benchmem/issues/10">#10</a>) (<a href="https://github.com/fluxopt/pytest-benchmem/commit/1e482590bef2767df1619bcae15a6d132f4cc610">1e48259</a>)</li>
+</ul>
+<h2 id="001-2026-06-13">0.0.1 (2026-06-13)<a class="headerlink" href="#001-2026-06-13" title="Permanent link">&para;</a></h2>
+<h3 id="features_11">Features<a class="headerlink" href="#features_11" title="Permanent link">&para;</a></h3>
+<ul>
+<li>resolve <a href="https://github.com/fluxopt/pytest-benchmem/issues/2">#2</a> — drop select=, bless filter-before-convert (<a href="https://github.com/fluxopt/pytest-benchmem/commit/89fbfcdde439eb6f1535df8e65d2295b2ea69add">89fbfcd</a>)</li>
+</ul>
+
+
+
+
+
+
+
+  
+  
+
+
+
+
+  
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.top", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.code.select"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../javascripts/notebook-prompts.js"></script>
+      
+        <script src="../termynal.js"></script>
+      
+    
+  </body>
+</html>

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url>
+         <loc>https://pytest-benchmem.readthedocs.io/en/latest/</loc>
+         <lastmod>2026-07-01</lastmod>
+    </url>
+    <url>
+         <loc>https://pytest-benchmem.readthedocs.io/en/latest/changelog/</loc>
+         <lastmod>2026-07-01</lastmod>
+    </url>
+    <url>
+         <loc>https://pytest-benchmem.readthedocs.io/en/latest/compare-plot/</loc>
+         <lastmod>2026-07-01</lastmod>
+    </url>
+    <url>
+         <loc>https://pytest-benchmem.readthedocs.io/en/latest/dims/</loc>
+         <lastmod>2026-07-01</lastmod>
+    </url>
+    <url>
+         <loc>https://pytest-benchmem.readthedocs.io/en/latest/getting-started/</loc>
+         <lastmod>2026-07-01</lastmod>
+    </url>
+    <url>
+         <loc>https://pytest-benchmem.readthedocs.io/en/latest/metrics/</loc>
+         <lastmod>2026-07-01</lastmod>
+    </url>
+    <url>
+         <loc>https://pytest-benchmem.readthedocs.io/en/latest/reference/</loc>
+         <lastmod>2026-07-01</lastmod>
+    </url>
+    <url>
+         <loc>https://pytest-benchmem.readthedocs.io/en/latest/sweeps/</loc>
+         <lastmod>2026-07-01</lastmod>
+    </url>
+</urlset>
