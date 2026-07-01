@@ -241,6 +241,22 @@ raw numbers for another tool with `--csv out.csv`:
 benchmem compare baseline.json candidate.json --columns peak --sort value --csv peak.csv
 ```
 
+#### Sharing the table
+
+For a readable artifact rather than the terminal view, you have three paths:
+
+```bash
+benchmem compare base.json head.json --format md      # GitHub-flavored markdown to stdout
+benchmem compare base.json head.json > out.txt        # plain monospace table (rich drops colour)
+benchmem compare base.json head.json --csv out.csv    # raw unscaled values for another tool
+```
+
+`--format md` is the one to pipe into a PR comment or `$GITHUB_STEP_SUMMARY` — it renders as a
+native table on GitHub. It drops the terminal's best-green/worst-red colour (GFM strips inline
+styles), but the `(N.NN)` multiplier already carries it: `(1.0)` is the best, larger is worse.
+A plain `> out.txt` redirect is enough when you just need a monospace block to paste in `` ``` ``
+fences.
+
 ### Gating without separate files
 
 The approach above keeps two JSON files. Alternatively, gate **inline** against

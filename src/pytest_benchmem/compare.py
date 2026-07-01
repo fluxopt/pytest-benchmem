@@ -222,6 +222,203 @@ def _write_csv(
     pd.DataFrame(rows).set_index("id").to_csv(path)
 
 
+# --- the shared table model: computed once, rendered as a rich table or as markdown ----------
+
+#: Printed when ``rss`` was asked for but no run carries it — see :func:`compare_runs`.
+_RSS_MISSING_NOTE = (
+    "rss not recorded in these runs — mark the capacity benchmarks with "
+    "@pytest.mark.benchmem(isolate=True) and re-run."
+)
+
+
+@dataclass
+class _Col:
+    """One ``metric × stat`` column, byte-scaled to a unit suiting its magnitude with the group
+    best/worst found — together they drive the ``(N.NN)`` multiplier and (in the rich view) the
+    best-green/worst-red colour. ``unit`` is the base unit (``B`` / ``s`` / ``""``), ``uname`` the
+    scaled unit shown in the header, ``factor`` the divisor mapping raw bytes onto it.
+    """
+
+    metric: str
+    stat: str
+    uname: str
+    factor: float
+    unit: str
+    best: float | None
+    worst: float | None
+
+    @property
+    def col_id(self) -> str:
+        return f"{self.metric}:{self.stat}"
+
+
+@dataclass
+class _GroupView:
+    """A computed sub-table: the header ``title``, ordered ``rows`` (``(id, series)`` pairs), the
+    scaled ``cols``, and whether it holds a single id (so a row needs only its series label).
+    """
+
+    title: str
+    rows: list[tuple[str, str]]
+    single_id: bool
+    cols: list[_Col]
+
+
+def _scale_columns(
+    cols: Sequence[tuple[str, str]],
+    rows: Sequence[tuple[str, str]],
+    values: dict[tuple[str, str, str], float],
+    units: dict[str, str],
+) -> list[_Col]:
+    """Resolve each ``metric × stat`` column to a :class:`_Col` — a byte unit that suits its own
+    magnitude (so a tiny stddev doesn't drag min/max into KiB) and the group best/worst.
+    """
+    scaled: list[_Col] = []
+    for metric, stat in cols:
+        col_id = f"{metric}:{stat}"
+        unit = units.get(metric, "")
+        present = [values[(col_id, i, lab)] for i, lab in rows if (col_id, i, lab) in values]
+        uname, factor = byte_unit(present) if unit == "B" and present else (unit, 1.0)
+        best, worst = (min(present), max(present)) if present else (None, None)
+        scaled.append(_Col(metric, stat, uname, factor, unit, best, worst))
+    return scaled
+
+
+def _cell_body(value: float, factor: float, unit: str) -> str:
+    """The unit-formatted number for a cell, without the multiplier: bytes / count / 4 sig figs."""
+    if unit == "B":
+        return fmt_bytes(value, factor)
+    if unit == "":
+        return fmt_count(value)
+    return f"{value:.4g}"
+
+
+def _row_label(test_id: str, series: str, single_id: bool) -> str:
+    """The leftmost cell: just the series when the group has one id (its header already names it),
+    else the short id alongside the series.
+    """
+    return f"({series})" if single_id else f"{_short(test_id)} ({series})"
+
+
+def _build_views(
+    groups: dict[tuple[str, ...], list[str]],
+    cols: Sequence[tuple[str, str]],
+    values: dict[tuple[str, str, str], float],
+    units: dict[str, str],
+    labels: list[str],
+    sort: str,
+) -> list[_GroupView]:
+    """One :class:`_GroupView` per group (sorted) — row ordering, the ``(id, series)`` rows that
+    carry data, and the scaled columns. The renderer-agnostic model behind both output formats.
+    """
+    views: list[_GroupView] = []
+    for key in sorted(groups):
+        gids = _ordered_ids(groups[key], values, f"{cols[0][0]}:{cols[0][1]}", labels, sort)
+        rows = [
+            (i, lab)
+            for i in gids
+            for lab in labels
+            if any((f"{m}:{s}", i, lab) in values for m, s in cols)
+        ]
+        title = " ".join(p for p in key if p) if key else "comparison"
+        single_id = len({i for i, _lab in rows}) == 1
+        views.append(_GroupView(title, rows, single_id, _scale_columns(cols, rows, values, units)))
+    return views
+
+
+def _render_rich(
+    out: TextIO | None,
+    views: Sequence[_GroupView],
+    values: dict[tuple[str, str, str], float],
+    *,
+    single: bool,
+    rss_missing: bool,
+) -> None:
+    """Print the comparison as rich tables (the terminal default): a bold group header, the
+    timed│untimed divider, and best-green/worst-red colouring with the ``(N.NN)`` multiplier.
+    """
+    from rich import box
+    from rich.console import Console
+    from rich.table import Table
+    from rich.text import Text
+
+    console = Console(file=out or sys.stdout, width=_COMPARE_WIDTH)
+    if rss_missing:
+        console.print(Text(_RSS_MISSING_NOTE, style="yellow"))
+    for view in views:
+        console.print(Text(view.title, style="bold"))
+        table = Table(box=box.SIMPLE_HEAD, show_edge=False, padding=(0, 1))
+        table.add_column("name", justify="left", no_wrap=True)
+        prev_metric: str | None = None
+        for c in view.cols:
+            if prev_metric is not None and (c.metric == "time") != (prev_metric == "time"):
+                table.add_column("│", justify="center", style="dim")  # timed | untimed boundary
+            prev_metric = c.metric
+            head = f"{c.metric} ({c.uname})\n{c.stat}" if c.uname else f"{c.metric}\n{c.stat}"
+            table.add_column(head, justify="right")
+        for i, lab in view.rows:
+            cells = [Text(_row_label(i, lab, view.single_id))]
+            prev_metric = None
+            for c in view.cols:
+                if prev_metric is not None and (c.metric == "time") != (prev_metric == "time"):
+                    cells.append(Text("│", style="dim"))
+                prev_metric = c.metric
+                if (c.col_id, i, lab) not in values:
+                    cells.append(Text("—"))
+                    continue
+                v = values[(c.col_id, i, lab)]
+                text = _cell_body(v, c.factor, c.unit) + ("" if single else _mult(v, c.best))
+                style = "" if single else (rank_style(v, c.best, c.worst) or "")
+                cells.append(Text(text, style=style))
+            table.add_row(*cells)
+        console.print(table)
+        console.print()  # one blank line between sub-tables
+
+
+def _md_escape(text: str) -> str:
+    """Escape ``|`` so a value or id can't break the markdown table grid."""
+    return text.replace("|", "\\|")
+
+
+def _render_markdown(
+    out: TextIO | None,
+    views: Sequence[_GroupView],
+    values: dict[tuple[str, str, str], float],
+    *,
+    single: bool,
+    rss_missing: bool,
+) -> None:
+    """Write the comparison as GitHub-flavored markdown — one ``####`` section per group with a
+    native table. The ``(N.NN)`` multiplier carries best (``1.0``) and magnitude; there is no
+    colour (GFM strips inline styles) and no timed│untimed divider (it isn't a real column).
+    """
+    lines: list[str] = []
+    if rss_missing:
+        lines += [f"> {_RSS_MISSING_NOTE}", ""]
+    for view in views:
+        headers = ["name"] + [
+            f"{c.metric} ({c.uname}) {c.stat}" if c.uname else f"{c.metric} {c.stat}"
+            for c in view.cols
+        ]
+        lines += [
+            f"#### {view.title}",
+            "",
+            "| " + " | ".join(_md_escape(h) for h in headers) + " |",
+            "| " + " | ".join([":---", *["---:"] * len(view.cols)]) + " |",
+        ]
+        for i, lab in view.rows:
+            cells = [_row_label(i, lab, view.single_id)]
+            for c in view.cols:
+                if (c.col_id, i, lab) not in values:
+                    cells.append("—")
+                    continue
+                v = values[(c.col_id, i, lab)]
+                cells.append(_cell_body(v, c.factor, c.unit) + ("" if single else _mult(v, c.best)))
+            lines.append("| " + " | ".join(_md_escape(x) for x in cells) + " |")
+        lines.append("")
+    (out or sys.stdout).write("\n".join(lines).rstrip() + "\n")
+
+
 def compare_runs(
     runs: Sequence[str | Path],
     *,
@@ -230,6 +427,7 @@ def compare_runs(
     group_by: str | None = "fullname",
     sort: str = "name",
     pivot: str | None = None,
+    out_format: str = "table",
     csv: Path | None = None,
     out: TextIO | None = None,
 ) -> None:
@@ -259,15 +457,15 @@ def compare_runs(
     spread — so no single statistic is privileged. A metric absent from every run is
     dropped rather than shown all dashes (so timing-only runs collapse to just ``time``).
     ``sort`` orders rows within a group: ``name``, ``value`` (largest in the last series), or
-    ``change`` (biggest growth first). ``csv`` also writes the raw (unscaled) comparison.
+    ``change`` (biggest growth first). ``out_format`` picks the rendering — ``table`` (the rich
+    terminal default) or ``md`` (GitHub-flavored markdown to ``out``, for a PR comment or
+    ``$GITHUB_STEP_SUMMARY``); both render the same model. ``csv`` also writes the raw (unscaled)
+    comparison to a file.
     """
-    from rich import box
-    from rich.console import Console
-    from rich.table import Table
-    from rich.text import Text
-
     if sort not in _SORTS:
         raise ValueError(f"unknown --sort {sort!r}; use one of {', '.join(_SORTS)}")
+    if out_format not in ("table", "md"):
+        raise ValueError(f"unknown --format {out_format!r}; use table or md")
     metrics, stats = _resolve_columns(columns), _resolve_stats(stat)
     labels, values, units, dims = _load_columns(runs, metrics, stats, pivot)
     if not labels:
@@ -291,80 +489,12 @@ def compare_runs(
     for test_id in ids:
         groups.setdefault(_group_of(test_id, dims.get(test_id, {}), group_by), []).append(test_id)
 
-    console = Console(file=out or sys.stdout, width=_COMPARE_WIDTH)
-    if "rss" in metrics and not any(col.startswith("rss:") for col in with_data):
-        # rss was asked for but no run carries it — say so, rather than silently dropping the
-        # column (it conflates "timing-only file" with "forgot to mark the benchmark isolate").
-        console.print(
-            Text(
-                "rss not recorded in these runs — mark the capacity benchmarks with "
-                "@pytest.mark.benchmem(isolate=True) and re-run.",
-                style="yellow",
-            )
-        )
-    for key in sorted(groups):
-        gids = _ordered_ids(groups[key], values, f"{cols[0][0]}:{cols[0][1]}", labels, sort)
-        rows = [
-            (i, lab)
-            for i in gids
-            for lab in labels
-            if any((f"{m}:{s}", i, lab) in values for m, s in cols)
-        ]
-        # A bold section header names the group, so a single-id group (the common
-        # --group-by fullname case) needs only the run label per row; a multi-id group
-        # keeps the id alongside it. The compact box drops the blank padding rows that
-        # otherwise dwarf a two-row base/head table.
-        single_id = len({i for i, _lab in rows}) == 1
-        console.print(Text(" ".join(p for p in key if p) if key else "comparison", style="bold"))
-        table = Table(box=box.SIMPLE_HEAD, show_edge=False, padding=(0, 1))
-        table.add_column("name", justify="left", no_wrap=True)
-
-        # Each stat column is scaled and ranked on its own values: a byte unit that suits
-        # its magnitude (so a tiny stddev doesn't drag min/max/mean into KiB) and a
-        # best/worst — for the colour and the (N.NN) multiplier — comparing like-for-like
-        # across the runs.
-        cscale: dict[str, tuple[float, str, float | None, float | None]] = {}
-        prev_metric: str | None = None
-        for metric, stat in cols:
-            if prev_metric is not None and (metric == "time") != (prev_metric == "time"):
-                table.add_column("│", justify="center", style="dim")  # timed | untimed boundary
-            prev_metric = metric
-            col_id = f"{metric}:{stat}"
-            unit = units.get(metric, "")
-            present = [values[(col_id, i, lab)] for i, lab in rows if (col_id, i, lab) in values]
-            uname, factor = byte_unit(present) if unit == "B" and present else (unit, 1.0)
-            best, worst = (min(present), max(present)) if present else (None, None)
-            cscale[col_id] = (factor, unit, best, worst)
-            table.add_column(
-                f"{metric} ({uname})\n{stat}" if uname else f"{metric}\n{stat}", justify="right"
-            )
-
-        for i, lab in rows:
-            cells = [Text(f"({lab})" if single_id else f"{_short(i)} ({lab})")]
-            prev_metric = None
-            for metric, stat in cols:
-                if prev_metric is not None and (metric == "time") != (prev_metric == "time"):
-                    cells.append(Text("│", style="dim"))
-                prev_metric = metric
-                col_id = f"{metric}:{stat}"
-                factor, unit, best, worst = cscale[col_id]
-                if (col_id, i, lab) not in values:
-                    cells.append(Text("—"))
-                    continue
-                v = values[(col_id, i, lab)]
-                body = (
-                    fmt_bytes(v, factor)
-                    if unit == "B"
-                    else fmt_count(v)
-                    if unit == ""
-                    else f"{v:.4g}"
-                )
-                mult = "" if single else _mult(v, best)
-                style = "" if single else (rank_style(v, best, worst) or "")
-                cells.append(Text(body + mult, style=style))
-            table.add_row(*cells)
-        console.print(table)
-        console.print()  # one blank line between sub-tables
+    # rss asked for but no run carries it: note it rather than silently dropping the column (which
+    # would conflate "timing-only file" with "forgot to mark the benchmark isolate").
+    rss_missing = "rss" in metrics and not any(col.startswith("rss:") for col in with_data)
+    views = _build_views(groups, cols, values, units, labels, sort)
+    render = _render_markdown if out_format == "md" else _render_rich
+    render(out, views, values, single=single, rss_missing=rss_missing)
 
 
 # --- regression gate (--fail-on) -------------------------------------------------
