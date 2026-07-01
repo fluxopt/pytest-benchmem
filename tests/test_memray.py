@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import platform
 
 import pytest
@@ -8,6 +7,7 @@ import pytest
 from pytest_benchmem import measure_memory, measure_peak
 from pytest_benchmem.memray import Measurement, MemoryResult, _track_once
 from pytest_benchmem.snapshot import memory_from_pytest_benchmark
+from tests._builders import write_run
 
 pytest.importorskip("memray")
 pytestmark = pytest.mark.skipif(
@@ -154,15 +154,9 @@ def test_blob_roundtrips_engine_to_reader(tmp_path):
     (the synthetic-JSON unit tests only assume this shape; here it's pinned)."""
     blob = measure_memory(lambda: [bytearray(1024) for _ in range(200)]).as_dict()
     assert set(blob) == {"peak_bytes", "allocations", "total_bytes"}  # flat per-repeat series
-    pb = tmp_path / "bench.json"
-    pb.write_text(
-        json.dumps(
-            {
-                "benchmarks": [
-                    {"fullname": "t", "stats": {"min": 0.1}, "extra_info": {"benchmem": blob}}
-                ]
-            }
-        )
+    pb = write_run(
+        tmp_path / "bench.json",
+        [{"fullname": "t", "stats": {"min": 0.1}, "extra_info": {"benchmem": blob}}],
     )
     _l, samples, unit = memory_from_pytest_benchmark(pb, field="peak_bytes")
     assert (samples[0].value, unit) == (float(min(blob["peak_bytes"])), "B")  # headline = min
