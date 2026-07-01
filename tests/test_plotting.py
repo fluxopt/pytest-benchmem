@@ -80,43 +80,23 @@ def test_scaling_labels_override_run_stems_in_title(tmp_path):
     assert "base, head" in fig.layout.title.text  # both labels, not just the first
 
 
-def test_scaling_default_axes_are_log_log(tmp_path):
-    # default stays log-log when the data is positive (both x and the metric); no zero-anchor,
-    # since tozero is meaningless on a log axis. (#150)
-    fig, _n = plotting.plot_scaling([_run(tmp_path / "a.json", ROWS_A)])
-    assert fig.layout.xaxis.type == "log"
-    assert fig.layout.yaxis.type == "log"
-    assert fig.layout.yaxis.rangemode != "tozero"
-
-
-def test_scaling_linear_y_reachable_and_zero_anchored(tmp_path):
-    # opting into a linear cost axis auto-anchors it at 0 so slope/gap aren't exaggerated.
-    fig, _n = plotting.plot_scaling([_run(tmp_path / "a.json", ROWS_A)], log_y=False)
-    assert fig.layout.yaxis.type != "log"
-    assert fig.layout.yaxis.rangemode == "tozero"
-
-
-def test_scaling_linear_x_reachable(tmp_path):
-    fig, _n = plotting.plot_scaling([_run(tmp_path / "a.json", ROWS_A)], log_x=False)
-    assert fig.layout.xaxis.type != "log"
-
-
-def test_scaling_y_zero_opt_out(tmp_path):
-    # force a linear y but decline the zero anchor
-    fig, _n = plotting.plot_scaling([_run(tmp_path / "a.json", ROWS_A)], log_y=False, y_zero=False)
-    assert fig.layout.yaxis.rangemode != "tozero"
-
-
-def test_scaling_log_log_shortcut_forces_both_linear(tmp_path):
-    fig, _n = plotting.plot_scaling([_run(tmp_path / "a.json", ROWS_A)], log_log=False)
-    assert fig.layout.xaxis.type != "log" and fig.layout.yaxis.type != "log"
-
-
-def test_scaling_per_axis_wins_over_log_log(tmp_path):
-    # log_log=False forces linear, but log_x=True overrides it for the x-axis only
-    fig, _n = plotting.plot_scaling([_run(tmp_path / "a.json", ROWS_A)], log_log=False, log_x=True)
-    assert fig.layout.xaxis.type == "log"
-    assert fig.layout.yaxis.type != "log"
+@pytest.mark.parametrize(
+    "kwargs, xlog, ylog, y_tozero",
+    [
+        ({}, True, True, False),  # default: log-log on positive data, no zero-anchor (#150)
+        ({"log_y": False}, True, False, True),  # linear cost axis auto-anchors at 0
+        ({"log_x": False}, False, True, None),  # linear x only
+        ({"log_y": False, "y_zero": False}, True, False, False),  # linear y, decline the anchor
+        ({"log_log": False}, False, False, None),  # shortcut forces both linear
+        ({"log_log": False, "log_x": True}, True, False, None),  # per-axis log_x wins over log_log
+    ],
+)
+def test_scaling_axis_scales(tmp_path, kwargs, xlog, ylog, y_tozero):
+    fig, _n = plotting.plot_scaling([_run(tmp_path / "a.json", ROWS_A)], **kwargs)
+    assert (fig.layout.xaxis.type == "log") is xlog
+    assert (fig.layout.yaxis.type == "log") is ylog
+    if y_tozero is not None:  # tozero is meaningless on a log axis, so only checked when linear
+        assert (fig.layout.yaxis.rangemode == "tozero") is y_tozero
 
 
 def test_scaling_deprecated_log_alias_warns_and_maps_to_both(tmp_path):
@@ -377,14 +357,16 @@ def test_where_numeric_value_matches(tmp_path):
     assert n == 1  # "100" matches the numeric dim 100
 
 
-def test_where_unknown_key_raises(tmp_path):
-    with pytest.raises(ValueError, match="not a dim"):
-        plotting.plot_scaling(_run(tmp_path / "a.json", ROWS_A), where={"nope": "1"})
-
-
-def test_where_no_match_raises(tmp_path):
-    with pytest.raises(ValueError, match="no rows match"):
-        plotting.plot_scaling(_run(tmp_path / "a.json", ROWS_A), where={"n": "99999"})
+@pytest.mark.parametrize(
+    "where, match",
+    [
+        ({"nope": "1"}, "not a dim"),  # key isn't a dim
+        ({"n": "99999"}, "no rows match"),  # dim exists but no row has that value
+    ],
+)
+def test_where_rejects_bad_filter(tmp_path, where, match):
+    with pytest.raises(ValueError, match=match):
+        plotting.plot_scaling(_run(tmp_path / "a.json", ROWS_A), where=where)
 
 
 def test_where_applies_to_all_views(tmp_path):
@@ -482,30 +464,23 @@ def _has_whiskers(fig):
     return any(getattr(tr.error_y, "array", None) is not None for tr in fig.data)
 
 
-def test_scaling_band_shows_spread_whiskers(tmp_path):
-    # multi-pass series with spread (min != max) -> the band draws min..max whiskers
-    p = _run_series(tmp_path / "a.json", [(10, [100, 400]), (100, [200, 900])])
-    fig, _n = plotting.plot_scaling([p], metric="peak")  # band="auto" default
-    assert _has_whiskers(fig)
+_SPREAD_ROWS = [(10, [100, 400]), (100, [200, 900])]  # min != max per id
+_FLAT_ROWS = [(10, [100, 100]), (100, [200, 200])]  # every pass identical
 
 
-def test_scaling_band_none_suppresses_whiskers(tmp_path):
-    p = _run_series(tmp_path / "a.json", [(10, [100, 400]), (100, [200, 900])])
-    fig, _n = plotting.plot_scaling([p], metric="peak", band="none")
-    assert not _has_whiskers(fig)
-
-
-def test_scaling_band_auto_skips_whiskers_when_no_spread(tmp_path):
-    # deterministic series (every pass identical) -> auto shows nothing to spread
-    p = _run_series(tmp_path / "a.json", [(10, [100, 100]), (100, [200, 200])])
-    fig, _n = plotting.plot_scaling([p], metric="peak")
-    assert not _has_whiskers(fig)
-
-
-def test_scaling_band_minmax_forces_whiskers_even_when_flat(tmp_path):
-    p = _run_series(tmp_path / "a.json", [(10, [100, 100]), (100, [200, 200])])
-    fig, _n = plotting.plot_scaling([p], metric="peak", band="minmax")
-    assert _has_whiskers(fig)  # present (zero-length) so the schema is stable
+@pytest.mark.parametrize(
+    "rows, band, expected",
+    [
+        (_SPREAD_ROWS, "auto", True),  # spread + auto → min..max whiskers
+        (_SPREAD_ROWS, "none", False),  # explicitly suppressed
+        (_FLAT_ROWS, "auto", False),  # no spread → auto shows nothing
+        (_FLAT_ROWS, "minmax", True),  # forced even when flat, so the schema stays stable
+    ],
+)
+def test_scaling_band_whiskers(tmp_path, rows, band, expected):
+    p = _run_series(tmp_path / "a.json", rows)
+    fig, _n = plotting.plot_scaling([p], metric="peak", band=band)
+    assert _has_whiskers(fig) is expected
 
 
 def test_scaling_band_ignored_for_time(tmp_path):
