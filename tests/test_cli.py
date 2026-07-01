@@ -38,6 +38,40 @@ class _FakeFig:
         self.kind = "image"
 
 
+@pytest.fixture
+def capture_view(monkeypatch):
+    """Stub one plot_* view; ``install(view)`` returns the kwargs dict the CLI threads into it.
+
+    The dict is populated when the command runs, so read it after ``runner.invoke``.
+    """
+
+    def install(view="plot_scaling"):
+        captured: dict[str, Any] = {}
+
+        def _stub(*a, **k):
+            captured.update(k)
+            return _FakeFig(), 3
+
+        monkeypatch.setattr(plotting, view, _stub)
+        return captured
+
+    return install
+
+
+@pytest.fixture
+def view_calls(monkeypatch):
+    """Stub every plot_* view; return the list each records its name in when the CLI picks it."""
+    calls: list[str] = []
+    for name in ("plot_compare", "plot_scatter", "plot_sweep", "plot_scaling"):
+
+        def _stub(*a, _name=name, **k):
+            calls.append(_name)
+            return _FakeFig(), 3
+
+        monkeypatch.setattr(plotting, name, _stub)
+    return calls
+
+
 # --- compare ---------------------------------------------------------------------
 
 
@@ -149,24 +183,13 @@ def test_plot_pivot_rejected_for_scaling_view(tmp_path):
     assert "compare or scatter" in _text(result)
 
 
-def test_plot_pivot_defaults_to_compare_view(tmp_path, monkeypatch):
+def test_plot_pivot_defaults_to_compare_view(tmp_path, view_calls):
     # one run + --pivot with no --view must default to compare, not scaling (which rejects --pivot)
-    calls = []
-
-    def _stub(name):
-        def _fn(*a, **k):
-            calls.append(name)
-            return _FakeFig(), 2
-
-        return _fn
-
-    for name in ("plot_compare", "plot_scatter", "plot_sweep", "plot_scaling"):
-        monkeypatch.setattr(plotting, name, _stub(name))
     run = write_run(tmp_path / "build.json", [bm("t[legacy]", peak=1024), bm("t[v1]", peak=2048)])
     args = ["plot", str(run), "--pivot", "param:semantics", "-o", str(tmp_path / "o.html")]
     result = runner.invoke(app, args)
     assert result.exit_code == 0, _text(result)
-    assert calls == ["plot_compare"]  # not plot_scaling
+    assert view_calls == ["plot_compare"]  # not plot_scaling
 
 
 # --- plot view auto-selection ----------------------------------------------------
@@ -176,32 +199,15 @@ def test_plot_pivot_defaults_to_compare_view(tmp_path, monkeypatch):
     "n_runs, expected",
     [(1, "plot_scaling"), (2, "plot_scatter"), (3, "plot_sweep")],
 )
-def test_plot_view_defaults_by_run_count(tmp_path, monkeypatch, n_runs, expected):
-    calls = []
-
-    def _stub(name):
-        def _fn(*a, **k):
-            calls.append(name)
-            return _FakeFig(), 7
-
-        return _fn
-
-    for name in ("plot_compare", "plot_scatter", "plot_sweep", "plot_scaling"):
-        monkeypatch.setattr(plotting, name, _stub(name))
+def test_plot_view_defaults_by_run_count(tmp_path, view_calls, n_runs, expected):
     runs = [write_run(tmp_path / f"r{i}.json", [bm("x")]) for i in range(n_runs)]
     result = runner.invoke(app, ["plot", *map(str, runs), "-o", str(tmp_path / "out.html")])
     assert result.exit_code == 0, _text(result)
-    assert calls == [expected]
+    assert view_calls == [expected]
 
 
-def test_plot_label_option_threads_through(tmp_path, monkeypatch):
-    captured = {}
-
-    def _stub(*a, **k):
-        captured.update(k)
-        return _FakeFig(), 3
-
-    monkeypatch.setattr(plotting, "plot_sweep", _stub)
+def test_plot_label_option_threads_through(tmp_path, capture_view):
+    captured = capture_view("plot_sweep")
     runs = [write_run(tmp_path / f"r{i}.json", [bm("x")]) for i in range(3)]
     result = runner.invoke(
         app,
@@ -222,15 +228,9 @@ def test_plot_label_option_threads_through(tmp_path, monkeypatch):
     assert captured["labels"] == ["0.6", "0.7", "0.8"]
 
 
-def test_plot_columns_selects_metric(tmp_path, monkeypatch):
+def test_plot_columns_selects_metric(tmp_path, capture_view):
     """plot selects the metric via --columns — the same flag as compare."""
-    captured = {}
-
-    def _stub(*a, **k):
-        captured.update(k)
-        return _FakeFig(), 1
-
-    monkeypatch.setattr(plotting, "plot_scaling", _stub)
+    captured = capture_view()
     r = write_run(tmp_path / "r.json", [bm("x")])
     result = runner.invoke(
         app, ["plot", str(r), "--columns", "peak", "-o", str(tmp_path / "o.html")]
@@ -259,14 +259,8 @@ def test_plot_columns_rejects_multiple_metrics(tmp_path):
     assert "not one of" in _text(result) or "Invalid value" in _text(result)
 
 
-def test_plot_where_parses_into_dict(tmp_path, monkeypatch):
-    captured = {}
-
-    def _stub(*a, **k):
-        captured.update(k)
-        return _FakeFig(), 3
-
-    monkeypatch.setattr(plotting, "plot_scaling", _stub)
+def test_plot_where_parses_into_dict(tmp_path, capture_view):
+    captured = capture_view()
     r = write_run(tmp_path / "r.json", [bm("x")])
     out = str(tmp_path / "o.html")
     result = runner.invoke(
@@ -277,14 +271,8 @@ def test_plot_where_parses_into_dict(tmp_path, monkeypatch):
     assert captured["where"] == {"axis": "n", "solver": "glpk"}
 
 
-def test_plot_free_axes_threads_through(tmp_path, monkeypatch):
-    captured = {}
-
-    def _stub(*a, **k):
-        captured.update(k)
-        return _FakeFig(), 3
-
-    monkeypatch.setattr(plotting, "plot_scaling", _stub)
+def test_plot_free_axes_threads_through(tmp_path, capture_view):
+    captured = capture_view()
     r = write_run(tmp_path / "r.json", [bm("x")])
     out = str(tmp_path / "o.html")
     result = runner.invoke(app, ["plot", str(r), "--free-axes", "y", "-o", out])
@@ -292,14 +280,8 @@ def test_plot_free_axes_threads_through(tmp_path, monkeypatch):
     assert captured["free_axes"] == "y"  # str-enum value, matches the Literal
 
 
-def test_plot_color_threads_through(tmp_path, monkeypatch):
-    captured = {}
-
-    def _stub(*a, **k):
-        captured.update(k)
-        return _FakeFig(), 3
-
-    monkeypatch.setattr(plotting, "plot_scaling", _stub)
+def test_plot_color_threads_through(tmp_path, capture_view):
+    captured = capture_view()
     r = write_run(tmp_path / "r.json", [bm("x")])
     out = str(tmp_path / "o.html")
     result = runner.invoke(app, ["plot", str(r), "--color", "variant", "-o", out])
@@ -307,14 +289,8 @@ def test_plot_color_threads_through(tmp_path, monkeypatch):
     assert captured["color"] == "variant"
 
 
-def test_plot_log_flags_thread_through(tmp_path, monkeypatch):
-    captured = {}
-
-    def _stub(*a, **k):
-        captured.update(k)
-        return _FakeFig(), 3
-
-    monkeypatch.setattr(plotting, "plot_scaling", _stub)
+def test_plot_log_flags_thread_through(tmp_path, capture_view):
+    captured = capture_view()
     r = write_run(tmp_path / "r.json", [bm("x")])
     out = str(tmp_path / "o.html")
     # the shared flag threads as log_log; per-axis flags thread separately and the API
@@ -329,14 +305,8 @@ def test_plot_log_flags_thread_through(tmp_path, monkeypatch):
     assert captured["y_zero"] is False
 
 
-def test_plot_axis_flags_default_to_auto(tmp_path, monkeypatch):
-    captured = {}
-
-    def _stub(*a, **k):
-        captured.update(k)
-        return _FakeFig(), 3
-
-    monkeypatch.setattr(plotting, "plot_scaling", _stub)
+def test_plot_axis_flags_default_to_auto(tmp_path, capture_view):
+    captured = capture_view()
     r = write_run(tmp_path / "r.json", [bm("x")])
     out = str(tmp_path / "o.html")
     result = runner.invoke(app, ["plot", str(r), "-o", out])
