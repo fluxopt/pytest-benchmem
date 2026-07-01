@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -13,6 +12,7 @@ from pytest_benchmem.snapshot import (
     load_samples,
     memory_from_pytest_benchmark,
 )
+from tests._builders import blob, write_run
 
 
 @pytest.mark.parametrize(
@@ -31,9 +31,8 @@ def test_human_bytes_scales(n, expected):
 
 
 def _pb_file(tmp_path, benchmarks):
-    p = tmp_path / "0001_run.json"
-    p.write_text(json.dumps({"benchmarks": benchmarks}))
-    return p
+    """A run under a fixed autosave-style name, whose stem becomes the snapshot label."""
+    return write_run(tmp_path / "0001_run.json", benchmarks)
 
 
 def test_from_pytest_benchmark_reads_timing(tmp_path):
@@ -53,15 +52,6 @@ def test_metric_picks_the_stat(tmp_path):
     assert samples[0].value == 0.3
 
 
-def _blob(peak_bytes, *, allocations=0, total_bytes=0, repeats=1):
-    # the blob is a flat per-repeat series per field
-    return {
-        "peak_bytes": [peak_bytes] * repeats,
-        "allocations": [allocations] * repeats,
-        "total_bytes": [total_bytes] * repeats,
-    }
-
-
 def test_dims_from_params_and_extra_info(tmp_path):
     pb = _pb_file(
         tmp_path,
@@ -70,7 +60,7 @@ def test_dims_from_params_and_extra_info(tmp_path):
                 "fullname": "t[n=10]",
                 "stats": {"min": 0.1},
                 "params": {"n": 10},
-                "extra_info": {"op": "sort", "benchmem": _blob(5_000_000)},  # blob excluded
+                "extra_info": {"op": "sort", "benchmem": blob(5_000_000)},  # blob excluded
             }
         ],
     )
@@ -164,7 +154,7 @@ def test_memory_from_pytest_benchmark_reads_blob(tmp_path):
     pb = _pb_file(
         tmp_path,
         [
-            {"fullname": "a", "stats": {"min": 0.1}, "extra_info": {"benchmem": _blob(19_700_000)}},
+            {"fullname": "a", "stats": {"min": 0.1}, "extra_info": {"benchmem": blob(19_700_000)}},
             {"fullname": "b", "stats": {"min": 0.2}},  # timing-only — skipped
             {"fullname": "c", "stats": {"min": 0.3}, "extra_info": {"benchmem": None}},  # skipped
         ],
@@ -177,7 +167,7 @@ def test_memory_from_pytest_benchmark_reads_blob(tmp_path):
 def test_metric_memory_no_longer_accepted(tmp_path):
     pb = _pb_file(
         tmp_path,
-        [{"fullname": "a", "stats": {"min": 0.1}, "extra_info": {"benchmem": _blob(19_700_000)}}],
+        [{"fullname": "a", "stats": {"min": 0.1}, "extra_info": {"benchmem": blob(19_700_000)}}],
     )
     with pytest.raises(ValueError, match="metric must be one of"):
         load_samples(pb, metric="memory")  # type: ignore[arg-type]  # dropped alias
@@ -190,7 +180,7 @@ def test_memory_reads_allocations_field(tmp_path):
             {
                 "fullname": "a",
                 "stats": {"min": 0.1},
-                "extra_info": {"benchmem": _blob(99, allocations=42)},
+                "extra_info": {"benchmem": blob(99, allocations=42)},
             }
         ],
     )
@@ -206,7 +196,7 @@ def test_load_samples_dispatches_on_metric(tmp_path):
             {
                 "fullname": "a",
                 "stats": {"min": 0.1},
-                "extra_info": {"benchmem": _blob(5_000, allocations=7, total_bytes=20_000)},
+                "extra_info": {"benchmem": blob(5_000, allocations=7, total_bytes=20_000)},
             }
         ],
     )
@@ -226,13 +216,7 @@ def test_peak_stat_max_reads_worst_peak(tmp_path):
             {
                 "fullname": "a",
                 "stats": {"min": 0.1},
-                "extra_info": {
-                    "benchmem": {
-                        "peak_bytes": [100, 120, 150],
-                        "allocations": [1, 1, 1],
-                        "total_bytes": [1, 1, 1],
-                    }
-                },
+                "extra_info": {"benchmem": blob([100, 120, 150], allocations=1, total_bytes=1)},
             }
         ],
     )
@@ -241,13 +225,11 @@ def test_peak_stat_max_reads_worst_peak(tmp_path):
 
 
 def test_load_long_df_stacks_runs_with_dim_columns(tmp_path):
-    a = tmp_path / "v1.json"
-    b = tmp_path / "v2.json"
-    a.write_text(
-        json.dumps({"benchmarks": [{"fullname": "x", "stats": {"min": 1.0}, "params": {"n": 10}}]})
+    a = write_run(
+        tmp_path / "v1.json", [{"fullname": "x", "stats": {"min": 1.0}, "params": {"n": 10}}]
     )
-    b.write_text(
-        json.dumps({"benchmarks": [{"fullname": "x", "stats": {"min": 2.0}, "params": {"n": 10}}]})
+    b = write_run(
+        tmp_path / "v2.json", [{"fullname": "x", "stats": {"min": 2.0}, "params": {"n": 10}}]
     )
     df, unit = load_long_df([a, b], metric="time")
     assert unit == "s"
@@ -266,7 +248,7 @@ def test_load_long_df_accepts_single_path(tmp_path):
 def test_load_long_df_labels_override_stem(tmp_path):
     a, b = tmp_path / "run-a.json", tmp_path / "run-b.json"
     for p in (a, b):
-        p.write_text(json.dumps({"benchmarks": [{"fullname": "x", "stats": {"min": 1.0}}]}))
+        write_run(p, [{"fullname": "x", "stats": {"min": 1.0}}])
     df, _u = load_long_df([a, b], labels=["v1", "v2"])
     assert set(df["snapshot"]) == {"v1", "v2"}  # not the run-a / run-b stems
     with pytest.raises(ValueError, match="labels has 1 entries but there are 2"):

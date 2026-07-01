@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-
 import pytest
 
 pytest.importorskip("pandas")
@@ -11,21 +9,19 @@ pytest.importorskip("plotly")
 
 from pytest_benchmem import plotting
 from pytest_benchmem.snapshot import load_long_df
+from tests._builders import blob, write_run
 
 
 def _run(path, rows, *, memory=False):
     """Write a pytest-benchmark run; rows is [(n, value)] with n a numeric dim."""
     benchmarks = []
     for n, v in rows:
-        bm = {"fullname": f"test_op[n={n}]", "stats": {"min": v}, "params": {"n": n}}
+        entry = {"fullname": f"test_op[n={n}]", "stats": {"min": v}, "params": {"n": n}}
         if memory:
             peak = int(v * 1024**2)
-            bm["extra_info"] = {
-                "benchmem": {"peak_bytes": [peak], "allocations": [int(n)], "total_bytes": [peak]}
-            }
-        benchmarks.append(bm)
-    path.write_text(json.dumps({"benchmarks": benchmarks}))
-    return path
+            entry["extra_info"] = {"benchmem": blob(peak, allocations=int(n), total_bytes=peak)}
+        benchmarks.append(entry)
+    return write_run(path, benchmarks)
 
 
 ROWS_A = [(10, 1.0), (100, 2.0), (1000, 4.0)]
@@ -39,8 +35,7 @@ def _run_two_funcs(path):
         for func in ("build", "solve")
         for n, v in [(10, 1.0), (100, 2.0)]
     ]
-    path.write_text(json.dumps({"benchmarks": benchmarks}))
-    return path
+    return write_run(path, benchmarks)
 
 
 def test_scaling_one_run(tmp_path):
@@ -85,43 +80,31 @@ def test_scaling_labels_override_run_stems_in_title(tmp_path):
     assert "base, head" in fig.layout.title.text  # both labels, not just the first
 
 
-def test_scaling_default_axes_are_log_log(tmp_path):
-    # default stays log-log when the data is positive (both x and the metric); no zero-anchor,
-    # since tozero is meaningless on a log axis. (#150)
-    fig, _n = plotting.plot_scaling([_run(tmp_path / "a.json", ROWS_A)])
-    assert fig.layout.xaxis.type == "log"
-    assert fig.layout.yaxis.type == "log"
-    assert fig.layout.yaxis.rangemode != "tozero"
+@pytest.mark.parametrize(
+    "kwargs, xlog, ylog",
+    [
+        ({}, True, True),  # default: log-log on positive data (#150)
+        ({"log_y": False}, True, False),  # linear cost axis
+        ({"log_x": False}, False, True),  # linear x only
+        ({"log_log": False}, False, False),  # shortcut forces both linear
+        ({"log_log": False, "log_x": True}, True, False),  # per-axis log_x wins over log_log
+    ],
+)
+def test_scaling_axis_scales(tmp_path, kwargs, xlog, ylog):
+    fig, _n = plotting.plot_scaling([_run(tmp_path / "a.json", ROWS_A)], **kwargs)
+    assert (fig.layout.xaxis.type == "log") is xlog
+    assert (fig.layout.yaxis.type == "log") is ylog
 
 
-def test_scaling_linear_y_reachable_and_zero_anchored(tmp_path):
-    # opting into a linear cost axis auto-anchors it at 0 so slope/gap aren't exaggerated.
-    fig, _n = plotting.plot_scaling([_run(tmp_path / "a.json", ROWS_A)], log_y=False)
-    assert fig.layout.yaxis.type != "log"
-    assert fig.layout.yaxis.rangemode == "tozero"
-
-
-def test_scaling_linear_x_reachable(tmp_path):
-    fig, _n = plotting.plot_scaling([_run(tmp_path / "a.json", ROWS_A)], log_x=False)
-    assert fig.layout.xaxis.type != "log"
-
-
-def test_scaling_y_zero_opt_out(tmp_path):
-    # force a linear y but decline the zero anchor
-    fig, _n = plotting.plot_scaling([_run(tmp_path / "a.json", ROWS_A)], log_y=False, y_zero=False)
-    assert fig.layout.yaxis.rangemode != "tozero"
-
-
-def test_scaling_log_log_shortcut_forces_both_linear(tmp_path):
-    fig, _n = plotting.plot_scaling([_run(tmp_path / "a.json", ROWS_A)], log_log=False)
-    assert fig.layout.xaxis.type != "log" and fig.layout.yaxis.type != "log"
-
-
-def test_scaling_per_axis_wins_over_log_log(tmp_path):
-    # log_log=False forces linear, but log_x=True overrides it for the x-axis only
-    fig, _n = plotting.plot_scaling([_run(tmp_path / "a.json", ROWS_A)], log_log=False, log_x=True)
-    assert fig.layout.xaxis.type == "log"
-    assert fig.layout.yaxis.type != "log"
+def test_scaling_y_zero_anchor(tmp_path):
+    # tozero is meaningless on a log axis, so the default (log y) never sets it (#150); a linear
+    # cost axis auto-anchors at 0 so slope/gap aren't exaggerated — unless explicitly declined.
+    p = _run(tmp_path / "a.json", ROWS_A)
+    assert plotting.plot_scaling([p])[0].layout.yaxis.rangemode != "tozero"
+    assert plotting.plot_scaling([p], log_y=False)[0].layout.yaxis.rangemode == "tozero"
+    assert (
+        plotting.plot_scaling([p], log_y=False, y_zero=False)[0].layout.yaxis.rangemode != "tozero"
+    )
 
 
 def test_scaling_deprecated_log_alias_warns_and_maps_to_both(tmp_path):
@@ -251,21 +234,16 @@ def _combined_run(path):
     the combined-run shape ``--pivot`` targets (one pytest invocation, A/B encoded in the id).
     """
     cells = [("legacy", 100, 10.0), ("v1", 100, 12.0), ("legacy", 200, 20.0), ("v1", 200, 30.0)]
-
-    def _blob(peak):
-        return {"peak_bytes": [int(peak * 1024**2)], "allocations": [0], "total_bytes": [0]}
-
     benchmarks = [
         {
             "fullname": f"m.py::test_build[{sem}-{n}]",
             "params": {"semantics": sem, "n": n},
             "stats": {"min": 1.0},
-            "extra_info": {"benchmem": _blob(peak)},
+            "extra_info": {"benchmem": blob(int(peak * 1024**2))},
         }
         for sem, n, peak in cells
     ]
-    path.write_text(json.dumps({"benchmarks": benchmarks}))
-    return path
+    return write_run(path, benchmarks)
 
 
 def test_compare_pivot_pairs_along_dim_within_one_run(tmp_path):
@@ -316,18 +294,16 @@ def test_pivot_with_multiple_runs_errors_in_plot(tmp_path):
 def test_scaling_no_numeric_dim_points_to_pivot(tmp_path):
     # a single run whose only dim is categorical (semantics) can't auto-scale — the error should
     # guide toward --pivot (the categorical-A/B path), not just "pass x=".
-    blob = {"peak_bytes": [10], "allocations": [0], "total_bytes": [0]}
     bms = [
         {
             "fullname": f"t[{sem}]",
             "params": {"semantics": sem},
             "stats": {"min": 1.0},
-            "extra_info": {"benchmem": blob},
+            "extra_info": {"benchmem": blob(10)},
         }
         for sem in ("legacy", "v1")
     ]
-    run = tmp_path / "build.json"
-    run.write_text(json.dumps({"benchmarks": bms}))
+    run = write_run(tmp_path / "build.json", bms)
     with pytest.raises(ValueError, match="--pivot"):
         plotting.plot_scaling([run], metric="peak")
 
@@ -375,8 +351,7 @@ def _run_mixed_axes(path):
         for axis, vals in (("n", [10, 100, 1000]), ("severity", [0, 50, 100]))
         for v in vals
     ]
-    path.write_text(json.dumps({"benchmarks": benchmarks}))
-    return path
+    return write_run(path, benchmarks)
 
 
 def test_where_filters_rows_to_matching_dim(tmp_path):
@@ -390,14 +365,16 @@ def test_where_numeric_value_matches(tmp_path):
     assert n == 1  # "100" matches the numeric dim 100
 
 
-def test_where_unknown_key_raises(tmp_path):
-    with pytest.raises(ValueError, match="not a dim"):
-        plotting.plot_scaling(_run(tmp_path / "a.json", ROWS_A), where={"nope": "1"})
-
-
-def test_where_no_match_raises(tmp_path):
-    with pytest.raises(ValueError, match="no rows match"):
-        plotting.plot_scaling(_run(tmp_path / "a.json", ROWS_A), where={"n": "99999"})
+@pytest.mark.parametrize(
+    "where, match",
+    [
+        ({"nope": "1"}, "not a dim"),  # key isn't a dim
+        ({"n": "99999"}, "no rows match"),  # dim exists but no row has that value
+    ],
+)
+def test_where_rejects_bad_filter(tmp_path, where, match):
+    with pytest.raises(ValueError, match=match):
+        plotting.plot_scaling(_run(tmp_path / "a.json", ROWS_A), where=where)
 
 
 def test_where_applies_to_all_views(tmp_path):
@@ -440,25 +417,19 @@ def test_facet_axes_shared_by_default(tmp_path):
     assert _x_axes_matched(fig)  # plotly's matched default — the squish #49 describes
 
 
-def test_free_axes_x_unmatches_only_x(tmp_path):
+@pytest.mark.parametrize(
+    "free_axes, x_freed, y_freed",
+    [
+        ("x", True, False),  # x freed → each sweep its own range; y still shared
+        ("y", False, True),  # y freed → per-facet cost scale (the function case)
+        ("both", True, True),
+    ],
+)
+def test_free_axes_unmatches_selected_axes(tmp_path, free_axes, x_freed, y_freed):
     p = _run_mixed_axes(tmp_path / "a.json")
-    fig, _n = plotting.plot_scaling(p, x="v", facet="axis", free_axes="x")
-    assert not _x_axes_matched(fig)  # x freed → each sweep its own range
-    assert _y_axes_matched(fig)  # y still shared
-
-
-def test_free_axes_y_unmatches_only_y(tmp_path):
-    p = _run_mixed_axes(tmp_path / "a.json")
-    fig, _n = plotting.plot_scaling(p, x="v", facet="axis", free_axes="y")
-    assert _x_axes_matched(fig)
-    assert not _y_axes_matched(fig)  # y freed → per-facet cost scale (the function case)
-
-
-def test_free_axes_both_unmatches_both(tmp_path):
-    p = _run_mixed_axes(tmp_path / "a.json")
-    fig, _n = plotting.plot_scaling(p, x="v", facet="axis", free_axes="both")
-    assert not _x_axes_matched(fig)
-    assert not _y_axes_matched(fig)
+    fig, _n = plotting.plot_scaling(p, x="v", facet="axis", free_axes=free_axes)
+    assert _x_axes_matched(fig) is not x_freed
+    assert _y_axes_matched(fig) is not y_freed
 
 
 def test_free_axes_noop_without_facet(tmp_path):
@@ -469,16 +440,12 @@ def test_free_axes_noop_without_facet(tmp_path):
 
 def test_scaling_without_numeric_dim_raises(tmp_path):
     # dim 'kind' is categorical, so x can't be inferred
-    p = tmp_path / "a.json"
-    p.write_text(
-        json.dumps(
-            {
-                "benchmarks": [
-                    {"fullname": "t[a]", "stats": {"min": 1.0}, "params": {"kind": "a"}},
-                    {"fullname": "t[b]", "stats": {"min": 2.0}, "params": {"kind": "b"}},
-                ]
-            }
-        )
+    p = write_run(
+        tmp_path / "a.json",
+        [
+            {"fullname": "t[a]", "stats": {"min": 1.0}, "params": {"kind": "a"}},
+            {"fullname": "t[b]", "stats": {"min": 2.0}, "params": {"kind": "b"}},
+        ],
     )
     with pytest.raises(ValueError, match="numeric dim"):
         plotting.plot_scaling([p])
@@ -494,48 +461,34 @@ def _run_series(path, rows):
             "fullname": f"test_op[n={n}]",
             "stats": {"min": float(min(peaks))},
             "params": {"n": n},
-            "extra_info": {
-                "benchmem": {
-                    "peak_bytes": [int(p) for p in peaks],
-                    "allocations": [0] * len(peaks),
-                    "total_bytes": [int(p) for p in peaks],
-                }
-            },
+            "extra_info": {"benchmem": blob(peaks, total_bytes=peaks)},
         }
         for n, peaks in rows
     ]
-    path.write_text(json.dumps({"benchmarks": benchmarks}))
-    return path
+    return write_run(path, benchmarks)
 
 
 def _has_whiskers(fig):
     return any(getattr(tr.error_y, "array", None) is not None for tr in fig.data)
 
 
-def test_scaling_band_shows_spread_whiskers(tmp_path):
-    # multi-pass series with spread (min != max) -> the band draws min..max whiskers
-    p = _run_series(tmp_path / "a.json", [(10, [100, 400]), (100, [200, 900])])
-    fig, _n = plotting.plot_scaling([p], metric="peak")  # band="auto" default
-    assert _has_whiskers(fig)
+_SPREAD_ROWS = [(10, [100, 400]), (100, [200, 900])]  # min != max per id
+_FLAT_ROWS = [(10, [100, 100]), (100, [200, 200])]  # every pass identical
 
 
-def test_scaling_band_none_suppresses_whiskers(tmp_path):
-    p = _run_series(tmp_path / "a.json", [(10, [100, 400]), (100, [200, 900])])
-    fig, _n = plotting.plot_scaling([p], metric="peak", band="none")
-    assert not _has_whiskers(fig)
-
-
-def test_scaling_band_auto_skips_whiskers_when_no_spread(tmp_path):
-    # deterministic series (every pass identical) -> auto shows nothing to spread
-    p = _run_series(tmp_path / "a.json", [(10, [100, 100]), (100, [200, 200])])
-    fig, _n = plotting.plot_scaling([p], metric="peak")
-    assert not _has_whiskers(fig)
-
-
-def test_scaling_band_minmax_forces_whiskers_even_when_flat(tmp_path):
-    p = _run_series(tmp_path / "a.json", [(10, [100, 100]), (100, [200, 200])])
-    fig, _n = plotting.plot_scaling([p], metric="peak", band="minmax")
-    assert _has_whiskers(fig)  # present (zero-length) so the schema is stable
+@pytest.mark.parametrize(
+    "rows, band, expected",
+    [
+        (_SPREAD_ROWS, "auto", True),  # spread + auto → min..max whiskers
+        (_SPREAD_ROWS, "none", False),  # explicitly suppressed
+        (_FLAT_ROWS, "auto", False),  # no spread → auto shows nothing
+        (_FLAT_ROWS, "minmax", True),  # forced even when flat, so the schema stays stable
+    ],
+)
+def test_scaling_band_whiskers(tmp_path, rows, band, expected):
+    p = _run_series(tmp_path / "a.json", rows)
+    fig, _n = plotting.plot_scaling([p], metric="peak", band=band)
+    assert _has_whiskers(fig) is expected
 
 
 def test_scaling_band_ignored_for_time(tmp_path):
@@ -552,20 +505,13 @@ def _run_series_grouped(path):
             "fullname": f"pkg/test_{func}.py::test_{func}[impl={impl}-n={n}]",
             "stats": {"min": float(min(peaks))},
             "params": {"n": n, "impl": impl},
-            "extra_info": {
-                "benchmem": {
-                    "peak_bytes": [int(x) for x in peaks],
-                    "allocations": [0] * len(peaks),
-                    "total_bytes": [int(x) for x in peaks],
-                }
-            },
+            "extra_info": {"benchmem": blob(peaks, total_bytes=peaks)},
         }
         for impl in ("a", "b")
         for func in ("build", "solve")
         for n, peaks in [(10, [100, 400]), (100, [200, 900])]
     ]
-    path.write_text(json.dumps({"benchmarks": bms}))
-    return path
+    return write_run(path, bms)
 
 
 def test_scaling_band_whiskers_survive_color_and_facet(tmp_path):

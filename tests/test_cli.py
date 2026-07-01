@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import contextlib
 import importlib.util
-import json
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +15,7 @@ from typer.testing import CliRunner
 
 from pytest_benchmem import plotting
 from pytest_benchmem.cli import app
+from tests._builders import bm, write_run
 
 runner = CliRunner()
 
@@ -28,21 +28,6 @@ def _text(result):
     return text
 
 
-def _run(tmp_path, name, benchmarks):
-    p = tmp_path / name
-    p.write_text(json.dumps({"benchmarks": benchmarks}))
-    return p
-
-
-def _bm(name, *, t=1.0, peak=None):
-    bm = {"fullname": name, "stats": {s: t for s in ("min", "max", "mean", "median", "stddev")}}
-    if peak is not None:
-        bm["extra_info"] = {
-            "benchmem": {"peak_bytes": [peak], "allocations": [0], "total_bytes": [peak]}
-        }
-    return bm
-
-
 class _FakeFig:
     def write_html(self, path):
         self.path = path
@@ -53,12 +38,46 @@ class _FakeFig:
         self.kind = "image"
 
 
+@pytest.fixture
+def capture_view(monkeypatch):
+    """Stub one plot_* view; ``install(view)`` returns the kwargs dict the CLI threads into it.
+
+    The dict is populated when the command runs, so read it after ``runner.invoke``.
+    """
+
+    def install(view="plot_scaling"):
+        captured: dict[str, Any] = {}
+
+        def _stub(*a, **k):
+            captured.update(k)
+            return _FakeFig(), 3
+
+        monkeypatch.setattr(plotting, view, _stub)
+        return captured
+
+    return install
+
+
+@pytest.fixture
+def view_calls(monkeypatch):
+    """Stub every plot_* view; return the list each records its name in when the CLI picks it."""
+    calls: list[str] = []
+    for name in ("plot_compare", "plot_scatter", "plot_sweep", "plot_scaling"):
+
+        def _stub(*a, _name=name, **k):
+            calls.append(_name)
+            return _FakeFig(), 3
+
+        monkeypatch.setattr(plotting, name, _stub)
+    return calls
+
+
 # --- compare ---------------------------------------------------------------------
 
 
 def test_compare_prints_table(tmp_path):
-    a = _run(tmp_path, "base.json", [_bm("test_x", t=1.0)])
-    b = _run(tmp_path, "head.json", [_bm("test_x", t=2.0)])
+    a = write_run(tmp_path / "base.json", [bm("test_x", t=1.0)])
+    b = write_run(tmp_path / "head.json", [bm("test_x", t=2.0)])
     result = runner.invoke(app, ["compare", str(a), str(b)])
     assert result.exit_code == 0
     # the relative-multiplier table: head 2.0 is 2.00× the best run (1.0)
@@ -67,68 +86,52 @@ def test_compare_prints_table(tmp_path):
 
 def test_compare_single_run_prints_table(tmp_path):
     # one run is allowed now: a plain table, no comparison multiplier
-    a = _run(tmp_path, "run.json", [_bm("test_x", t=1.0, peak=10 * 1024**2)])
+    a = write_run(tmp_path / "run.json", [bm("test_x", t=1.0, peak=10 * 1024**2)])
     result = runner.invoke(app, ["compare", str(a), "--columns", "time,peak"])
     assert result.exit_code == 0, _text(result)
     assert "time (s)" in result.output and "peak (MiB)" in result.output
     assert "(1.0)" not in result.output  # nothing to rank against
 
 
-def test_compare_single_run_with_fail_on_exits_2(tmp_path):
-    # --fail-on gates growth of one run vs another, so it needs two; refuse, don't silently pass
-    a = _run(tmp_path, "run.json", [_bm("test_x", peak=100)])
-    result = runner.invoke(app, ["compare", str(a), "--fail-on", "peak:10%"])
-    assert result.exit_code == 2
-    assert "at least two runs" in _text(result)
+@pytest.mark.parametrize(
+    "peaks, extra, code, needle",
+    [
+        ([100], ["--fail-on", "peak:10%"], 2, "at least two runs"),  # one run can't be gated
+        ([100, 130], ["--fail-on", "bogus:5%"], 2, "unknown field"),  # bad threshold field
+        ([100, 130], ["--fail-on", "peak:10%"], 1, "regression"),  # +30% trips the gate
+        ([100, 105], ["--fail-on", "peak:10%"], 0, "no regressions"),  # +5% is under it
+    ],
+)
+def test_compare_fail_on_gate(tmp_path, peaks, extra, code, needle):
+    runs = [
+        str(write_run(tmp_path / f"r{i}.json", [bm("test_x", peak=p)])) for i, p in enumerate(peaks)
+    ]
+    result = runner.invoke(app, ["compare", *runs, *extra])
+    assert result.exit_code == code
+    assert needle in _text(result)
 
 
 def test_compare_columns_selects_time_and_peak(tmp_path):
-    a = _run(tmp_path, "base.json", [_bm("test_x", t=1.0, peak=10 * 1024**2)])
-    b = _run(tmp_path, "head.json", [_bm("test_x", t=1.0, peak=20 * 1024**2)])
+    a = write_run(tmp_path / "base.json", [bm("test_x", t=1.0, peak=10 * 1024**2)])
+    b = write_run(tmp_path / "head.json", [bm("test_x", t=1.0, peak=20 * 1024**2)])
     result = runner.invoke(app, ["compare", str(a), str(b), "--columns", "time,peak"])
     assert result.exit_code == 0, _text(result)
     assert "time (s)" in result.output and "peak (MiB)" in result.output
 
 
 def test_compare_missing_file_exits_2(tmp_path):
-    a = _run(tmp_path, "base.json", [_bm("test_x")])
+    a = write_run(tmp_path / "base.json", [bm("test_x")])
     result = runner.invoke(app, ["compare", str(a), str(tmp_path / "nope.json")])
     assert result.exit_code == 2
     assert "missing" in _text(result)
 
 
-def test_compare_fail_on_regression_exits_1(tmp_path):
-    a = _run(tmp_path, "base.json", [_bm("test_x", peak=100)])
-    b = _run(tmp_path, "head.json", [_bm("test_x", peak=130)])  # +30%
-    result = runner.invoke(app, ["compare", str(a), str(b), "--fail-on", "peak:10%"])
-    assert result.exit_code == 1
-    assert "regression" in _text(result)
-
-
-def test_compare_fail_on_within_threshold_exits_0(tmp_path):
-    a = _run(tmp_path, "base.json", [_bm("test_x", peak=100)])
-    b = _run(tmp_path, "head.json", [_bm("test_x", peak=105)])  # +5%
-    result = runner.invoke(app, ["compare", str(a), str(b), "--fail-on", "peak:10%"])
-    assert result.exit_code == 0
-    assert "no regressions" in _text(result)
-
-
-def test_compare_bad_threshold_exits_2(tmp_path):
-    a = _run(tmp_path, "base.json", [_bm("test_x", peak=100)])
-    b = _run(tmp_path, "head.json", [_bm("test_x", peak=130)])
-    result = runner.invoke(app, ["compare", str(a), str(b), "--fail-on", "bogus:5%"])
-    assert result.exit_code == 2
-    assert "unknown field" in _text(result)
-
-
 def test_compare_pivot_folds_run_along_dim(tmp_path):
     # --pivot makes a param the comparison series within one run (the A/B a file-pair gives)
     def _b(sem, peak):
-        b = _bm(f"m.py::test_build[{sem}]", peak=peak)
-        b["params"] = {"semantics": sem}
-        return b
+        return bm(f"m.py::test_build[{sem}]", peak=peak, params={"semantics": sem})
 
-    run = _run(tmp_path, "build.json", [_b("legacy", 10 * 1024**2), _b("v1", 12 * 1024**2)])
+    run = write_run(tmp_path / "build.json", [_b("legacy", 10 * 1024**2), _b("v1", 12 * 1024**2)])
     args = ["compare", str(run), "--columns", "peak", "--pivot", "param:semantics"]
     result = runner.invoke(app, args)
     assert result.exit_code == 0, _text(result)
@@ -137,8 +140,8 @@ def test_compare_pivot_folds_run_along_dim(tmp_path):
 
 
 def test_compare_pivot_with_multiple_runs_exits_1(tmp_path):
-    a = _run(tmp_path, "a.json", [_bm("test_x", peak=1024)])
-    b = _run(tmp_path, "b.json", [_bm("test_x", peak=2048)])
+    a = write_run(tmp_path / "a.json", [bm("test_x", peak=1024)])
+    b = write_run(tmp_path / "b.json", [bm("test_x", peak=2048)])
     result = runner.invoke(app, ["compare", str(a), str(b), "--pivot", "param:x"])
     assert result.exit_code == 1
     assert "folds a single run" in _text(result)
@@ -148,11 +151,9 @@ def test_compare_pivot_fail_on_gates_along_dim(tmp_path):
     # --fail-on generalizes along the pivot axis: gate the first dim value (legacy) vs the last
     # (v1) from one combined run — no second file needed.
     def _b(sem, peak):
-        b = _bm(f"t[{sem}]", peak=peak)
-        b["params"] = {"semantics": sem}
-        return b
+        return bm(f"t[{sem}]", peak=peak, params={"semantics": sem})
 
-    run = _run(tmp_path, "build.json", [_b("legacy", 100), _b("v1", 130)])  # +30%
+    run = write_run(tmp_path / "build.json", [_b("legacy", 100), _b("v1", 130)])  # +30%
     args = ["compare", str(run), "--columns", "peak", "--pivot", "param:semantics"]
     over = runner.invoke(app, [*args, "--fail-on", "peak:10%"])
     assert over.exit_code == 1 and "regression" in _text(over)
@@ -162,30 +163,19 @@ def test_compare_pivot_fail_on_gates_along_dim(tmp_path):
 
 def test_plot_pivot_rejected_for_scaling_view(tmp_path):
     # --pivot re-points the comparison series; scaling/sweep have no series axis to re-point
-    run = _run(tmp_path, "a.json", [_bm("test_x", peak=1024)])
+    run = write_run(tmp_path / "a.json", [bm("test_x", peak=1024)])
     result = runner.invoke(app, ["plot", str(run), "--view", "scaling", "--pivot", "param:n"])
     assert result.exit_code == 2
     assert "compare or scatter" in _text(result)
 
 
-def test_plot_pivot_defaults_to_compare_view(tmp_path, monkeypatch):
+def test_plot_pivot_defaults_to_compare_view(tmp_path, view_calls):
     # one run + --pivot with no --view must default to compare, not scaling (which rejects --pivot)
-    calls = []
-
-    def _stub(name):
-        def _fn(*a, **k):
-            calls.append(name)
-            return _FakeFig(), 2
-
-        return _fn
-
-    for name in ("plot_compare", "plot_scatter", "plot_sweep", "plot_scaling"):
-        monkeypatch.setattr(plotting, name, _stub(name))
-    run = _run(tmp_path, "build.json", [_bm("t[legacy]", peak=1024), _bm("t[v1]", peak=2048)])
+    run = write_run(tmp_path / "build.json", [bm("t[legacy]", peak=1024), bm("t[v1]", peak=2048)])
     args = ["plot", str(run), "--pivot", "param:semantics", "-o", str(tmp_path / "o.html")]
     result = runner.invoke(app, args)
     assert result.exit_code == 0, _text(result)
-    assert calls == ["plot_compare"]  # not plot_scaling
+    assert view_calls == ["plot_compare"]  # not plot_scaling
 
 
 # --- plot view auto-selection ----------------------------------------------------
@@ -195,33 +185,16 @@ def test_plot_pivot_defaults_to_compare_view(tmp_path, monkeypatch):
     "n_runs, expected",
     [(1, "plot_scaling"), (2, "plot_scatter"), (3, "plot_sweep")],
 )
-def test_plot_view_defaults_by_run_count(tmp_path, monkeypatch, n_runs, expected):
-    calls = []
-
-    def _stub(name):
-        def _fn(*a, **k):
-            calls.append(name)
-            return _FakeFig(), 7
-
-        return _fn
-
-    for name in ("plot_compare", "plot_scatter", "plot_sweep", "plot_scaling"):
-        monkeypatch.setattr(plotting, name, _stub(name))
-    runs = [_run(tmp_path, f"r{i}.json", [_bm("x")]) for i in range(n_runs)]
+def test_plot_view_defaults_by_run_count(tmp_path, view_calls, n_runs, expected):
+    runs = [write_run(tmp_path / f"r{i}.json", [bm("x")]) for i in range(n_runs)]
     result = runner.invoke(app, ["plot", *map(str, runs), "-o", str(tmp_path / "out.html")])
     assert result.exit_code == 0, _text(result)
-    assert calls == [expected]
+    assert view_calls == [expected]
 
 
-def test_plot_label_option_threads_through(tmp_path, monkeypatch):
-    captured = {}
-
-    def _stub(*a, **k):
-        captured.update(k)
-        return _FakeFig(), 3
-
-    monkeypatch.setattr(plotting, "plot_sweep", _stub)
-    runs = [_run(tmp_path, f"r{i}.json", [_bm("x")]) for i in range(3)]
+def test_plot_label_option_threads_through(tmp_path, capture_view):
+    captured = capture_view("plot_sweep")
+    runs = [write_run(tmp_path / f"r{i}.json", [bm("x")]) for i in range(3)]
     result = runner.invoke(
         app,
         [
@@ -241,16 +214,10 @@ def test_plot_label_option_threads_through(tmp_path, monkeypatch):
     assert captured["labels"] == ["0.6", "0.7", "0.8"]
 
 
-def test_plot_columns_selects_metric(tmp_path, monkeypatch):
+def test_plot_columns_selects_metric(tmp_path, capture_view):
     """plot selects the metric via --columns — the same flag as compare."""
-    captured = {}
-
-    def _stub(*a, **k):
-        captured.update(k)
-        return _FakeFig(), 1
-
-    monkeypatch.setattr(plotting, "plot_scaling", _stub)
-    r = _run(tmp_path, "r.json", [_bm("x")])
+    captured = capture_view()
+    r = write_run(tmp_path / "r.json", [bm("x")])
     result = runner.invoke(
         app, ["plot", str(r), "--columns", "peak", "-o", str(tmp_path / "o.html")]
     )
@@ -260,7 +227,7 @@ def test_plot_columns_selects_metric(tmp_path, monkeypatch):
 
 def test_plot_metric_flag_removed(tmp_path):
     """--metric is gone (pre-1.0 rename to --columns, matching compare)."""
-    r = _run(tmp_path, "r.json", [_bm("x")])
+    r = write_run(tmp_path / "r.json", [bm("x")])
     result = runner.invoke(
         app, ["plot", str(r), "--metric", "peak", "-o", str(tmp_path / "o.html")]
     )
@@ -270,7 +237,7 @@ def test_plot_metric_flag_removed(tmp_path):
 
 def test_plot_columns_rejects_multiple_metrics(tmp_path):
     """A plot has one value axis — multiple metrics is a clean usage error, not a crash."""
-    r = _run(tmp_path, "r.json", [_bm("x")])
+    r = write_run(tmp_path / "r.json", [bm("x")])
     result = runner.invoke(
         app, ["plot", str(r), "--columns", "time,peak", "-o", str(tmp_path / "o.html")]
     )
@@ -278,15 +245,33 @@ def test_plot_columns_rejects_multiple_metrics(tmp_path):
     assert "not one of" in _text(result) or "Invalid value" in _text(result)
 
 
-def test_plot_where_parses_into_dict(tmp_path, monkeypatch):
-    captured = {}
+def test_plot_free_axes_rejects_bad_choice(tmp_path):
+    r = write_run(tmp_path / "r.json", [bm("x")])
+    result = runner.invoke(
+        app, ["plot", str(r), "--free-axes", "diagonal", "-o", str(tmp_path / "o.html")]
+    )
+    assert result.exit_code == 2  # typer rejects an out-of-choice value
 
-    def _stub(*a, **k):
-        captured.update(k)
-        return _FakeFig(), 3
 
-    monkeypatch.setattr(plotting, "plot_scaling", _stub)
-    r = _run(tmp_path, "r.json", [_bm("x")])
+def test_plot_where_malformed_exits_2(tmp_path):
+    r = write_run(tmp_path / "r.json", [bm("x")])
+    result = runner.invoke(
+        app, ["plot", str(r), "--where", "noequals", "-o", str(tmp_path / "o.html")]
+    )
+    assert result.exit_code == 2
+    assert "KEY=VALUE" in _text(result)
+
+
+def test_plot_unknown_view_exits_2(tmp_path):
+    r = write_run(tmp_path / "r.json", [bm("x")])
+    result = runner.invoke(app, ["plot", str(r), "--view", "bogus", "-o", str(tmp_path / "o.html")])
+    assert result.exit_code == 2
+    assert "unknown view" in _text(result)
+
+
+def test_plot_where_parses_into_dict(tmp_path, capture_view):
+    captured = capture_view()
+    r = write_run(tmp_path / "r.json", [bm("x")])
     out = str(tmp_path / "o.html")
     result = runner.invoke(
         app,
@@ -296,45 +281,27 @@ def test_plot_where_parses_into_dict(tmp_path, monkeypatch):
     assert captured["where"] == {"axis": "n", "solver": "glpk"}
 
 
-def test_plot_free_axes_threads_through(tmp_path, monkeypatch):
-    captured = {}
-
-    def _stub(*a, **k):
-        captured.update(k)
-        return _FakeFig(), 3
-
-    monkeypatch.setattr(plotting, "plot_scaling", _stub)
-    r = _run(tmp_path, "r.json", [_bm("x")])
+def test_plot_free_axes_threads_through(tmp_path, capture_view):
+    captured = capture_view()
+    r = write_run(tmp_path / "r.json", [bm("x")])
     out = str(tmp_path / "o.html")
     result = runner.invoke(app, ["plot", str(r), "--free-axes", "y", "-o", out])
     assert result.exit_code == 0, _text(result)
     assert captured["free_axes"] == "y"  # str-enum value, matches the Literal
 
 
-def test_plot_color_threads_through(tmp_path, monkeypatch):
-    captured = {}
-
-    def _stub(*a, **k):
-        captured.update(k)
-        return _FakeFig(), 3
-
-    monkeypatch.setattr(plotting, "plot_scaling", _stub)
-    r = _run(tmp_path, "r.json", [_bm("x")])
+def test_plot_color_threads_through(tmp_path, capture_view):
+    captured = capture_view()
+    r = write_run(tmp_path / "r.json", [bm("x")])
     out = str(tmp_path / "o.html")
     result = runner.invoke(app, ["plot", str(r), "--color", "variant", "-o", out])
     assert result.exit_code == 0, _text(result)
     assert captured["color"] == "variant"
 
 
-def test_plot_log_flags_thread_through(tmp_path, monkeypatch):
-    captured = {}
-
-    def _stub(*a, **k):
-        captured.update(k)
-        return _FakeFig(), 3
-
-    monkeypatch.setattr(plotting, "plot_scaling", _stub)
-    r = _run(tmp_path, "r.json", [_bm("x")])
+def test_plot_log_flags_thread_through(tmp_path, capture_view):
+    captured = capture_view()
+    r = write_run(tmp_path / "r.json", [bm("x")])
     out = str(tmp_path / "o.html")
     # the shared flag threads as log_log; per-axis flags thread separately and the API
     # resolves precedence (log_y=False wins over log_log=True for the y-axis)
@@ -348,41 +315,13 @@ def test_plot_log_flags_thread_through(tmp_path, monkeypatch):
     assert captured["y_zero"] is False
 
 
-def test_plot_axis_flags_default_to_auto(tmp_path, monkeypatch):
-    captured = {}
-
-    def _stub(*a, **k):
-        captured.update(k)
-        return _FakeFig(), 3
-
-    monkeypatch.setattr(plotting, "plot_scaling", _stub)
-    r = _run(tmp_path, "r.json", [_bm("x")])
+def test_plot_axis_flags_default_to_auto(tmp_path, capture_view):
+    captured = capture_view()
+    r = write_run(tmp_path / "r.json", [bm("x")])
     out = str(tmp_path / "o.html")
     result = runner.invoke(app, ["plot", str(r), "-o", out])
     assert result.exit_code == 0, _text(result)
     assert captured["log_x"] == captured["log_y"] == captured["y_zero"] == "auto"
-
-
-def test_plot_free_axes_rejects_bad_choice(tmp_path):
-    r = _run(tmp_path, "r.json", [_bm("x")])
-    out = str(tmp_path / "o.html")
-    result = runner.invoke(app, ["plot", str(r), "--free-axes", "diagonal", "-o", out])
-    assert result.exit_code == 2  # typer rejects an out-of-choice value
-
-
-def test_plot_where_malformed_exits_2(tmp_path):
-    r = _run(tmp_path, "r.json", [_bm("x")])
-    out = str(tmp_path / "o.html")
-    result = runner.invoke(app, ["plot", str(r), "--where", "noequals", "-o", out])
-    assert result.exit_code == 2
-    assert "KEY=VALUE" in _text(result)
-
-
-def test_plot_unknown_view_exits_2(tmp_path):
-    r = _run(tmp_path, "r.json", [_bm("x")])
-    result = runner.invoke(app, ["plot", str(r), "--view", "bogus", "-o", str(tmp_path / "o.html")])
-    assert result.exit_code == 2
-    assert "unknown view" in _text(result)
 
 
 def test_plot_missing_file_exits_2(tmp_path):
@@ -402,7 +341,7 @@ def test_plot_image_suffix_calls_write_image(tmp_path, monkeypatch):
     monkeypatch.setattr(importlib.util, "find_spec", lambda name: object())
     fig = _FakeFig()
     _stub_view(plotting, monkeypatch, fig)
-    r = _run(tmp_path, "r.json", [_bm("x")])
+    r = write_run(tmp_path / "r.json", [bm("x")])
     out = tmp_path / "out.png"
     result = runner.invoke(app, ["plot", str(r), "-o", str(out)])
     assert result.exit_code == 0, _text(result)
@@ -418,7 +357,7 @@ def test_plot_image_suffix_without_kaleido_exits_2(tmp_path, monkeypatch):
         lambda name: None if name == "kaleido" else object(),
     )
     _stub_view(plotting, monkeypatch, _FakeFig())
-    r = _run(tmp_path, "r.json", [_bm("x")])
+    r = write_run(tmp_path / "r.json", [bm("x")])
     result = runner.invoke(app, ["plot", str(r), "-o", str(tmp_path / "out.png")])
     assert result.exit_code == 2
     assert "kaleido" in _text(result) and "plot-static" in _text(result)
@@ -427,7 +366,7 @@ def test_plot_image_suffix_without_kaleido_exits_2(tmp_path, monkeypatch):
 def test_plot_unsupported_suffix_exits_2(tmp_path, monkeypatch):
     """A typo'd suffix is rejected rather than silently written as HTML."""
     _stub_view(plotting, monkeypatch, _FakeFig())
-    r = _run(tmp_path, "r.json", [_bm("x")])
+    r = write_run(tmp_path / "r.json", [bm("x")])
     result = runner.invoke(app, ["plot", str(r), "-o", str(tmp_path / "out.pong")])
     assert result.exit_code == 2
     assert "unsupported output suffix" in _text(result)
@@ -436,7 +375,7 @@ def test_plot_unsupported_suffix_exits_2(tmp_path, monkeypatch):
 def test_plot_html_suffix_calls_write_html(tmp_path, monkeypatch):
     fig = _FakeFig()
     _stub_view(plotting, monkeypatch, fig)
-    r = _run(tmp_path, "r.json", [_bm("x")])
+    r = write_run(tmp_path / "r.json", [bm("x")])
     result = runner.invoke(app, ["plot", str(r), "-o", str(tmp_path / "out.html")])
     assert result.exit_code == 0, _text(result)
     assert fig.kind == "html"
@@ -447,7 +386,7 @@ def test_plot_value_error_exits_1(tmp_path, monkeypatch):
         raise ValueError("no ids in common")
 
     monkeypatch.setattr(plotting, "plot_scaling", boom)
-    r = _run(tmp_path, "r.json", [_bm("x")])
+    r = write_run(tmp_path / "r.json", [bm("x")])
     result = runner.invoke(app, ["plot", str(r), "-o", str(tmp_path / "o.html")])
     assert result.exit_code == 1
     assert "no ids in common" in _text(result)
@@ -460,7 +399,7 @@ def test_plot_without_plotly_exits_2(tmp_path, monkeypatch):
         "find_spec",
         lambda name, *a, **k: None if name == "plotly" else real(name, *a, **k),
     )
-    r = _run(tmp_path, "r.json", [_bm("x")])
+    r = write_run(tmp_path / "r.json", [bm("x")])
     result = runner.invoke(app, ["plot", str(r), "-o", str(tmp_path / "o.html")])
     assert result.exit_code == 2
     assert "pytest-benchmem[plot]" in _text(result)
@@ -592,28 +531,20 @@ def test_flamegraph_custom_output_and_force(profiles, tmp_path):
     assert forced.exit_code == 0
 
 
-def test_flamegraph_ambiguous_without_id_lists_available(profiles):
-    result = runner.invoke(app, ["flamegraph", str(profiles)])
+@pytest.mark.parametrize(
+    "args, needles",
+    [
+        ([], ["test_big", "test_small"]),  # ambiguous: no id given → lists what's available
+        (["nope"], ["no profile matches"]),  # id resolves to nothing
+        (["test_big", "--worst", "peak"], ["not both"]),  # id and --worst are mutually exclusive
+        (["test_big", "--report", "bogus"], ["unknown reporter"]),
+    ],
+)
+def test_flamegraph_usage_errors(profiles, args, needles):
+    result = runner.invoke(app, ["flamegraph", str(profiles), *args])
     assert result.exit_code == 2
-    assert "test_big" in _text(result) and "test_small" in _text(result)
-
-
-def test_flamegraph_unknown_id_errors(profiles):
-    result = runner.invoke(app, ["flamegraph", str(profiles), "nope"])
-    assert result.exit_code == 2
-    assert "no profile matches" in _text(result)
-
-
-def test_flamegraph_id_and_worst_are_mutually_exclusive(profiles):
-    result = runner.invoke(app, ["flamegraph", str(profiles), "test_big", "--worst", "peak"])
-    assert result.exit_code == 2
-    assert "not both" in _text(result)
-
-
-def test_flamegraph_bad_report_errors(profiles):
-    result = runner.invoke(app, ["flamegraph", str(profiles), "test_big", "--report", "bogus"])
-    assert result.exit_code == 2
-    assert "unknown reporter" in _text(result)
+    text = _text(result)
+    assert all(nd in text for nd in needles)
 
 
 def test_flamegraph_empty_dir_errors(tmp_path):
