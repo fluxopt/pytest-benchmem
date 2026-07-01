@@ -81,22 +81,30 @@ def test_scaling_labels_override_run_stems_in_title(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "kwargs, xlog, ylog, y_tozero",
+    "kwargs, xlog, ylog",
     [
-        ({}, True, True, False),  # default: log-log on positive data, no zero-anchor (#150)
-        ({"log_y": False}, True, False, True),  # linear cost axis auto-anchors at 0
-        ({"log_x": False}, False, True, None),  # linear x only
-        ({"log_y": False, "y_zero": False}, True, False, False),  # linear y, decline the anchor
-        ({"log_log": False}, False, False, None),  # shortcut forces both linear
-        ({"log_log": False, "log_x": True}, True, False, None),  # per-axis log_x wins over log_log
+        ({}, True, True),  # default: log-log on positive data (#150)
+        ({"log_y": False}, True, False),  # linear cost axis
+        ({"log_x": False}, False, True),  # linear x only
+        ({"log_log": False}, False, False),  # shortcut forces both linear
+        ({"log_log": False, "log_x": True}, True, False),  # per-axis log_x wins over log_log
     ],
 )
-def test_scaling_axis_scales(tmp_path, kwargs, xlog, ylog, y_tozero):
+def test_scaling_axis_scales(tmp_path, kwargs, xlog, ylog):
     fig, _n = plotting.plot_scaling([_run(tmp_path / "a.json", ROWS_A)], **kwargs)
     assert (fig.layout.xaxis.type == "log") is xlog
     assert (fig.layout.yaxis.type == "log") is ylog
-    if y_tozero is not None:  # tozero is meaningless on a log axis, so only checked when linear
-        assert (fig.layout.yaxis.rangemode == "tozero") is y_tozero
+
+
+def test_scaling_y_zero_anchor(tmp_path):
+    # tozero is meaningless on a log axis, so the default (log y) never sets it (#150); a linear
+    # cost axis auto-anchors at 0 so slope/gap aren't exaggerated — unless explicitly declined.
+    p = _run(tmp_path / "a.json", ROWS_A)
+    assert plotting.plot_scaling([p])[0].layout.yaxis.rangemode != "tozero"
+    assert plotting.plot_scaling([p], log_y=False)[0].layout.yaxis.rangemode == "tozero"
+    assert (
+        plotting.plot_scaling([p], log_y=False, y_zero=False)[0].layout.yaxis.rangemode != "tozero"
+    )
 
 
 def test_scaling_deprecated_log_alias_warns_and_maps_to_both(tmp_path):
