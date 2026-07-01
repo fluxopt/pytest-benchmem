@@ -7,7 +7,8 @@ Each view reads one ``metric`` (``time`` / ``peak`` / ``allocated`` /
 - :func:`plot_compare` (2 runs) — bar chart of per-id delta.
 - :func:`plot_scatter` (2+) — baseline cost vs ratio; top-right = the regressed one.
 - :func:`plot_sweep` (3+) — heatmap of per-id fold-change (log2 ratio) vs the first.
-- :func:`plot_scaling` (1) — cost vs a numeric dim, faceted/coloured by others.
+- :func:`plot_scaling` (1+) — cost vs a numeric dim, faceted/coloured by others;
+  multiple runs overlay as series.
 
 The sweep/scatter/compare views key on the opaque ``id``; only ``scaling`` reads
 ``dims`` — and which dim is x / colour / facet is auto-inferred from dtype
@@ -474,11 +475,18 @@ def plot_sweep(
 
 
 def _infer_roles(
-    df: pd.DataFrame, x: str | None, color: str | None, facet: str | None
+    df: pd.DataFrame,
+    x: str | None,
+    color: str | None,
+    facet: str | None,
+    *,
+    series: str | None = None,
 ) -> tuple[str, str | None, str | None]:
     """Pick (x, color, facet) dim columns, auto-filling unset ones.
 
-    x defaults to the lone *numeric* dim; color/facet to leftover categoricals.
+    x defaults to the lone *numeric* dim; color/facet to leftover categoricals. When
+    ``series`` is set (the run-file axis, for multi-run overlays), an unset ``color``
+    defaults to it so the runs separate into their own lines — matching ``compare``.
     """
     dims = _dim_columns(df)
     numeric = [d for d in dims if df[d].dropna().map(lambda v: isinstance(v, (int, float))).all()]
@@ -492,7 +500,7 @@ def _infer_roles(
         x = numeric[0]
     leftover = [d for d in dims if d != x]
     if color is None:
-        color = leftover[0] if leftover else None
+        color = series if series is not None else (leftover[0] if leftover else None)
     if facet is None:
         facet = next((d for d in leftover if d != color), None)
     return x, color, facet
@@ -500,18 +508,29 @@ def _infer_roles(
 
 def _envelope_by_id(
     snapshots: Sequence[Path], metric: Metric, labels: Sequence[str] | None
-) -> tuple[dict[str, float], dict[str, float]]:
-    """Per-id ``(min, max)`` of the metric's per-pass series — the spread envelope.
+) -> tuple[pd.Series, pd.Series]:
+    """Per-(run, id) ``(min, max)`` of the metric's per-pass series — the spread envelope.
 
-    Reads the same run twice through the ``min`` / ``max`` stat reducers; benchmarks
-    measured once collapse to ``min == max`` (no spread, so no band).
+    Reads the runs twice through the ``min`` / ``max`` stat reducers; benchmarks
+    measured once collapse to ``min == max`` (no spread, so no band). Keyed by
+    ``(snapshot, id)`` so overlaid runs sharing an id keep their own envelopes.
     """
+
+    def keyed(df: pd.DataFrame) -> pd.Series:
+        """Value series indexed by the ``(snapshot, id)`` pair for reindex-based lookup."""
+        return df.set_index(["snapshot", "id"])["value"]
+
     lo_df, _ = load_long_df(snapshots, metric=metric, stat="min", labels=labels)
     hi_df, _ = load_long_df(snapshots, metric=metric, stat="max", labels=labels)
-    return (
-        dict(zip(lo_df["id"], lo_df["value"], strict=True)),
-        dict(zip(hi_df["id"], hi_df["value"], strict=True)),
-    )
+    return keyed(lo_df), keyed(hi_df)
+
+
+def _positive_numeric(values: pd.Series) -> bool:
+    """True when every value is numeric and strictly positive — safe to log-scale."""
+    import pandas as pd
+
+    nums = pd.to_numeric(values, errors="coerce")
+    return bool(nums.notna().all() and (nums > 0).all())
 
 
 def plot_scaling(
@@ -521,24 +540,45 @@ def plot_scaling(
     x: str | None = None,
     color: str | None = None,
     facet: str | None = None,
-    log: bool | Literal["auto"] = "auto",
+    log_log: bool | None = None,
+    log_x: bool | Literal["auto"] = "auto",
+    log_y: bool | Literal["auto"] = "auto",
+    y_zero: bool | Literal["auto"] = "auto",
     band: Literal["auto", "minmax", "none"] = "auto",
     where: Mapping[str, str] | None = None,
     free_axes: FreeAxes | None = None,
     labels: Sequence[str] | None = None,
+    log: bool | Literal["auto"] | None = None,
 ) -> tuple[Figure, int]:
     """Cost vs a numeric dim, coloured/faceted by other dims.
 
     ``x``/``color``/``facet`` default to inference from the dims (the lone numeric
-    dim → x); pass them to override.
+    dim → x); pass them to override. Passing more than one run overlays them as
+    series — the run-file becomes the default ``color`` (like :func:`plot_compare`),
+    so two builds' scaling curves sit on the same axes per facet.
+
+    Axis scaling resolves per axis as ``log_x``/``log_y`` (if set) → ``log_log`` (the
+    shared shortcut, if set) → ``"auto"`` (log when that axis's data is strictly positive,
+    i.e. log-log by default).
 
     Args:
-        snapshots: Run JSON path(s).
+        snapshots: Run JSON path(s). Multiple runs overlay as series (default
+            ``color`` = run label).
         metric: Which metric to plot (``time`` / ``peak`` / ``allocated`` / ``allocations``).
         x: Dim for the x-axis (default: the lone numeric dim).
         color: Dim to colour by (default: inferred).
         facet: Dim to split into subplots (default: inferred).
-        log: ``"auto"`` log-scales when x is numeric and strictly positive; or force with a bool.
+        log_log: Shared shortcut — ``True`` log-scales both axes, ``False`` forces both
+            linear, ``None`` (default) leaves each axis on its own ``"auto"``. Overridden
+            per axis by ``log_x``/``log_y``.
+        log_x: ``"auto"`` log-scales x when it's numeric and strictly positive (the sweep
+            decades); or force with a bool. Wins over ``log_log``.
+        log_y: ``"auto"`` log-scales y when the metric is strictly positive (log-log is the
+            default); pass ``False`` for a linear cost axis where bar heights read truthfully.
+            Wins over ``log_log``; independent of ``log_x``.
+        y_zero: Anchor the linear y-axis at 0 so the between-run gap and the scaling slope
+            aren't visually exaggerated. ``"auto"`` does this whenever the y-axis is linear
+            (the only case where it applies); force with a bool.
         band: Spread whiskers (``min``…``max`` of each point's per-pass series) on memory
             metrics — ``"auto"`` shows them where there's spread, ``"minmax"`` forces them on,
             ``"none"`` off. The line stays the headline (the min floor); whiskers reach up to
@@ -548,48 +588,83 @@ def plot_scaling(
             default (``"x"`` for incommensurable sweeps, ``"y"`` when facets have different
             cost scales, e.g. per function).
         labels: Names the snapshot in the title (default: file stem).
+        log: Deprecated alias for ``log_log`` (tied both axes together). Pass ``log_log`` or
+            the per-axis ``log_x``/``log_y`` instead.
 
     Returns:
         ``(figure, n_ids)`` — the plotly figure and the number of ids plotted.
     """
+    import pandas as pd
     import plotly.express as px
 
+    if log is not None:
+        import warnings
+
+        warnings.warn(
+            "plot_scaling(log=...) is deprecated; use log_log= (both axes) or "
+            "log_x=/log_y= (per axis).",
+            FutureWarning,
+            stacklevel=2,
+        )
+        if log_log is None:
+            log_log = None if log == "auto" else bool(log)
+
     snapshots = _as_paths(snapshots)
-    head = _labels_head(labels, 1)
-    snap_label = head[0] if head else snapshots[0].stem
-    df_long, unit = load_long_df(snapshots[:1], metric=metric, labels=head)
+    df_long, unit = load_long_df(snapshots, metric=metric, labels=labels)
     df_long = _apply_where(df_long, where)
     vlabel = _metric_label(metric)
-    x, color, facet = _infer_roles(df_long, x, color, facet)
-    df = df_long.dropna(subset=[x]).sort_values([c for c in (facet, color, x) if c])
+    snap_label = ", ".join(dict.fromkeys(df_long["snapshot"]))
+    series = "snapshot" if len(snapshots) > 1 else None
+    x, color, facet = _infer_roles(df_long, x, color, facet, series=series)
+    df = df_long.dropna(subset=[x]).sort_values([c for c in ("snapshot", facet, color, x) if c])
     if df.empty:
         raise ValueError("no rows with the x dim set")
 
     err: dict[str, str] = {}
     if band != "none" and metric != "time":
-        lo_by_id, hi_by_id = _envelope_by_id(snapshots[:1], metric, head)
+        lo_by_key, hi_by_key = _envelope_by_id(snapshots, metric, labels)
+        idx = pd.MultiIndex.from_frame(df[["snapshot", "id"]])
+        hi = hi_by_key.reindex(idx).to_numpy()
+        lo = lo_by_key.reindex(idx).to_numpy()
         df = df.assign(
-            _err_hi=(df["id"].map(hi_by_id) - df["value"]).clip(lower=0).fillna(0.0),
-            _err_lo=(df["value"] - df["id"].map(lo_by_id)).clip(lower=0).fillna(0.0),
+            _err_hi=(hi - df["value"]).clip(lower=0).fillna(0.0),
+            _err_lo=(df["value"] - lo).clip(lower=0).fillna(0.0),
         )
         if band == "minmax" or bool(((df["_err_hi"] + df["_err_lo"]) > 0).any()):
             err = {"error_y": "_err_hi", "error_y_minus": "_err_lo"}
 
-    use_log = bool((df[x] > 0).all()) if log == "auto" else bool(log)
+    # Keep overlaid runs as distinct lines even when colour is spent on a dim: dash by run
+    # so px.line doesn't chain one run's points into the next under a shared colour.
+    line_dash = series if series is not None and series not in (color, facet) else None
+
+    # Per-axis (if set) wins over the shared log_log, which wins over per-axis-data auto.
+    def _resolve_log(axis: bool | Literal["auto"], data: pd.Series) -> bool:
+        if axis != "auto":
+            return bool(axis)
+        return log_log if log_log is not None else _positive_numeric(data)
+
+    use_log_x = _resolve_log(log_x, df[x])
+    use_log_y = _resolve_log(log_y, df["value"])
     fig = px.line(
         df,
         x=x,
         y="value",
         color=color,
+        line_dash=line_dash,
         facet_col=facet,
         facet_col_wrap=3 if facet else None,
-        log_x=use_log,
-        log_y=use_log,
+        log_x=use_log_x,
+        log_y=use_log_y,
         markers=True,
         labels={"value": f"{vlabel}{_unit_note(unit)}", x: x},
         title=f"Scaling: {vlabel} vs {x} ({snap_label})",
         **err,
     )
+    # A linear y that floats above 0 exaggerates both the between-run gap and the slope; anchor
+    # it at 0. Meaningless on a log axis (no zero), so auto only fires when the y-axis is linear.
+    anchor_zero = (not use_log_y) if y_zero == "auto" else bool(y_zero)
+    if anchor_zero and not use_log_y:
+        fig.update_yaxes(rangemode="tozero")
     _free_facet_axes(fig, faceted=facet is not None, free_axes=free_axes)
     n_facets = df[facet].nunique() if facet else 1
     fig.update_layout(height=max(400, ((n_facets + 2) // 3) * 350))
