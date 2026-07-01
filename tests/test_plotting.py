@@ -50,6 +50,86 @@ def test_scaling_one_run(tmp_path):
     assert len(fig.data) >= 1
 
 
+def test_scaling_multiple_runs_overlay_as_series(tmp_path):
+    # two runs must overlay (not silently truncate to the first) — one line per run, coloured
+    # by run label, all rows counted. Regression for #150.
+    a = _run(tmp_path / "a.json", ROWS_A)
+    b = _run(tmp_path / "b.json", ROWS_B)
+    fig, n = plotting.plot_scaling([a, b], x="n")
+    assert n == 6  # 3 ids × 2 runs, not 3 (b.json no longer dropped)
+    assert {tr.name for tr in fig.data} == {"a", "b"}  # run label is the default series/colour
+
+
+def test_scaling_multiple_runs_faceted_keep_run_as_colour(tmp_path):
+    # with an explicit facet, the run-file still takes colour so each facet overlays both runs.
+    a = _run_two_funcs(tmp_path / "a.json")
+    b = _run_two_funcs(tmp_path / "b.json")
+    fig, _n = plotting.plot_scaling([a, b], x="n", facet="node.func")
+    names = {tr.name for tr in fig.data}
+    assert names == {"a", "b"}  # coloured by run, faceted by func
+
+
+def test_scaling_multiple_runs_explicit_colour_dashes_by_run(tmp_path):
+    # colour spent on a dim: runs stay distinct via line-dash so px doesn't chain them together.
+    a = _run_two_funcs(tmp_path / "a.json")
+    b = _run_two_funcs(tmp_path / "b.json")
+    fig, _n = plotting.plot_scaling([a, b], x="n", color="node.func")
+    # 2 funcs × 2 runs = 4 traces, none merged across runs
+    assert len(fig.data) == 4
+
+
+def test_scaling_labels_override_run_stems_in_title(tmp_path):
+    a = _run(tmp_path / "aaa.json", ROWS_A)
+    b = _run(tmp_path / "bbb.json", ROWS_B)
+    fig, _n = plotting.plot_scaling([a, b], x="n", labels=["base", "head"])
+    assert "base, head" in fig.layout.title.text  # both labels, not just the first
+
+
+def test_scaling_default_axes_are_log_log(tmp_path):
+    # default stays log-log when the data is positive (both x and the metric); no zero-anchor,
+    # since tozero is meaningless on a log axis. (#150)
+    fig, _n = plotting.plot_scaling([_run(tmp_path / "a.json", ROWS_A)])
+    assert fig.layout.xaxis.type == "log"
+    assert fig.layout.yaxis.type == "log"
+    assert fig.layout.yaxis.rangemode != "tozero"
+
+
+def test_scaling_linear_y_reachable_and_zero_anchored(tmp_path):
+    # opting into a linear cost axis auto-anchors it at 0 so slope/gap aren't exaggerated.
+    fig, _n = plotting.plot_scaling([_run(tmp_path / "a.json", ROWS_A)], log_y=False)
+    assert fig.layout.yaxis.type != "log"
+    assert fig.layout.yaxis.rangemode == "tozero"
+
+
+def test_scaling_linear_x_reachable(tmp_path):
+    fig, _n = plotting.plot_scaling([_run(tmp_path / "a.json", ROWS_A)], log_x=False)
+    assert fig.layout.xaxis.type != "log"
+
+
+def test_scaling_y_zero_opt_out(tmp_path):
+    # force a linear y but decline the zero anchor
+    fig, _n = plotting.plot_scaling([_run(tmp_path / "a.json", ROWS_A)], log_y=False, y_zero=False)
+    assert fig.layout.yaxis.rangemode != "tozero"
+
+
+def test_scaling_log_log_shortcut_forces_both_linear(tmp_path):
+    fig, _n = plotting.plot_scaling([_run(tmp_path / "a.json", ROWS_A)], log_log=False)
+    assert fig.layout.xaxis.type != "log" and fig.layout.yaxis.type != "log"
+
+
+def test_scaling_per_axis_wins_over_log_log(tmp_path):
+    # log_log=False forces linear, but log_x=True overrides it for the x-axis only
+    fig, _n = plotting.plot_scaling([_run(tmp_path / "a.json", ROWS_A)], log_log=False, log_x=True)
+    assert fig.layout.xaxis.type == "log"
+    assert fig.layout.yaxis.type != "log"
+
+
+def test_scaling_deprecated_log_alias_warns_and_maps_to_both(tmp_path):
+    with pytest.warns(FutureWarning, match="log_log"):
+        fig, _n = plotting.plot_scaling([_run(tmp_path / "a.json", ROWS_A)], log=False)
+    assert fig.layout.xaxis.type != "log" and fig.layout.yaxis.type != "log"
+
+
 def test_compare_two_runs_counts_common_ids(tmp_path):
     a = _run(tmp_path / "a.json", ROWS_A)
     b = _run(tmp_path / "b.json", ROWS_B)

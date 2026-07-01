@@ -311,6 +311,58 @@ def test_plot_free_axes_threads_through(tmp_path, monkeypatch):
     assert captured["free_axes"] == "y"  # str-enum value, matches the Literal
 
 
+def test_plot_color_threads_through(tmp_path, monkeypatch):
+    captured = {}
+
+    def _stub(*a, **k):
+        captured.update(k)
+        return _FakeFig(), 3
+
+    monkeypatch.setattr(plotting, "plot_scaling", _stub)
+    r = _run(tmp_path, "r.json", [_bm("x")])
+    out = str(tmp_path / "o.html")
+    result = runner.invoke(app, ["plot", str(r), "--color", "variant", "-o", out])
+    assert result.exit_code == 0, _text(result)
+    assert captured["color"] == "variant"
+
+
+def test_plot_log_flags_thread_through(tmp_path, monkeypatch):
+    captured = {}
+
+    def _stub(*a, **k):
+        captured.update(k)
+        return _FakeFig(), 3
+
+    monkeypatch.setattr(plotting, "plot_scaling", _stub)
+    r = _run(tmp_path, "r.json", [_bm("x")])
+    out = str(tmp_path / "o.html")
+    # the shared flag threads as log_log; per-axis flags thread separately and the API
+    # resolves precedence (log_y=False wins over log_log=True for the y-axis)
+    result = runner.invoke(
+        app, ["plot", str(r), "--log-log", "--linear-y", "--no-y-zero", "-o", out]
+    )
+    assert result.exit_code == 0, _text(result)
+    assert captured["log_log"] is True  # from --log-log
+    assert captured["log_x"] == "auto"  # unset per-axis
+    assert captured["log_y"] is False  # from --linear-y
+    assert captured["y_zero"] is False
+
+
+def test_plot_axis_flags_default_to_auto(tmp_path, monkeypatch):
+    captured = {}
+
+    def _stub(*a, **k):
+        captured.update(k)
+        return _FakeFig(), 3
+
+    monkeypatch.setattr(plotting, "plot_scaling", _stub)
+    r = _run(tmp_path, "r.json", [_bm("x")])
+    out = str(tmp_path / "o.html")
+    result = runner.invoke(app, ["plot", str(r), "-o", out])
+    assert result.exit_code == 0, _text(result)
+    assert captured["log_x"] == captured["log_y"] == captured["y_zero"] == "auto"
+
+
 def test_plot_free_axes_rejects_bad_choice(tmp_path):
     r = _run(tmp_path, "r.json", [_bm("x")])
     out = str(tmp_path / "o.html")

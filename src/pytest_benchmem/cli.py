@@ -143,6 +143,10 @@ def plot(
         ),
     ] = None,
     x: Annotated[str | None, typer.Option(help="scaling: dim for the x-axis.")] = None,
+    color: Annotated[
+        str | None,
+        typer.Option(help="scaling: dim to colour series by (default: run label, else inferred)."),
+    ] = None,
     clip: Annotated[float | None, typer.Option(help="Clamp the colour scale.")] = None,
     where: Annotated[
         list[str] | None,
@@ -159,6 +163,29 @@ def plot(
             help="scaling: spread whiskers on memory metrics — auto | minmax | none.",
         ),
     ] = "auto",
+    log: Annotated[
+        bool | None,
+        typer.Option(
+            "--log-log/--linear",
+            help="scaling: log-scale both axes (the default when the data is positive). "
+            "Per-axis --log-x/--log-y override; --linear forces both linear.",
+        ),
+    ] = None,
+    log_x: Annotated[
+        bool | None,
+        typer.Option("--log-x/--linear-x", help="scaling: force the x-axis log or linear."),
+    ] = None,
+    log_y: Annotated[
+        bool | None,
+        typer.Option("--log-y/--linear-y", help="scaling: force the y-axis log or linear."),
+    ] = None,
+    y_zero: Annotated[
+        bool | None,
+        typer.Option(
+            "--y-zero/--no-y-zero",
+            help="scaling: anchor a linear y-axis at 0 (auto: on whenever y is linear).",
+        ),
+    ] = None,
     label: Annotated[
         list[str] | None,
         typer.Option(
@@ -226,11 +253,18 @@ def plot(
                 runs, metric=metric, clip=clip, where=filters, labels=labels
             )
         elif chosen == "scaling":
+            # --log-log/--linear is the shared shortcut; --log-x/--log-y override it per axis
+            # (precedence resolved in plot_scaling). Unset per-axis flags stay "auto".
             fig, n = plotting.plot_scaling(
                 runs,
                 metric=metric,
                 x=x,
+                color=color,
                 facet=facet,
+                log_log=log,
+                log_x="auto" if log_x is None else log_x,
+                log_y="auto" if log_y is None else log_y,
+                y_zero="auto" if y_zero is None else y_zero,
                 band=band,
                 where=filters,
                 free_axes=free_axes,
