@@ -158,11 +158,20 @@ def test_default_drops_columns_absent_from_every_run(tmp_path):
     assert "peak" not in text and "alloc" not in text
 
 
-def test_unknown_column_metric_raises(tmp_path):
-    a = write_run(tmp_path / "a.json", [bm("x", t=1.0)])
-    b = write_run(tmp_path / "b.json", [bm("x", t=2.0)])
-    with pytest.raises(ValueError, match="unknown column metric"):
-        compare_runs([a, b], columns="time,bogus", out=StringIO())
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        ({"columns": "time,bogus"}, "unknown column metric"),
+        ({"group_by": "bogus"}, "unknown --group-by key"),
+        ({"columns": "peak", "sort": "bogus"}, "unknown --sort"),
+        ({"stat": "p99"}, "unknown --stat"),
+    ],
+)
+def test_compare_rejects_unknown_option(tmp_path, kwargs, match):
+    a = write_run(tmp_path / "a.json", [bm("x", t=1.0, peak=1)])
+    b = write_run(tmp_path / "b.json", [bm("x", t=2.0, peak=2)])
+    with pytest.raises(ValueError, match=match):
+        compare_runs([a, b], out=StringIO(), **kwargs)
 
 
 def test_group_by_func_clusters_variants(tmp_path):
@@ -175,13 +184,6 @@ def test_group_by_func_clusters_variants(tmp_path):
     # one sub-table for the func (its bare header line), both n-variants (× both runs) under it
     assert text.splitlines().count("test_op") == 1
     assert "test_op[n=1]" in text and "test_op[n=2]" in text
-
-
-def test_unknown_group_by_key_raises(tmp_path):
-    a = write_run(tmp_path / "a.json", [bm("x", t=1.0)])
-    b = write_run(tmp_path / "b.json", [bm("x", t=2.0)])
-    with pytest.raises(ValueError, match="unknown --group-by key"):
-        compare_runs([a, b], group_by="bogus", out=StringIO())
 
 
 def test_missing_metric_cell_shows_dash(tmp_path):
@@ -221,13 +223,6 @@ def test_sort_value_orders_rows_in_a_single_table(tmp_path):
     compare_runs([a, b], columns="peak", group_by=None, sort="value", out=body)
     text = body.getvalue()
     assert text.index("big") < text.index("small")  # largest in the last run first
-
-
-def test_sort_rejects_unknown_key(tmp_path):
-    a = write_run(tmp_path / "a.json", [bm("x", peak=1)])
-    b = write_run(tmp_path / "b.json", [bm("x", peak=2)])
-    with pytest.raises(ValueError, match="unknown --sort"):
-        compare_runs([a, b], columns="peak", sort="bogus", out=StringIO())
 
 
 def test_zero_value_suppresses_multiplier(tmp_path):
@@ -280,13 +275,6 @@ def test_stat_selects_the_time_distribution(tmp_path):
     out = StringIO()
     compare_runs([pa, pb], columns="time", stat="max", out=out)
     assert "9" in out.getvalue()  # head's max (9), not its min (1.0)
-
-
-def test_unknown_stat_raises(tmp_path):
-    a = write_run(tmp_path / "a.json", [bm("x", peak=1)])
-    b = write_run(tmp_path / "b.json", [bm("x", peak=2)])
-    with pytest.raises(ValueError, match="unknown --stat"):
-        compare_runs([a, b], stat="p99", out=StringIO())
 
 
 def test_three_runs_stack_as_rows_with_multipliers(tmp_path):
