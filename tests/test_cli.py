@@ -93,12 +93,22 @@ def test_compare_single_run_prints_table(tmp_path):
     assert "(1.0)" not in result.output  # nothing to rank against
 
 
-def test_compare_single_run_with_fail_on_exits_2(tmp_path):
-    # --fail-on gates growth of one run vs another, so it needs two; refuse, don't silently pass
-    a = write_run(tmp_path / "run.json", [bm("test_x", peak=100)])
-    result = runner.invoke(app, ["compare", str(a), "--fail-on", "peak:10%"])
-    assert result.exit_code == 2
-    assert "at least two runs" in _text(result)
+@pytest.mark.parametrize(
+    "peaks, extra, code, needle",
+    [
+        ([100], ["--fail-on", "peak:10%"], 2, "at least two runs"),  # one run can't be gated
+        ([100, 130], ["--fail-on", "bogus:5%"], 2, "unknown field"),  # bad threshold field
+        ([100, 130], ["--fail-on", "peak:10%"], 1, "regression"),  # +30% trips the gate
+        ([100, 105], ["--fail-on", "peak:10%"], 0, "no regressions"),  # +5% is under it
+    ],
+)
+def test_compare_fail_on_gate(tmp_path, peaks, extra, code, needle):
+    runs = [
+        str(write_run(tmp_path / f"r{i}.json", [bm("test_x", peak=p)])) for i, p in enumerate(peaks)
+    ]
+    result = runner.invoke(app, ["compare", *runs, *extra])
+    assert result.exit_code == code
+    assert needle in _text(result)
 
 
 def test_compare_columns_selects_time_and_peak(tmp_path):
@@ -114,30 +124,6 @@ def test_compare_missing_file_exits_2(tmp_path):
     result = runner.invoke(app, ["compare", str(a), str(tmp_path / "nope.json")])
     assert result.exit_code == 2
     assert "missing" in _text(result)
-
-
-def test_compare_fail_on_regression_exits_1(tmp_path):
-    a = write_run(tmp_path / "base.json", [bm("test_x", peak=100)])
-    b = write_run(tmp_path / "head.json", [bm("test_x", peak=130)])  # +30%
-    result = runner.invoke(app, ["compare", str(a), str(b), "--fail-on", "peak:10%"])
-    assert result.exit_code == 1
-    assert "regression" in _text(result)
-
-
-def test_compare_fail_on_within_threshold_exits_0(tmp_path):
-    a = write_run(tmp_path / "base.json", [bm("test_x", peak=100)])
-    b = write_run(tmp_path / "head.json", [bm("test_x", peak=105)])  # +5%
-    result = runner.invoke(app, ["compare", str(a), str(b), "--fail-on", "peak:10%"])
-    assert result.exit_code == 0
-    assert "no regressions" in _text(result)
-
-
-def test_compare_bad_threshold_exits_2(tmp_path):
-    a = write_run(tmp_path / "base.json", [bm("test_x", peak=100)])
-    b = write_run(tmp_path / "head.json", [bm("test_x", peak=130)])
-    result = runner.invoke(app, ["compare", str(a), str(b), "--fail-on", "bogus:5%"])
-    assert result.exit_code == 2
-    assert "unknown field" in _text(result)
 
 
 def test_compare_pivot_folds_run_along_dim(tmp_path):
@@ -239,24 +225,25 @@ def test_plot_columns_selects_metric(tmp_path, capture_view):
     assert captured["metric"] == "peak"
 
 
-def test_plot_metric_flag_removed(tmp_path):
-    """--metric is gone (pre-1.0 rename to --columns, matching compare)."""
+@pytest.mark.parametrize(
+    "args, needle",
+    [
+        (["--metric", "peak"], "No such option"),  # --metric renamed to --columns pre-1.0
+        (["--columns", "time,peak"], ("not one of", "Invalid value")),  # one value axis only
+        (["--free-axes", "diagonal"], None),  # out-of-choice value; typer rejects
+        (["--where", "noequals"], "KEY=VALUE"),  # malformed --where needs KEY=VALUE
+        (["--view", "bogus"], "unknown view"),
+    ],
+)
+def test_plot_flag_errors_exit_2(tmp_path, args, needle):
     r = write_run(tmp_path / "r.json", [bm("x")])
-    result = runner.invoke(
-        app, ["plot", str(r), "--metric", "peak", "-o", str(tmp_path / "o.html")]
-    )
+    result = runner.invoke(app, ["plot", str(r), *args, "-o", str(tmp_path / "o.html")])
     assert result.exit_code == 2
-    assert "No such option" in _text(result)
-
-
-def test_plot_columns_rejects_multiple_metrics(tmp_path):
-    """A plot has one value axis — multiple metrics is a clean usage error, not a crash."""
-    r = write_run(tmp_path / "r.json", [bm("x")])
-    result = runner.invoke(
-        app, ["plot", str(r), "--columns", "time,peak", "-o", str(tmp_path / "o.html")]
-    )
-    assert result.exit_code == 2
-    assert "not one of" in _text(result) or "Invalid value" in _text(result)
+    text = _text(result)
+    if isinstance(needle, tuple):
+        assert any(nd in text for nd in needle)  # message wording varies across click/typer
+    elif needle:
+        assert needle in text
 
 
 def test_plot_where_parses_into_dict(tmp_path, capture_view):
@@ -312,28 +299,6 @@ def test_plot_axis_flags_default_to_auto(tmp_path, capture_view):
     result = runner.invoke(app, ["plot", str(r), "-o", out])
     assert result.exit_code == 0, _text(result)
     assert captured["log_x"] == captured["log_y"] == captured["y_zero"] == "auto"
-
-
-def test_plot_free_axes_rejects_bad_choice(tmp_path):
-    r = write_run(tmp_path / "r.json", [bm("x")])
-    out = str(tmp_path / "o.html")
-    result = runner.invoke(app, ["plot", str(r), "--free-axes", "diagonal", "-o", out])
-    assert result.exit_code == 2  # typer rejects an out-of-choice value
-
-
-def test_plot_where_malformed_exits_2(tmp_path):
-    r = write_run(tmp_path / "r.json", [bm("x")])
-    out = str(tmp_path / "o.html")
-    result = runner.invoke(app, ["plot", str(r), "--where", "noequals", "-o", out])
-    assert result.exit_code == 2
-    assert "KEY=VALUE" in _text(result)
-
-
-def test_plot_unknown_view_exits_2(tmp_path):
-    r = write_run(tmp_path / "r.json", [bm("x")])
-    result = runner.invoke(app, ["plot", str(r), "--view", "bogus", "-o", str(tmp_path / "o.html")])
-    assert result.exit_code == 2
-    assert "unknown view" in _text(result)
 
 
 def test_plot_missing_file_exits_2(tmp_path):
@@ -543,28 +508,20 @@ def test_flamegraph_custom_output_and_force(profiles, tmp_path):
     assert forced.exit_code == 0
 
 
-def test_flamegraph_ambiguous_without_id_lists_available(profiles):
-    result = runner.invoke(app, ["flamegraph", str(profiles)])
+@pytest.mark.parametrize(
+    "args, needles",
+    [
+        ([], ["test_big", "test_small"]),  # ambiguous: no id given → lists what's available
+        (["nope"], ["no profile matches"]),  # id resolves to nothing
+        (["test_big", "--worst", "peak"], ["not both"]),  # id and --worst are mutually exclusive
+        (["test_big", "--report", "bogus"], ["unknown reporter"]),
+    ],
+)
+def test_flamegraph_usage_errors(profiles, args, needles):
+    result = runner.invoke(app, ["flamegraph", str(profiles), *args])
     assert result.exit_code == 2
-    assert "test_big" in _text(result) and "test_small" in _text(result)
-
-
-def test_flamegraph_unknown_id_errors(profiles):
-    result = runner.invoke(app, ["flamegraph", str(profiles), "nope"])
-    assert result.exit_code == 2
-    assert "no profile matches" in _text(result)
-
-
-def test_flamegraph_id_and_worst_are_mutually_exclusive(profiles):
-    result = runner.invoke(app, ["flamegraph", str(profiles), "test_big", "--worst", "peak"])
-    assert result.exit_code == 2
-    assert "not both" in _text(result)
-
-
-def test_flamegraph_bad_report_errors(profiles):
-    result = runner.invoke(app, ["flamegraph", str(profiles), "test_big", "--report", "bogus"])
-    assert result.exit_code == 2
-    assert "unknown reporter" in _text(result)
+    text = _text(result)
+    assert all(nd in text for nd in needles)
 
 
 def test_flamegraph_empty_dir_errors(tmp_path):
