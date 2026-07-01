@@ -15,6 +15,13 @@ from pytest_benchmem.compare import (
 from tests._builders import blob, bm, write_run
 
 
+def render(runs, **kwargs):
+    """Run ``compare_runs`` into a buffer and return the rendered table text."""
+    out = StringIO()
+    compare_runs(runs, out=out, **kwargs)
+    return out.getvalue()
+
+
 def _lines(text, needle):
     """The block for ``needle``'s benchmark: its bold header line plus the rows under it.
 
@@ -35,15 +42,13 @@ def test_same_file_twice_errors_cleanly(tmp_path):
     # identical labels used to crash with IndexError on labels[0], labels[1] (#62)
     a = write_run(tmp_path / "run.json", [bm("test_x", t=1.0)])
     with pytest.raises(ValueError, match="two distinct runs"):
-        compare_runs([a, a], out=StringIO())
+        render([a, a])
 
 
 def test_single_run_prints_plain_table(tmp_path):
     # one run is a valid input: a plain readout, no cross-run multiplier or ranking colour
     a = write_run(tmp_path / "run.json", [bm("test_x", t=1.0, peak=10 * 1024**2)])
-    out = StringIO()
-    compare_runs([a], columns="time,peak", out=out)
-    text = out.getvalue()
+    text = render([a], columns="time,peak")
     assert "time (s)" in text and "peak (MiB)" in text  # the columns still render
     rows = _lines(text, "test_x")
     assert "(run)" in rows  # the single run's label still names the row
@@ -57,9 +62,7 @@ def test_single_run_multi_id_has_no_within_run_ranking(tmp_path):
         tmp_path / "run.json",
         [bm("pkg::test_op[n=1]", peak=1024), bm("pkg::test_op[n=2]", peak=10 * 1024**2)],
     )
-    out = StringIO()
-    compare_runs([a], columns="peak", group_by="func", out=out)
-    text = out.getvalue()
+    text = render([a], columns="peak", group_by="func")
     assert "test_op[n=1]" in text and "test_op[n=2]" in text
     assert "(1.0)" not in text and "(10240.00)" not in text  # no within-run multiplier
 
@@ -67,7 +70,7 @@ def test_single_run_multi_id_has_no_within_run_ranking(tmp_path):
 def test_single_run_empty_file_errors(tmp_path):
     a = write_run(tmp_path / "run.json", [])
     with pytest.raises(ValueError, match="no benchmarks"):
-        compare_runs([a], out=StringIO())
+        render([a])
 
 
 def test_distinct_files_same_stem_disambiguate(tmp_path):
@@ -77,17 +80,14 @@ def test_distinct_files_same_stem_disambiguate(tmp_path):
     (tmp_path / "v2").mkdir()
     a = write_run(tmp_path / "v1" / "bench.json", [bm("test_x", t=1.0)])
     b = write_run(tmp_path / "v2" / "bench.json", [bm("test_x", t=2.0)])
-    out = StringIO()
-    compare_runs([a, b], out=out)
-    assert "v1/bench" in out.getvalue() and "v2/bench" in out.getvalue()
+    text = render([a, b])
+    assert "v1/bench" in text and "v2/bench" in text
 
 
 def test_time_column_shows_relative_multiplier(tmp_path):
     a = write_run(tmp_path / "base.json", [bm("test_x", t=1.0), bm("test_y", t=2.0)])
     b = write_run(tmp_path / "head.json", [bm("test_x", t=1.5), bm("test_y", t=1.0)])
-    out = StringIO()
-    compare_runs([a, b], out=out)  # columns default to all; only time has data here
-    text = out.getvalue()
+    text = render([a, b])  # columns default to all; only time has data here
     assert "time (s)" in text  # unit hoisted into the column header
     assert "(1.50)" in _lines(text, "test_x")  # head 1.5 is 1.50× the best run (1.0)
     assert "(2.00)" in _lines(text, "test_y")  # base 2.0 is 2.00× the best run (1.0)
@@ -96,9 +96,7 @@ def test_time_column_shows_relative_multiplier(tmp_path):
 def test_metric_both_shows_time_and_peak_columns(tmp_path):
     a = write_run(tmp_path / "base.json", [bm("test_x", t=1.0, peak=10 * 1024**2)])
     b = write_run(tmp_path / "head.json", [bm("test_x", t=1.0, peak=12 * 1024**2)])
-    out = StringIO()
-    compare_runs([a, b], columns="time,peak", out=out)
-    text = out.getvalue()
+    text = render([a, b], columns="time,peak")
     assert "time (s)" in text and "peak (MiB)" in text  # both metric columns, each its unit
     assert "(1.20)" in _lines(text, "test_x")  # peak 12 MiB is 1.20× the best run (10)
 
@@ -106,9 +104,7 @@ def test_metric_both_shows_time_and_peak_columns(tmp_path):
 def test_columns_selects_specific_metrics(tmp_path):
     a = write_run(tmp_path / "base.json", [bm("test_x", t=1.0, peak=1024, allocations=5)])
     b = write_run(tmp_path / "head.json", [bm("test_x", t=1.0, peak=1024, allocations=9)])
-    out = StringIO()
-    compare_runs([a, b], columns="peak,allocations", out=out)
-    text = out.getvalue()
+    text = render([a, b], columns="peak,allocations")
     assert "peak (" in text and "allocations" in text and "time" not in text
 
 
@@ -116,18 +112,16 @@ def test_divider_marks_timed_untimed_boundary(tmp_path):
     # time (pytest-benchmark's timed rounds) | peak (the separate untimed memray pass)
     a = write_run(tmp_path / "a.json", [bm("test_x", t=1.0, peak=10 * 1024**2)])
     b = write_run(tmp_path / "b.json", [bm("test_x", t=1.0, peak=12 * 1024**2)])
-    out = StringIO()
-    compare_runs([a, b], columns="time,peak", stat="min", out=out)
-    assert "│" in out.getvalue()
+    text = render([a, b], columns="time,peak", stat="min")
+    assert "│" in text
 
 
 def test_no_divider_among_memory_metrics(tmp_path):
     # peak and allocated both come from the untimed pass → no provenance boundary between them
     a = write_run(tmp_path / "a.json", [bm("test_x", peak=10 * 1024**2, total_bytes=10 * 1024**2)])
     b = write_run(tmp_path / "b.json", [bm("test_x", peak=12 * 1024**2, total_bytes=12 * 1024**2)])
-    out = StringIO()
-    compare_runs([a, b], columns="peak,allocated", stat="min", out=out)
-    assert "│" not in out.getvalue()
+    text = render([a, b], columns="peak,allocated", stat="min")
+    assert "│" not in text
 
 
 def test_default_is_time_and_peak_across_every_stat(tmp_path):
@@ -139,9 +133,7 @@ def test_default_is_time_and_peak_across_every_stat(tmp_path):
     b = write_run(
         tmp_path / "b.json", [bm("test_x", t=1.0, peak=4096, allocations=7, total_bytes=9)]
     )
-    out = StringIO()
-    compare_runs([a, b], out=out)
-    text = out.getvalue()
+    text = render([a, b])
     assert "time (s)" in text and "peak (" in text  # the two headline metrics
     assert "allocated" not in text and "allocations" not in text  # opt-in only
     assert all(s in text for s in ("min", "max", "mean", "median", "stddev"))  # full spread
@@ -151,9 +143,7 @@ def test_default_drops_columns_absent_from_every_run(tmp_path):
     # timing-only runs → the memory columns have no data and are dropped, not shown all-dash
     a = write_run(tmp_path / "a.json", [bm("test_x", t=1.0)])
     b = write_run(tmp_path / "b.json", [bm("test_x", t=2.0)])
-    out = StringIO()
-    compare_runs([a, b], out=out)
-    text = out.getvalue()
+    text = render([a, b])
     assert "time (s)" in text
     assert "peak" not in text and "alloc" not in text
 
@@ -171,16 +161,14 @@ def test_compare_rejects_unknown_option(tmp_path, kwargs, match):
     a = write_run(tmp_path / "a.json", [bm("x", t=1.0, peak=1)])
     b = write_run(tmp_path / "b.json", [bm("x", t=2.0, peak=2)])
     with pytest.raises(ValueError, match=match):
-        compare_runs([a, b], out=StringIO(), **kwargs)
+        render([a, b], **kwargs)
 
 
 def test_group_by_func_clusters_variants(tmp_path):
     bms_a = [bm("pkg::test_op[n=1]", t=1.0), bm("pkg::test_op[n=2]", t=2.0)]
     bms_b = [bm("pkg::test_op[n=1]", t=1.0), bm("pkg::test_op[n=2]", t=2.0)]
     a, b = write_run(tmp_path / "a.json", bms_a), write_run(tmp_path / "b.json", bms_b)
-    out = StringIO()
-    compare_runs([a, b], group_by="func", out=out)
-    text = out.getvalue()
+    text = render([a, b], group_by="func")
     # one sub-table for the func (its bare header line), both n-variants (× both runs) under it
     assert text.splitlines().count("test_op") == 1
     assert "test_op[n=1]" in text and "test_op[n=2]" in text
@@ -190,17 +178,14 @@ def test_missing_metric_cell_shows_dash(tmp_path):
     # test_x has time in both runs but memory only in run b → its run-a peak cell is —
     a = write_run(tmp_path / "a.json", [bm("test_x", t=1.0)])
     b = write_run(tmp_path / "b.json", [bm("test_x", t=1.0, peak=1024)])
-    out = StringIO()
-    compare_runs([a, b], columns="time,peak", out=out)
-    assert "—" in _lines(out.getvalue(), "test_x")
+    text = render([a, b], columns="time,peak")
+    assert "—" in _lines(text, "test_x")
 
 
 def test_one_sided_id_shows_only_its_run(tmp_path):
     a = write_run(tmp_path / "base.json", [bm("only_a", t=1.0)])
     b = write_run(tmp_path / "head.json", [bm("only_b", t=2.0)])
-    out = StringIO()
-    compare_runs([a, b], out=out)
-    text = out.getvalue()
+    text = render([a, b])
     # each id heads its own single-id sub-table; the row under it is just the run it was seen in
     assert "(base)" in _lines(text, "only_a") and "(head)" in _lines(text, "only_b")
     assert "(head)" not in _lines(text, "only_a")  # absent run → no row, not a dash
@@ -210,7 +195,7 @@ def test_csv_writes_raw_values_per_metric_run(tmp_path):
     a = write_run(tmp_path / "base.json", [bm("test_x", peak=10 * 1024**2)])
     b = write_run(tmp_path / "head.json", [bm("test_x", peak=12 * 1024**2)])
     csv = tmp_path / "out.csv"
-    compare_runs([a, b], columns="peak", stat="min", csv=csv, out=StringIO())
+    render([a, b], columns="peak", stat="min", csv=csv)
     text = csv.read_text()
     assert "peak:min:base" in text and "peak:min:head" in text  # one column per metric:stat:run
     assert "10485760" in text and "12582912" in text  # raw bytes, not unit-scaled
@@ -219,9 +204,7 @@ def test_csv_writes_raw_values_per_metric_run(tmp_path):
 def test_sort_value_orders_rows_in_a_single_table(tmp_path):
     a = write_run(tmp_path / "a.json", [bm("small", peak=1024), bm("big", peak=10 * 1024**2)])
     b = write_run(tmp_path / "b.json", [bm("small", peak=1024), bm("big", peak=10 * 1024**2)])
-    body = StringIO()
-    compare_runs([a, b], columns="peak", group_by=None, sort="value", out=body)
-    text = body.getvalue()
+    text = render([a, b], columns="peak", group_by=None, sort="value")
     assert text.index("big") < text.index("small")  # largest in the last run first
 
 
@@ -229,9 +212,8 @@ def test_zero_value_suppresses_multiplier(tmp_path):
     # the group best is 0 → no meaningful ratio, so no (N.NN) annotation (no divide-by-zero)
     a = write_run(tmp_path / "base.json", [bm("test_x", t=0.0)])
     b = write_run(tmp_path / "head.json", [bm("test_x", t=1.0)])
-    out = StringIO()
-    compare_runs([a, b], out=out)
-    rows = _lines(out.getvalue(), "test_x")
+    text = render([a, b])
+    rows = _lines(text, "test_x")
     assert "(1.0)" not in rows and "(inf)" not in rows  # only the "(base)/(head)" parens remain
 
 
@@ -247,9 +229,8 @@ def _bm_series(name, peaks):
 def test_compare_stat_reports_distribution(tmp_path):
     a = write_run(tmp_path / "a.json", [_bm_series("test_x", [10, 20, 30])])
     b = write_run(tmp_path / "b.json", [_bm_series("test_x", [40, 50, 60])])
-    out = StringIO()
-    compare_runs([a, b], columns="peak", stat="mean", out=out)
-    rows = _lines(out.getvalue(), "test_x")
+    text = render([a, b], columns="peak", stat="mean")
+    rows = _lines(text, "test_x")
     assert "20" in rows and "50" in rows  # the per-run mean of each series
 
 
@@ -257,9 +238,7 @@ def test_stat_narrows_to_a_single_column(tmp_path):
     # --stat min collapses the spread to one column per metric
     a = write_run(tmp_path / "a.json", [bm("test_x", peak=10 * 1024**2)])
     b = write_run(tmp_path / "b.json", [bm("test_x", peak=12 * 1024**2)])
-    out = StringIO()
-    compare_runs([a, b], columns="peak", stat="min", out=out)
-    text = out.getvalue()
+    text = render([a, b], columns="peak", stat="min")
     assert "min" in text and "median" not in text and "stddev" not in text
 
 
@@ -272,9 +251,8 @@ def test_stat_selects_the_time_distribution(tmp_path):
         }
 
     pa, pb = write_run(tmp_path / "a.json", [_t(3.0)]), write_run(tmp_path / "b.json", [_t(9.0)])
-    out = StringIO()
-    compare_runs([pa, pb], columns="time", stat="max", out=out)
-    assert "9" in out.getvalue()  # head's max (9), not its min (1.0)
+    text = render([pa, pb], columns="time", stat="max")
+    assert "9" in text  # head's max (9), not its min (1.0)
 
 
 def test_three_runs_stack_as_rows_with_multipliers(tmp_path):
@@ -282,9 +260,7 @@ def test_three_runs_stack_as_rows_with_multipliers(tmp_path):
     a = write_run(tmp_path / "v1.json", [bm("test_x", peak=1 * 1024**2)])
     b = write_run(tmp_path / "v2.json", [bm("test_x", peak=2 * 1024**2)])
     c = write_run(tmp_path / "v3.json", [bm("test_x", peak=4 * 1024**2)])
-    out = StringIO()
-    compare_runs([a, b, c], columns="peak", out=out)
-    text = out.getvalue()
+    text = render([a, b, c], columns="peak")
     assert "(v1)" in text and "(v2)" in text and "(v3)" in text  # one row per run
     assert "(2.00)" in text and "(4.00)" in text  # vs the best run (v1)
     assert "change" not in text  # no delta column in the relative-multiplier model
@@ -311,9 +287,7 @@ def test_pivot_param_folds_single_run_along_the_dim(tmp_path):
             _bm_dim("m.py::test_build[v1-100]", {"semantics": "v1", "n": 100}, peak=12 * 1024**2),
         ],
     )
-    out = StringIO()
-    compare_runs([run], columns="peak", pivot="param:semantics", out=out)
-    text = out.getvalue()
+    text = render([run], columns="peak", pivot="param:semantics")
     # the pivot token is lifted out of the id, so both rows fold under one group
     assert "m.py::test_build[100]" in text
     assert "(legacy)" in text and "(v1)" in text  # series = the dim's values
@@ -331,9 +305,7 @@ def test_pivot_accepts_bare_extra_info_dim_not_in_id(tmp_path):
 
     rows = [_bm_mode("legacy", 10 * 1024**2), _bm_mode("v1", 15 * 1024**2)]
     run = write_run(tmp_path / "build.json", rows)
-    out = StringIO()
-    compare_runs([run], columns="peak", pivot="mode", out=out)
-    text = out.getvalue()
+    text = render([run], columns="peak", pivot="mode")
     assert "(legacy)" in text and "(v1)" in text
     assert "(1.50)" in text  # 15 MiB is 1.50× the best (10 MiB)
 
@@ -344,13 +316,13 @@ def test_pivot_with_multiple_runs_is_an_error(tmp_path):
     a = write_run(tmp_path / "a.json", [_bm_dim("t[legacy]", {"semantics": "legacy"}, peak=1024)])
     b = write_run(tmp_path / "b.json", [_bm_dim("t[v1]", {"semantics": "v1"}, peak=2048)])
     with pytest.raises(ValueError, match="folds a single run"):
-        compare_runs([a, b], columns="peak", pivot="param:semantics", out=StringIO())
+        render([a, b], columns="peak", pivot="param:semantics")
 
 
 def test_pivot_unknown_dim_errors_with_available(tmp_path):
     run = write_run(tmp_path / "r.json", [_bm_dim("t[100]", {"n": 100}, peak=1024)])
     with pytest.raises(ValueError, match="not a dim"):
-        compare_runs([run], columns="peak", pivot="param:nope", out=StringIO())
+        render([run], columns="peak", pivot="param:nope")
 
 
 def test_pivot_warns_when_nothing_pairs(tmp_path):
@@ -364,7 +336,7 @@ def test_pivot_warns_when_nothing_pairs(tmp_path):
         ],
     )
     with pytest.warns(UserWarning, match="left every row unpaired"):
-        compare_runs([run], columns="peak", pivot="param:semantics", out=StringIO())
+        render([run], columns="peak", pivot="param:semantics")
 
 
 def test_pivot_gate_flags_growth_first_value_vs_last(tmp_path):
@@ -477,9 +449,8 @@ def test_rss_gate_without_isolated_data_is_loud(tmp_path):
 def test_compare_notes_when_rss_requested_but_absent(tmp_path):
     a = write_run(tmp_path / "base.json", [bm("x", peak=10)])  # no rss
     b = write_run(tmp_path / "head.json", [bm("x", peak=20)])
-    buf = StringIO()
-    compare_runs([a, b], columns="peak,rss", out=buf)
-    assert "rss not recorded" in buf.getvalue()  # not a silent column drop
+    text = render([a, b], columns="peak,rss")
+    assert "rss not recorded" in text  # not a silent column drop
 
 
 def test_find_regressions_ignores_improvements(tmp_path):
