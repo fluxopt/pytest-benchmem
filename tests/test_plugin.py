@@ -698,3 +698,101 @@ def test_profile_with_gate_saves_offenders_only(pytester):
     bins = [p.name for p in out.glob("*.bin")]
     assert len(bins) == 1 and "test_m" in bins[0]  # only the offender's profile kept
     cand.stdout.fnmatch_lines(["*saved 1 memory profile(s)*", "*memray flamegraph*"])
+
+
+# --- memory-only mode: skip the timed rounds when only memory/rss is wanted (#124) ---
+
+
+def _rounds_by_name(data):
+    """``{benchmark name: timed rounds}`` from a --benchmark-json file."""
+    return {b["name"]: b["stats"]["rounds"] for b in data["benchmarks"]}
+
+
+_MEMONLY_SUITE = """
+import pytest
+
+@pytest.mark.benchmem(time=False)
+def test_mem_only(benchmark_memory):
+    benchmark_memory(lambda: [0] * 100_000)
+
+def test_timed(benchmark_memory):
+    benchmark_memory(lambda: [0] * 100_000)
+"""
+
+
+def test_time_false_marker_runs_one_timed_round(pytester):
+    # @pytest.mark.benchmem(time=False) collapses the timed rounds to a single call, while
+    # leaving the memory pass (and unmarked tests) untouched.
+    pytester.makepyfile(_MEMONLY_SUITE)
+    out = pytester.path / "b.json"
+    result = pytester.runpytest_subprocess(
+        "--benchmark-only", f"--benchmark-json={out}", "-p", "no:cacheprovider"
+    )
+    result.assert_outcomes(passed=2)
+    data = json.loads(out.read_text())
+    rounds = _rounds_by_name(data)
+    assert rounds["test_mem_only"] == 1  # timed rounds collapsed
+    assert rounds["test_timed"] > 1  # the unmarked test still times normally
+    blob = next(b for b in data["benchmarks"] if b["name"] == "test_mem_only")
+    assert blob["extra_info"]["benchmem"]["peak_bytes"]  # the memory pass still ran
+
+
+def test_memory_only_flag_collapses_all_rounds(pytester):
+    # the suite-wide --benchmark-memory-only flag applies the same skip to every benchmark
+    pytester.makepyfile(
+        "def test_a(benchmark_memory):\n"
+        "    benchmark_memory(lambda: [0] * 100_000)\n"
+        "def test_b(benchmark_memory):\n"
+        "    benchmark_memory(lambda: [0] * 100_000)\n"
+    )
+    out = pytester.path / "b.json"
+    result = pytester.runpytest_subprocess(
+        "--benchmark-only",
+        "--benchmark-memory-only",
+        f"--benchmark-json={out}",
+        "-p",
+        "no:cacheprovider",
+    )
+    result.assert_outcomes(passed=2)
+    rounds = _rounds_by_name(json.loads(out.read_text()))
+    assert rounds == {"test_a": 1, "test_b": 1}
+
+
+def test_time_true_marker_overrides_memory_only_flag(pytester):
+    # a per-test time=True opts back into full timing even under --benchmark-memory-only
+    pytester.makepyfile(
+        "import pytest\n"
+        "@pytest.mark.benchmem(time=True)\n"
+        "def test_keep_timing(benchmark_memory):\n"
+        "    benchmark_memory(lambda: [0] * 100_000)\n"
+    )
+    out = pytester.path / "b.json"
+    result = pytester.runpytest_subprocess(
+        "--benchmark-only",
+        "--benchmark-memory-only",
+        f"--benchmark-json={out}",
+        "-p",
+        "no:cacheprovider",
+    )
+    result.assert_outcomes(passed=1)
+    assert _rounds_by_name(json.loads(out.read_text()))["test_keep_timing"] > 1
+
+
+def test_time_false_on_drop_in_benchmark_patch(pytester):
+    # the --benchmark-memory patch path (the stock `benchmark` fixture) honours time=False too
+    pytester.makepyfile(
+        "import pytest\n"
+        "@pytest.mark.benchmem(time=False)\n"
+        "def test_patched(benchmark):\n"
+        "    benchmark(lambda: [0] * 100_000)\n"
+    )
+    out = pytester.path / "b.json"
+    result = pytester.runpytest_subprocess(
+        "--benchmark-only",
+        "--benchmark-memory",
+        f"--benchmark-json={out}",
+        "-p",
+        "no:cacheprovider",
+    )
+    result.assert_outcomes(passed=1)
+    assert _rounds_by_name(json.loads(out.read_text()))["test_patched"] == 1
