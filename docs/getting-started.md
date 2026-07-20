@@ -21,18 +21,10 @@ def test_sort(benchmark, n):
 
 ## 2. Run it with `--benchmark-memory`
 
-Add the flag and peak memory appends to pytest-benchmark's own table:
+Add the flag and peak memory appends to pytest-benchmark's own table — the
+`peak` columns land right of the `│` divider, after the timing columns:
 
-<!-- termynal -->
-
-```console
-$ pytest test_sortbench.py --benchmark-only --benchmark-memory
- Name (time in us)              Min                  Median         │  peak (MiB)
- ──────────────────────────────────────────────────────────────────────────────
-  test_sort[10000]           32.5830 (1.0)         41.2080 (1.0)    │       0.08
-  test_sort[100000]         321.2080 (9.86)       419.9160 (10.19)  │       0.76
-  test_sort[1000000]      3,669.2920 (112.61)   4,331.5421 (105.11) │       7.63
-```
+![Colored pytest output: the benchmark table with peak·min / peak·mean / peak·max memory columns after the timing columns, separated by a vertical divider](assets/benchmark-memory-table.svg){ .termshot }
 
 That's it. Left of the divider is pytest-benchmark's timing, untouched; `peak` (right) is a
 separate, untimed memray pass on the same call — so the allocator hooks cost the timing

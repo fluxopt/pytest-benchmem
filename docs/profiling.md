@@ -50,6 +50,13 @@ heaviest, so you don't have to look up the id. `--report` passes through to any 
 (`flamegraph` default, plus `table` / `tree` / `summary` / `stats`); HTML reports land next to the
 `.bin` (override with `-o`, overwrite with `-f`).
 
+The interactive `flamegraph` is the richest view, but `summary` is the fastest read in the
+terminal: it ranks every frame by the memory it owns, so the offender is whatever tops the
+**Own Memory %** column. Here a single list comprehension in `_rows` owns 83% of peak — that's
+the line to change:
+
+![Colored benchmem flamegraph summary table: frames ranked by total and own memory, a list comprehension owning 83% of peak highlighted red](assets/flamegraph-summary.svg){ .termshot }
+
 ## Native-backed workloads: attribute the C/Rust memory
 
 By default the capture records **Python** frames only. For a native-backed workload (polars/Rust,

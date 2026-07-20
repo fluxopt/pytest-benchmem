@@ -161,6 +161,38 @@ body[data-md-color-scheme="slate"] .jupyter-wrapper {
   opacity: 0.85;
 }
 
+/* --- Root font size: cap Material's wide-screen upscaling ---
+   Material bumps the root font to 137.5% at ≥100em and 150% at ≥125em, so on a
+   desktop monitor body text and headings render oversized. Pin it flat at the
+   ≥76.25em base (125% → 20px root, 16px body) across all wider breakpoints so
+   the docs read at a comfortable size everywhere. Tune the one value below to
+   taste — lower shrinks the whole type scale proportionally. */
+@media screen and (min-width: 100em) {
+  html { font-size: 125%; }
+}
+
+@media screen and (min-width: 125em) {
+  html { font-size: 125%; }
+}
+
+/* --- Terminal screenshots (rich-exported SVGs under docs/assets/) ---
+   Real, colored tool output captured as SVG (see scripts/gen_doc_assets.py).
+   The SVG already carries its own dark window chrome, so we only size and
+   center it, and add a soft shadow for depth. Marked in markdown with
+   `{ .termshot }` on the image. */
+.md-typeset img.termshot {
+  display: block;
+  width: 100%;
+  max-width: 44rem;
+  margin: 1.2rem auto 1.6rem;
+  border-radius: 10px;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.18);
+}
+
+[data-md-color-scheme="slate"] .md-typeset img.termshot {
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+}
+
 /* --- Layout: wider content, denser sidebars --- */
 
 :root {

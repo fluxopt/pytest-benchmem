@@ -55,6 +55,24 @@ for _out, _row in [(baseline, "[(i, i * i) for i in range(n)]"),
                     f"--benchmark-json={_out}"], check=True, capture_output=True)
 ```
 
+## The numbers behind the charts
+
+Before the shapes, the raw table — `benchmem compare --diff`, baseline (list of tuples) vs the
+heavier candidate (list of dicts). Every `Δ%` is red because the candidate carries more per row.
+A chart makes the *trend* obvious where the table only lists points:
+
+```{code-cell} ipython3
+:tags: [hide-input]
+
+result = subprocess.run(
+    ["benchmem", "compare", str(baseline), str(candidate),
+     "--columns", "peak", "--diff", "--sort", "value"],
+    env={**os.environ, "FORCE_COLOR": "1", "COLUMNS": "84"},
+    capture_output=True, text=True, check=True,
+)
+print(result.stdout)
+```
+
 ## Scaling — how cost grows with input size
 
 **Scaling** (one run) draws cost vs. input size — here the baseline's peak-memory curve:
