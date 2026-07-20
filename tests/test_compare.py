@@ -365,6 +365,102 @@ def test_pivot_gate_needs_two_values(tmp_path):
         find_pivot_regressions(run, "param:semantics", [parse_threshold("peak:10%")])
 
 
+# --- --format md: GitHub-flavored markdown ----------------------------------------
+
+
+def test_markdown_format_emits_github_table(tmp_path):
+    a = write_run(tmp_path / "base.json", [bm("pkg::test_x", t=1.0, peak=10 * 1024**2)])
+    b = write_run(tmp_path / "head.json", [bm("pkg::test_x", t=1.0, peak=12 * 1024**2)])
+    out = StringIO()
+    compare_runs([a, b], columns="peak", stat="min", out_format="md", out=out)
+    text = out.getvalue()
+    assert "#### pkg::test_x" in text  # one section per group (default group-by fullname)
+    assert "| name | peak (MiB) min |" in text  # header with the scaled unit
+    assert "| :--- | ---: |" in text  # left-aligned name, right-aligned metric
+    assert "| (head) | 12.00 (1.20) |" in text  # value + multiplier, no colour
+    assert "\x1b[" not in text and "─" not in text  # no ANSI, no rich box-drawing
+
+
+def test_markdown_escapes_pipes_in_ids(tmp_path):
+    # a literal pipe in a node id must not break the table grid; multi-id group → id is a row cell
+    a = write_run(tmp_path / "a.json", [bm("test_x[a|b]", peak=1024), bm("test_y", peak=2048)])
+    out = StringIO()
+    compare_runs([a], columns="peak", group_by=None, out_format="md", out=out)
+    assert r"test_x[a\|b] (a)" in out.getvalue()  # pipe escaped inside the cell
+
+
+def test_unknown_format_raises(tmp_path):
+    a = write_run(tmp_path / "a.json", [bm("x", peak=1)])
+    with pytest.raises(ValueError, match="unknown --format"):
+        compare_runs([a], out_format="xml", out=StringIO())
+
+
+# --- the diff view (--diff): metrics on the row axis, one Δ column per run --------
+
+
+def test_diff_collapses_to_one_row_per_id_with_signed_delta(tmp_path):
+    # single metric → the metric column is dropped; baseline value, then a Δ column per later run
+    a = write_run(tmp_path / "base.json", [bm("pkg::test_x", peak=58 * 1024**2)])
+    b = write_run(tmp_path / "head.json", [bm("pkg::test_x", peak=72 * 1024**2)])
+    out = StringIO()
+    compare_runs([a, b], columns="peak", group_by=None, diff=True, out_format="md", out=out)
+    text = out.getvalue()
+    assert "| name | peak base | head |" in text  # baseline value + the head run's Δ column
+    assert "| test_x | 58 MiB | +24.1% |" in text  # one row: baseline value, then the Δ
+    assert "72" not in text  # the head *absolute* is dropped as redundant (= base × 1.24)
+    assert "(base)" not in text and "(head)" not in text  # collapsed: not two series rows
+
+
+def test_diff_metrics_are_rows_not_columns(tmp_path):
+    # multiple metrics → each is its own row under the id, columns stay flat (base + Δ per run)
+    a = write_run(tmp_path / "base.json", [bm("test_x", t=1.0, peak=1024)])
+    b = write_run(tmp_path / "head.json", [bm("test_x", t=2.0, peak=1024)])
+    out = StringIO()
+    compare_runs([a, b], columns="time,peak", group_by=None, diff=True, out_format="md", out=out)
+    text = out.getvalue()
+    assert "| name | metric | base | head |" in text  # a metric column, then base + one Δ
+    assert (
+        "| test_x | time |" in text and "|  | peak |" in text
+    )  # id named once, blank continuation
+    assert "mean" not in text and "median" not in text  # --stat defaults to just min under --diff
+    assert "+100.0%" in text  # time doubled
+    assert "0.0%" in text  # peak unchanged reads a plain 0.0%, no sign
+
+
+def test_diff_needs_at_least_two_series(tmp_path):
+    one = write_run(tmp_path / "a.json", [bm("x", peak=1)])
+    with pytest.raises(ValueError, match="at least two series"):
+        compare_runs([one], diff=True, out=StringIO())
+
+
+def test_diff_over_three_runs_measures_each_against_the_first(tmp_path):
+    # a sweep: baseline is the first run; every later run gets a Δ% column vs it (not vs previous)
+    v1 = write_run(tmp_path / "v1.json", [bm("test_x", peak=10 * 1024**2)])
+    v2 = write_run(tmp_path / "v2.json", [bm("test_x", peak=11 * 1024**2)])
+    main = write_run(tmp_path / "main.json", [bm("test_x", peak=15 * 1024**2)])
+    out = StringIO()
+    compare_runs([v1, v2, main], columns="peak", diff=True, out_format="md", out=out)
+    text = out.getvalue()
+    # one baseline value column, then one Δ column per later run, each headed by its run label
+    assert "| name | peak base | v2 | main |" in text
+    assert "+10.0%" in text  # v2 11 MiB vs the v1 baseline (10) — not vs nothing
+    assert "+50.0%" in text  # main 15 MiB vs the v1 baseline (10), NOT vs v2 (would be +36%)
+
+
+def test_diff_over_a_pivot_pair(tmp_path):
+    # a single run folded along a two-value dim is a valid base->head pair
+    run = write_run(
+        tmp_path / "build.json",
+        [
+            _bm_dim("m.py::test_build[legacy]", {"semantics": "legacy"}, peak=10 * 1024**2),
+            _bm_dim("m.py::test_build[v1]", {"semantics": "v1"}, peak=12 * 1024**2),
+        ],
+    )
+    out = StringIO()
+    compare_runs([run], columns="peak", diff=True, pivot="param:semantics", out=out)
+    assert "+20.0%" in out.getvalue()  # legacy 10 MiB -> v1 12 MiB
+
+
 # --- the regression gate (--fail-on) ---------------------------------------------
 
 

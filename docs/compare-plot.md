@@ -241,6 +241,50 @@ raw numbers for another tool with `--csv out.csv`:
 benchmem compare baseline.json candidate.json --columns peak --sort value --csv peak.csv
 ```
 
+#### The diff view
+
+The default table lays each run out as its own row. For a straight baseline read, `--diff`
+collapses it: metrics move onto the **row** axis (one row per benchmark × metric) and the columns
+stay flat — the baseline value, then a signed `Δ%` per later run vs it, coloured by direction (red
+on growth, green on shrink). The per-run *absolute* is dropped as redundant (it's `base × (1+Δ)`),
+so the table stays narrow no matter how many metrics or runs. Across a **sweep of many runs**, the
+first run is the baseline and each later run gets its own `Δ%` column, so you read the drift from
+the baseline at a glance (matching how `--fail-on` gates the last run against the first):
+
+```bash
+benchmem compare v1.json v2.json main.json --columns time,peak --diff --sort change
+```
+
+```
+name               metric   base      v2       main
+test_build[wide]   time     0.0121s   +28.1%   +36.4%
+                   peak     58 MiB    +3.4%    +24.1%
+test_build[tall]   time     0.0089s    -6.7%    -6.7%
+                   peak     41 MiB    -2.4%     -4.9%
+```
+
+With a single metric the `metric` column is dropped, so a two-run diff is as tight as it gets —
+`name | peak base | head`. It needs at least two series — two or more runs, or one run folded with
+`--pivot` over a multi-value dim — and defaults `--stat` to `min` (a full spread would multiply the
+rows). It renders in both `--format table` (colored) and `--format md`, and `--sort change` floats
+the biggest regression to the top.
+
+#### Sharing the table
+
+For a readable artifact rather than the terminal view, you have three paths:
+
+```bash
+benchmem compare base.json head.json --format md      # GitHub-flavored markdown to stdout
+benchmem compare base.json head.json > out.txt        # plain monospace table (rich drops colour)
+benchmem compare base.json head.json --csv out.csv    # raw unscaled values for another tool
+```
+
+`--format md` is the one to pipe into a PR comment or `$GITHUB_STEP_SUMMARY` — it renders as a
+native table on GitHub. It drops the terminal's best-green/worst-red colour (GFM strips inline
+styles), but the `(N.NN)` multiplier already carries it: `(1.0)` is the best, larger is worse.
+A plain `> out.txt` redirect is enough when you just need a monospace block to paste in `` ``` ``
+fences.
+
 ### Gating without separate files
 
 The approach above keeps two JSON files. Alternatively, gate **inline** against

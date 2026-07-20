@@ -331,6 +331,24 @@ def compare(
             "not how rows cluster. Mutually exclusive with multiple runs.",
         ),
     ] = None,
+    out_format: Annotated[
+        str,
+        typer.Option(
+            "--format",
+            help="Output format: table (rich terminal, default) | md (GitHub-flavored markdown to "
+            "stdout — redirect to a file or pipe into a PR comment / $GITHUB_STEP_SUMMARY).",
+        ),
+    ] = "table",
+    diff: Annotated[
+        bool,
+        typer.Option(
+            "--diff",
+            help="Collapsed baseline view: one row per benchmark × metric, showing the first run's "
+            "value then a coloured signed Δ% per later run vs that baseline (flat in metric/run "
+            "count — metrics go on the row axis). Needs at least two series (runs, or one run with "
+            "--pivot over a multi-value dim) and defaults --stat to min.",
+        ),
+    ] = False,
     csv: Annotated[
         Path | None,
         typer.Option(help="Also write the raw (unscaled) comparison to this CSV file."),
@@ -367,7 +385,15 @@ def compare(
 
     with _exit_on_value_error():
         compare_runs(
-            runs, columns=columns, group_by=group_by, stat=stat, sort=sort, pivot=pivot, csv=csv
+            runs,
+            columns=columns,
+            group_by=group_by,
+            stat=stat,
+            sort=sort,
+            pivot=pivot,
+            out_format=out_format,
+            diff=diff,
+            csv=csv,
         )
 
     if not fail_on:

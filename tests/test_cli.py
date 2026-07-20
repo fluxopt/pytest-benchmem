@@ -126,6 +126,31 @@ def test_compare_missing_file_exits_2(tmp_path):
     assert "missing" in _text(result)
 
 
+def test_compare_format_md_emits_markdown(tmp_path):
+    a = write_run(tmp_path / "base.json", [bm("test_x", peak=10 * 1024**2)])
+    b = write_run(tmp_path / "head.json", [bm("test_x", peak=12 * 1024**2)])
+    result = runner.invoke(app, ["compare", str(a), str(b), "--columns", "peak", "--format", "md"])
+    assert result.exit_code == 0, _text(result)
+    assert "#### test_x" in result.output and "| name |" in result.output
+    assert "(1.20)" in result.output  # multiplier carried; no colour needed
+
+
+def test_compare_diff_shows_base_head_delta(tmp_path):
+    a = write_run(tmp_path / "base.json", [bm("test_x", peak=10 * 1024**2)])
+    b = write_run(tmp_path / "head.json", [bm("test_x", peak=12 * 1024**2)])
+    result = runner.invoke(app, ["compare", str(a), str(b), "--columns", "peak", "--diff"])
+    assert result.exit_code == 0, _text(result)
+    assert "peak base" in result.output and "head" in result.output  # baseline value + Δ column
+    assert "+20.0%" in result.output  # 10 -> 12 MiB, shown as a signed Δ
+
+
+def test_compare_diff_needs_a_pair_errors(tmp_path):
+    a = write_run(tmp_path / "solo.json", [bm("test_x", peak=10 * 1024**2)])
+    result = runner.invoke(app, ["compare", str(a), "--diff"])
+    assert result.exit_code == 1  # same wrapper as compare's other validation errors
+    assert "at least two series" in _text(result)
+
+
 def test_compare_pivot_folds_run_along_dim(tmp_path):
     # --pivot makes a param the comparison series within one run (the A/B a file-pair gives)
     def _b(sem, peak):
