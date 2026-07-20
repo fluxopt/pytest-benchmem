@@ -50,46 +50,57 @@ heaviest, so you don't have to look up the id. `--report` passes through to any 
 (`flamegraph` default, plus `table` / `tree` / `summary` / `stats`); HTML reports land next to the
 `.bin` (override with `-o`, overwrite with `-f`).
 
-## A worked example — pairwise distances
+## A worked example — building a k-d tree
 
 The captures below profile a real, tested function
-([`examples/pairwise.py`](https://github.com/fluxopt/pytest-benchmem/blob/main/examples/pairwise.py)):
-the squared Euclidean distance between every pair of `n` points — a staple of clustering and
-nearest-neighbour search. The obvious vectorised form hides a memory trap: subtracting the two
-broadcast views materialises a full `(n, n, d)` temporary before reducing it back to `(n, n)`.
+([`examples/kdtree.py`](https://github.com/fluxopt/pytest-benchmem/blob/main/examples/kdtree.py)):
+building a 2-D k-d tree, which recursively splits points by alternating axes — the backbone of
+nearest-neighbour search. The naive build commits a classic mistake: every node keeps a reference
+to the whole sublist it was split from, so the finished tree retains `O(n·log n)` points instead
+of `O(n)`.
 
 ```python
-def pairwise_sq_dists_naive(x):           # x: (n, d) points
-    diff = x[:, None, :] - x[None, :, :]  # (n, n, d) — the memory hog
-    return np.einsum("ijk,ijk->ij", diff, diff)
+def build_kdtree_naive(points, depth=0):
+    if not points:
+        return None
+    ordered = sorted(points, key=lambda p: p[depth % 2])
+    mid = len(ordered) // 2
+    node = RegionNode(ordered[mid], ordered)   # ← the leak: keeps the whole sublist alive
+    node.left = build_kdtree_naive(ordered[:mid], depth + 1)
+    node.right = build_kdtree_naive(ordered[mid + 1 :], depth + 1)
+    return node
 ```
 
-Render its profile as a flamegraph — the `diff = x[:, None, :] - x[None, :, :]` frame spans the
-full width, so that one broadcast line *is* essentially the whole allocation:
+Because the work is recursive, the flamegraph is a proper tree — every `build_kdtree_naive` frame
+is a subtree, and the per-level `sorted(...)` and slice allocations are what pile up:
 
-![memray flamegraph: the diff = x[:, None, :] - x[None, :, :] frame of pairwise_sq_dists_naive spans the full width of the flame](assets/flamegraph.png){ .flameshot }
+![memray flamegraph: a deep recursive pyramid of build_kdtree_naive frames, one subtree per recursive call](assets/flamegraph.png){ .flameshot }
 
-The flamegraph is the richest view; `summary` is the fastest read in the terminal — it ranks
-every frame by the memory it owns, so the offender tops the **Own Memory %** column. For
-`n=800, d=16` that `(n, n, d)` temporary is **94% of peak** (82 MB of 87 MB) — one line, and
-exactly the line to change:
+`summary` is the fastest read in the terminal — it ranks every frame by the memory it owns, so the
+offender tops the **Own Memory %** column. Here `build_kdtree_naive` owns **95% of peak** — the
+retained sublists:
 
 <figure class="termshot" markdown="span">
-![Colored benchmem flamegraph summary table: pairwise_sq_dists_naive tops the Own Memory column at 94% of peak, the broadcast temporary highlighted red](assets/flamegraph-summary.svg)
+![Colored benchmem flamegraph summary table: build_kdtree_naive tops the Own Memory column at 95% of peak](assets/flamegraph-summary.svg)
 </figure>
 
-The fix uses the identity ‖xᵢ − xⱼ‖² = ‖xᵢ‖² + ‖xⱼ‖² − 2·xᵢ·xⱼ, so nothing larger than the
-`(n, n)` result is ever allocated:
+The fix keeps only the split point and its children — nothing else is retained:
 
 ```python
-def pairwise_sq_dists(x):
-    gram = x @ x.T
-    sq = np.einsum("ij,ij->i", x, x)
-    return np.maximum(sq[:, None] + sq[None, :] - 2.0 * gram, 0.0)
+def build_kdtree(points, depth=0):
+    if not points:
+        return None
+    ordered = sorted(points, key=lambda p: p[depth % 2])
+    mid = len(ordered) // 2
+    return Node(
+        ordered[mid],
+        build_kdtree(ordered[:mid], depth + 1),
+        build_kdtree(ordered[mid + 1 :], depth + 1),
+    )
 ```
 
-Re-run and [confirm the drop](compare-runs.md) — peak falls ~82%, the result unchanged (the test
-asserts both forms agree).
+Re-run and [confirm the drop](compare-runs.md) — peak falls by ~80% (the tree is back to `O(n)`),
+and the test asserts both builds produce the identical tree.
 
 ## Native-backed workloads: attribute the C/Rust memory
 

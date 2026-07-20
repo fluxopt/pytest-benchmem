@@ -2,32 +2,42 @@
 
 from __future__ import annotations
 
-import numpy as np
+import random
+
 import pytest
 
-from examples.pairwise import pairwise_sq_dists, pairwise_sq_dists_naive
+from examples.kdtree import Node, Point, build_kdtree, build_kdtree_naive, split_points
 
 
-@pytest.mark.parametrize("n, d", [(1, 3), (2, 1), (40, 5), (64, 16)])
-def test_pairwise_matches_naive(n: int, d: int) -> None:
-    """The optimised form gives the same distances as the naive broadcast form."""
-    rng = np.random.default_rng(0)
-    x = rng.standard_normal((n, d))
-    assert np.allclose(pairwise_sq_dists(x), pairwise_sq_dists_naive(x), atol=1e-8)
+def _points(n: int, seed: int = 0) -> list[Point]:
+    rng = random.Random(seed)
+    return [(rng.random(), rng.random()) for _ in range(n)]
 
 
-def test_pairwise_properties() -> None:
-    """Distances are symmetric, zero on the diagonal, and non-negative."""
-    rng = np.random.default_rng(1)
-    x = rng.standard_normal((32, 4))
-    d = pairwise_sq_dists(x)
-    assert np.allclose(d, d.T)
-    assert np.allclose(np.diag(d), 0.0, atol=1e-8)
-    assert np.all(d >= 0.0)
+@pytest.mark.parametrize("n", [0, 1, 2, 3, 50, 257])
+def test_naive_and_fixed_build_the_same_tree(n: int) -> None:
+    """The memory fix must not change the tree — only what each node retains."""
+    pts = _points(n)
+    assert split_points(build_kdtree(pts)) == split_points(build_kdtree_naive(pts))
 
 
-def test_pairwise_matches_manual() -> None:
-    """A hand-computed distance matches, so the identity isn't self-referential."""
-    x = np.array([[0.0, 0.0], [3.0, 4.0]])
-    got = pairwise_sq_dists(x)
-    assert got[0, 1] == pytest.approx(25.0)  # 3² + 4²
+def test_tree_contains_every_point_once() -> None:
+    """Every input point appears exactly once as a split point."""
+    pts = _points(200)
+    assert sorted(split_points(build_kdtree(pts))) == sorted(pts)
+
+
+def test_kdtree_invariant() -> None:
+    """On each node's split axis, its whole left subtree is ≤ it and right is ≥."""
+    pts = _points(200)
+
+    def check(node: Node | None, depth: int) -> None:
+        if node is None:
+            return
+        axis = depth % 2
+        assert all(p[axis] <= node.point[axis] for p in split_points(node.left))
+        assert all(p[axis] >= node.point[axis] for p in split_points(node.right))
+        check(node.left, depth + 1)
+        check(node.right, depth + 1)
+
+    check(build_kdtree(pts), 0)
