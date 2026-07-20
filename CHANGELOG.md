@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.9](https://github.com/fluxopt/pytest-benchmem/compare/v0.4.8...v0.4.9) (2026-07-20)
+
+
+### Features
+
+* `benchmem compare` gains `--format md` and a `--diff` baseline view ([#147](https://github.com/fluxopt/pytest-benchmem/issues/147)) ([dfd6645](https://github.com/fluxopt/pytest-benchmem/commit/dfd66456701563b3996cbfea7aed4992b5add6be))
+
 ## [0.4.8](https://github.com/fluxopt/pytest-benchmem/compare/v0.4.7...v0.4.8) (2026-07-01)
 
 
