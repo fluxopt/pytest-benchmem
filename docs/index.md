@@ -32,12 +32,11 @@ pytest --benchmark-only --benchmark-memory --benchmark-memory-profile profiles/
 benchmem flamegraph profiles/ --worst peak --open
 ```
 
-The report ranks every frame by the memory it owns — here a naive pairwise-distance function's
-`(n, n, d)` broadcast temporary is **94% of peak**:
+The flamegraph renders the allocating call paths — here a naive pairwise-distance function's
+`(n, n, d)` broadcast line spans the full width, i.e. **94% of peak** in a single line
+(the [profiling guide](profiling.md) breaks down the same run frame by frame):
 
-<figure class="termshot" markdown="span">
-![Colored benchmem flamegraph summary table: pairwise_sq_dists_naive tops the Own Memory column at 94% of peak](assets/flamegraph-summary.svg)
-</figure>
+![memray flamegraph: one broadcast line of pairwise_sq_dists_naive spans the full width of the flame](assets/flamegraph.png){ .flameshot }
 Then change the code, re-run, and diff the two runs to confirm the peak actually dropped
 (green is a shrink):
 

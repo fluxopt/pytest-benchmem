@@ -175,6 +175,62 @@ def _scale_svg(svg: str) -> str:
     return svg.replace("<svg ", f'<svg width="{w:.0f}" height="{h:.0f}" ', 1)
 
 
+def _chrome_binary() -> str | None:
+    """Locate a headless-capable Chrome/Chromium, or None."""
+    for path in (
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    ):
+        if Path(path).exists():
+            return path
+    for name in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome"):
+        found = shutil.which(name)
+        if found:
+            return found
+    return None
+
+
+def flamegraph_png(html: Path, out: Path) -> None:
+    """Screenshot the flamegraph HTML to a PNG (needs Chrome + ImageMagick).
+
+    memray's default "Hide Irrelevant Frames" is on, so only the user's own
+    frames render — the image never shows a local filesystem path. The chart
+    lays itself into the viewport, so we capture tall (a short window renders no
+    flame) and crop to the toolbar + the shallow flame. Skipped, leaving any
+    existing PNG untouched, if either tool is missing.
+    """
+    chrome = _chrome_binary()
+    cropper = shutil.which("magick") or shutil.which("convert")
+    if chrome is None or cropper is None:
+        missing = "Chrome" if chrome is None else "ImageMagick (magick/convert)"
+        print(f"  ! flamegraph.png skipped — {missing} not found")
+        return
+    full = WORK / "_flamegraph_full.png"
+    subprocess.run(
+        [
+            chrome,
+            "--headless",
+            "--disable-gpu",
+            "--hide-scrollbars",
+            "--force-color-profile=srgb",
+            "--window-size=1400,760",
+            f"--screenshot={full}",
+            html.as_uri(),
+        ],
+        check=True,
+        capture_output=True,
+        timeout=60,
+    )
+    # Crop off the empty area below the flame (height tuned to this example's depth).
+    subprocess.run(
+        [cropper, str(full), "-crop", "1400x322+0+0", "+repage", str(out)],
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
+    print(f"  wrote {out.relative_to(REPO)}")
+
+
 def main() -> None:
     """Run the benchmark suites and write every doc-asset SVG under docs/assets/."""
     ASSETS.mkdir(parents=True, exist_ok=True)
@@ -273,6 +329,18 @@ def main() -> None:
         ASSETS / "flamegraph-summary.svg",
         "benchmem flamegraph profiles/ --worst peak --report summary",
     )
+
+    # 6. The actual flamegraph, as an image: render the interactive HTML, then
+    # screenshot it. The naive `diff = ...` line spans the full width.
+    print("benchmem flamegraph HTML + screenshot…")
+    fg_html = WORK / "flamegraph.html"
+    run(
+        ["benchmem", "flamegraph", str(profiles), "--worst", "peak", "-o", str(fg_html)],
+        WORK,
+        cols=100,
+        timeout=120,
+    )
+    flamegraph_png(fg_html, ASSETS / "flamegraph.png")
 
     shutil.rmtree(WORK, ignore_errors=True)
     print("done.")

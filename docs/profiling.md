@@ -64,10 +64,15 @@ def pairwise_sq_dists_naive(x):           # x: (n, d) points
     return np.einsum("ijk,ijk->ij", diff, diff)
 ```
 
-The interactive `flamegraph` is the richest view, but `summary` is the fastest read in the
-terminal: it ranks every frame by the memory it owns, so the offender is whatever tops the
-**Own Memory %** column. For `n=800, d=16` that one `(n, n, d)` temporary is **94% of peak**
-(82 MB of 87 MB) — one line, and exactly the line to change:
+Render its profile as a flamegraph — the `diff = x[:, None, :] - x[None, :, :]` frame spans the
+full width, so that one broadcast line *is* essentially the whole allocation:
+
+![memray flamegraph: the diff = x[:, None, :] - x[None, :, :] frame of pairwise_sq_dists_naive spans the full width of the flame](assets/flamegraph.png){ .flameshot }
+
+The flamegraph is the richest view; `summary` is the fastest read in the terminal — it ranks
+every frame by the memory it owns, so the offender tops the **Own Memory %** column. For
+`n=800, d=16` that `(n, n, d)` temporary is **94% of peak** (82 MB of 87 MB) — one line, and
+exactly the line to change:
 
 <figure class="termshot" markdown="span">
 ![Colored benchmem flamegraph summary table: pairwise_sq_dists_naive tops the Own Memory column at 94% of peak, the broadcast temporary highlighted red](assets/flamegraph-summary.svg)
