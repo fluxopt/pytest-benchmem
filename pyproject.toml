@@ -1,7 +1,7 @@
 [project]
 name = "pytest-benchmem"
 dynamic = ["version"]
-description = "The memory companion to pytest-benchmark: a memray peak-memory pass on the same test, plus dims-aware plots and cross-version sweeps."
+description = "Memory benchmarking for Python, on the pytest-benchmark suites you already time: a memray peak-memory pass on the same tests, plus param-driven plots and cross-version sweeps."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
