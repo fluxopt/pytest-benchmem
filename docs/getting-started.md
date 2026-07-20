@@ -24,8 +24,9 @@ def test_sort(benchmark, n):
 Add the flag and peak memory appends to pytest-benchmark's own table — the
 `peak` columns land right of the `│` divider, after the timing columns:
 
-![Colored pytest output: the benchmark table with peak·min / peak·mean / peak·max memory columns after the timing columns, separated by a vertical divider](assets/benchmark-memory-table.svg){ .termshot }
-
+<figure class="termshot" markdown="span">
+![Colored pytest output: the benchmark table with peak·min / peak·mean / peak·max memory columns after the timing columns, separated by a vertical divider](assets/benchmark-memory-table.svg)
+</figure>
 That's it. Left of the divider is pytest-benchmark's timing, untouched; `peak` (right) is a
 separate, untimed memray pass on the same call — so the allocator hooks cost the timing
 nothing. It's opt-in at the run level: **without** the flag, your suite runs exactly as

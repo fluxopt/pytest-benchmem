@@ -105,8 +105,9 @@ With a single metric the `metric` column is dropped, so a two-run diff is as tig
 Confirming the list-of-dicts → list-of-tuples fix from [Find where memory goes](profiling.md),
 the two-run peak diff shows the drop at a glance — each `Δ%` green because peak shrank:
 
-![Colored benchmem compare --diff table: peak memory dropping about 48% on each benchmark, shown as green negative percentages](assets/compare-diff.svg){ .termshot }
-
+<figure class="termshot" markdown="span">
+![Colored benchmem compare --diff table: peak memory dropping about 48% on each benchmark, shown as green negative percentages](assets/compare-diff.svg)
+</figure>
 ## Order and export
 
 Order rows with `--sort` (`name` | `value` — largest last-run first — | `change` — biggest growth

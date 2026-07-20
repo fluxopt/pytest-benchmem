@@ -55,8 +55,9 @@ terminal: it ranks every frame by the memory it owns, so the offender is whateve
 **Own Memory %** column. Here a single list comprehension in `_rows` owns 83% of peak — that's
 the line to change:
 
-![Colored benchmem flamegraph summary table: frames ranked by total and own memory, a list comprehension owning 83% of peak highlighted red](assets/flamegraph-summary.svg){ .termshot }
-
+<figure class="termshot" markdown="span">
+![Colored benchmem flamegraph summary table: frames ranked by total and own memory, a list comprehension owning 83% of peak highlighted red](assets/flamegraph-summary.svg)
+</figure>
 ## Native-backed workloads: attribute the C/Rust memory
 
 By default the capture records **Python** frames only. For a native-backed workload (polars/Rust,

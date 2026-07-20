@@ -17,8 +17,9 @@ def test_sort(benchmark, n):          # your existing pytest-benchmark test, unc
 Add one flag, and peak memory appears in pytest-benchmark's own table, after the timing
 columns. Same test, same run, one JSON file, no second tool:
 
-![Colored pytest output: the benchmark table with peak·min / peak·mean / peak·max memory columns after the timing columns](assets/benchmark-memory-table.svg){ .termshot }
-
+<figure class="termshot" markdown="span">
+![Colored pytest output: the benchmark table with peak·min / peak·mean / peak·max memory columns after the timing columns](assets/benchmark-memory-table.svg)
+</figure>
 [Quickstart →](getting-started.md){ .md-button .md-button--primary }
 
 ## Find where the memory goes
@@ -34,8 +35,9 @@ benchmem flamegraph profiles/ --worst peak --open
 The report ranks every frame by the memory it owns — here a single list comprehension in
 `_rows` accounts for 83% of peak:
 
-![Colored benchmem flamegraph summary table: frames ranked by total and own memory, with a list comprehension owning 83% of peak](assets/flamegraph-summary.svg){ .termshot }
-
+<figure class="termshot" markdown="span">
+![Colored benchmem flamegraph summary table: frames ranked by total and own memory, with a list comprehension owning 83% of peak](assets/flamegraph-summary.svg)
+</figure>
 Then change the code, re-run, and diff the two runs to confirm the peak actually dropped
 (green is a shrink):
 
@@ -43,8 +45,9 @@ Then change the code, re-run, and diff the two runs to confirm the peak actually
 benchmem compare before.json after.json --columns peak --diff
 ```
 
-![Colored benchmem compare --diff table: peak memory dropping ~48% per benchmark, shown as green negative percentages](assets/compare-diff.svg){ .termshot }
-
+<figure class="termshot" markdown="span">
+![Colored benchmem compare --diff table: peak memory dropping ~48% per benchmark, shown as green negative percentages](assets/compare-diff.svg)
+</figure>
 ## Is this for you?
 
 **Yes, if** you maintain code where memory is a real constraint — large arrays, dataframes,

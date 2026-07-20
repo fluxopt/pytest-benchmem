@@ -30,6 +30,13 @@ from rich.text import Text
 REPO = Path(__file__).resolve().parent.parent
 ASSETS = REPO / "docs" / "assets"
 
+# rich exports its SVGs with only a viewBox (no width/height), so a browser
+# would rescale each to whatever CSS width it's given — making a narrow table's
+# text larger than a wide one's. We instead bake an explicit width/height at one
+# fixed SCALE into every asset, so all three render their monospace text at the
+# same physical size (roughly the page's code font) regardless of column count.
+SCALE = 0.62
+
 # A short, fixed work dir so memray records tidy paths (report.py:2) in the
 # summary instead of a long, machine-specific temp path.
 WORK = Path("/tmp/benchmem-doc-assets")
@@ -127,8 +134,23 @@ def to_svg(ansi: str, out: Path, title: str) -> None:
     width = min(max(content + 1, len(title) + 8), 140)
     console = Console(record=True, width=width, file=io.StringIO(), force_terminal=True)
     console.print(Text.from_ansi(ansi))
-    out.write_text(console.export_svg(title=title))
+    svg = _scale_svg(console.export_svg(title=title))
+    out.write_text(svg)
     print(f"  wrote {out.relative_to(REPO)}  ({width} cols)")
+
+
+def _scale_svg(svg: str) -> str:
+    """Give the SVG an explicit width/height at the shared SCALE.
+
+    Without this the SVG carries only a viewBox, so the browser sizes it to the
+    CSS width and the rendered text size varies from asset to asset. Pinning
+    width/height to viewBox * SCALE makes the text size uniform everywhere.
+    """
+    m = re.search(r'viewBox="0 0 ([\d.]+) ([\d.]+)"', svg)
+    if not m:
+        return svg
+    w, h = float(m.group(1)) * SCALE, float(m.group(2)) * SCALE
+    return svg.replace("<svg ", f'<svg width="{w:.0f}" height="{h:.0f}" ', 1)
 
 
 def main() -> None:
@@ -146,9 +168,9 @@ def main() -> None:
     sort_suite = WORK / "test_sortbench.py"
     sort_suite.write_text(SORT_SUITE)
     table = run(
-        [py, "-m", "pytest", str(sort_suite), *BENCH, "--benchmark-columns=min,median"],
+        [py, "-m", "pytest", str(sort_suite), *BENCH, "--benchmark-columns=min"],
         WORK,
-        cols=118,
+        cols=110,
     )
     to_svg(
         table, ASSETS / "benchmark-memory-table.svg", "pytest --benchmark-only --benchmark-memory"
@@ -205,11 +227,7 @@ def main() -> None:
         WORK,
         cols=84,
     )
-    to_svg(
-        diff,
-        ASSETS / "compare-diff.svg",
-        "benchmem compare before.json after.json --columns peak --diff",
-    )
+    to_svg(diff, ASSETS / "compare-diff.svg", "benchmem compare --columns peak --diff")
 
     # 5. flamegraph summary: localise the allocation to the offending frame.
     print("profiled run + benchmem flamegraph --report summary…")

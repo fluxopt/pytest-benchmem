@@ -177,19 +177,25 @@ body[data-md-color-scheme="slate"] .jupyter-wrapper {
 
 /* --- Terminal screenshots (rich-exported SVGs under docs/assets/) ---
    Real, colored tool output captured as SVG (see scripts/gen_doc_assets.py).
-   The SVG already carries its own dark window chrome, so we only size and
-   center it, and add a soft shadow for depth. Marked in markdown with
-   `{ .termshot }` on the image. */
-.md-typeset img.termshot {
-  display: block;
-  width: 100%;
-  max-width: 44rem;
-  margin: 1.2rem auto 1.6rem;
+   Each SVG bakes its own width/height at a shared scale, so the monospace text
+   renders at the SAME physical size across every figure — we must NOT stretch
+   them to a common CSS width, or that uniformity is lost. The figure centers a
+   narrow capture and lets a wide one scroll horizontally (like a code block),
+   rather than rescaling it. `.termshot` is the wrapping <figure>. */
+.md-typeset figure.termshot {
+  margin: 1.2rem 0 1.6rem;
+  overflow-x: auto;
+  text-align: center;
+}
+
+.md-typeset figure.termshot img {
+  display: inline-block;
+  max-width: none;              /* keep the baked size; don't shrink -> uniform text */
   border-radius: 10px;
   box-shadow: 0 6px 22px rgba(0, 0, 0, 0.18);
 }
 
-[data-md-color-scheme="slate"] .md-typeset img.termshot {
+[data-md-color-scheme="slate"] .md-typeset figure.termshot img {
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
 }
 
