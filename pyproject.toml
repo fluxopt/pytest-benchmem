@@ -26,10 +26,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-plot = ["pandas", "plotly>=5", "typer>=0.12"]
+plot = ["pandas>=2", "plotly>=5", "typer>=0.12"]
 # kaleido (and a Chromium it drives) is only needed to export a plot as a static image
 # (plot -o out.png / .svg / .pdf); kept out of [plot] so interactive HTML stays lightweight.
-plot-static = ["pytest-benchmem[plot]", "kaleido"]
+plot-static = ["pytest-benchmem[plot]", "kaleido>=0.2"]
 
 [project.scripts]
 benchmem = "pytest_benchmem.cli:app"
@@ -52,16 +52,16 @@ source = "vcs"
 
 [dependency-groups]
 # mypy <2.1: 2.1.0 errors on numpy's PEP 695 stub under python_version=3.11. Lift once fixed upstream.
-dev = ["ruff", "mypy<2.2", "pre-commit", "pytest-benchmem[plot-static]", { include-group = "docs" }]
+dev = ["ruff>=0.6", "mypy>=1,<2.2", "pre-commit>=3", "pytest-benchmem[plot-static]", { include-group = "docs" }]
 docs = [
-    "jupytext",
-    "ipykernel",
-    "mkdocs",
-    "mkdocs-material",
-    "mkdocs-jupyter",
-    "mkdocstrings[python]",
+    "jupytext>=1.16",
+    "ipykernel>=6",
+    "mkdocs>=1.6",
+    "mkdocs-material>=9",
+    "mkdocs-jupyter>=0.24",
+    "mkdocstrings[python]>=0.26",
     "mkdocs-typer2[mkdocs,termynal]>=0.4.1",
-    "mkdocs-macros-plugin",
+    "mkdocs-macros-plugin>=1",
     "termynal>=0.14.0",
 ]
 

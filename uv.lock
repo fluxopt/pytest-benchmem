@@ -1908,10 +1908,10 @@ docs = [
 
 [package.metadata]
 requires-dist = [
-    { name = "kaleido", marker = "extra == 'plot-static'" },
+    { name = "kaleido", marker = "extra == 'plot-static'", specifier = ">=0.2" },
     { name = "memray", marker = "sys_platform == 'darwin' or sys_platform == 'linux'", specifier = ">=1.11,<2" },
-    { name = "pandas", marker = "extra == 'plot'" },
-    { name = "pandas", marker = "extra == 'plot-static'" },
+    { name = "pandas", marker = "extra == 'plot'", specifier = ">=2" },
+    { name = "pandas", marker = "extra == 'plot-static'", specifier = ">=2" },
     { name = "plotly", marker = "extra == 'plot'", specifier = ">=5" },
     { name = "plotly", marker = "extra == 'plot-static'", specifier = ">=5" },
     { name = "pytest", specifier = ">=7" },
@@ -1924,29 +1924,29 @@ provides-extras = ["plot", "plot-static"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "ipykernel" },
-    { name = "jupytext" },
-    { name = "mkdocs" },
-    { name = "mkdocs-jupyter" },
-    { name = "mkdocs-macros-plugin" },
-    { name = "mkdocs-material" },
+    { name = "ipykernel", specifier = ">=6" },
+    { name = "jupytext", specifier = ">=1.16" },
+    { name = "mkdocs", specifier = ">=1.6" },
+    { name = "mkdocs-jupyter", specifier = ">=0.24" },
+    { name = "mkdocs-macros-plugin", specifier = ">=1" },
+    { name = "mkdocs-material", specifier = ">=9" },
     { name = "mkdocs-typer2", extras = ["mkdocs", "termynal"], specifier = ">=0.4.1" },
-    { name = "mkdocstrings", extras = ["python"] },
-    { name = "mypy", specifier = "<2.2" },
-    { name = "pre-commit" },
+    { name = "mkdocstrings", extras = ["python"], specifier = ">=0.26" },
+    { name = "mypy", specifier = ">=1,<2.2" },
+    { name = "pre-commit", specifier = ">=3" },
     { name = "pytest-benchmem", extras = ["plot-static"] },
-    { name = "ruff" },
+    { name = "ruff", specifier = ">=0.6" },
     { name = "termynal", specifier = ">=0.14.0" },
 ]
 docs = [
-    { name = "ipykernel" },
-    { name = "jupytext" },
-    { name = "mkdocs" },
-    { name = "mkdocs-jupyter" },
-    { name = "mkdocs-macros-plugin" },
-    { name = "mkdocs-material" },
+    { name = "ipykernel", specifier = ">=6" },
+    { name = "jupytext", specifier = ">=1.16" },
+    { name = "mkdocs", specifier = ">=1.6" },
+    { name = "mkdocs-jupyter", specifier = ">=0.24" },
+    { name = "mkdocs-macros-plugin", specifier = ">=1" },
+    { name = "mkdocs-material", specifier = ">=9" },
     { name = "mkdocs-typer2", extras = ["mkdocs", "termynal"], specifier = ">=0.4.1" },
-    { name = "mkdocstrings", extras = ["python"] },
+    { name = "mkdocstrings", extras = ["python"], specifier = ">=0.26" },
     { name = "termynal", specifier = ">=0.14.0" },
 ]
 
