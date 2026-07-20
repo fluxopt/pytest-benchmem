@@ -32,12 +32,11 @@ pytest --benchmark-only --benchmark-memory --benchmark-memory-profile profiles/
 benchmem flamegraph profiles/ --worst peak --open
 ```
 
-The report ranks every frame by the memory it owns — here a single list comprehension in
-`_rows` accounts for 83% of peak:
+The flamegraph renders the allocating call paths — here a naive k-d tree build recurses into a deep
+tree, and the sublists it retains at every level add up to **~95% of peak**
+(the [profiling guide](profiling.md) breaks the same run down frame by frame):
 
-<figure class="termshot" markdown="span">
-![Colored benchmem flamegraph summary table: frames ranked by total and own memory, with a list comprehension owning 83% of peak](assets/flamegraph-summary.svg)
-</figure>
+![memray flamegraph: a deep recursive pyramid of build_kdtree_naive frames, one subtree per recursive call](assets/flamegraph.png){ .flameshot }
 Then change the code, re-run, and diff the two runs to confirm the peak actually dropped
 (green is a shrink):
 
@@ -46,7 +45,7 @@ benchmem compare before.json after.json --columns peak --diff
 ```
 
 <figure class="termshot" markdown="span">
-![Colored benchmem compare --diff table: peak memory dropping ~48% per benchmark, shown as green negative percentages](assets/compare-diff.svg)
+![Colored benchmem compare --diff table: peak memory dropping ~80% per benchmark, shown as green negative percentages](assets/compare-diff.svg)
 </figure>
 ## Is this for you?
 

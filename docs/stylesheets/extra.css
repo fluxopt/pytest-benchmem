@@ -199,6 +199,22 @@ body[data-md-color-scheme="slate"] .jupyter-wrapper {
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
 }
 
+/* Flamegraph screenshot (a raster PNG from memray's HTML report). Unlike the
+   baked-size terminal SVGs, this one scales to fit the column — it's a single
+   standalone image, so there's no cross-figure size to stay uniform with. */
+.md-typeset img.flameshot {
+  display: block;
+  width: 100%;
+  max-width: 52rem;
+  margin: 1.2rem auto 1.6rem;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+}
+
+[data-md-color-scheme="slate"] .md-typeset img.flameshot {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
 /* --- Layout: wider content, denser sidebars --- */
 
 :root {

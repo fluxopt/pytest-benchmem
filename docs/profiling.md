@@ -50,14 +50,58 @@ heaviest, so you don't have to look up the id. `--report` passes through to any 
 (`flamegraph` default, plus `table` / `tree` / `summary` / `stats`); HTML reports land next to the
 `.bin` (override with `-o`, overwrite with `-f`).
 
-The interactive `flamegraph` is the richest view, but `summary` is the fastest read in the
-terminal: it ranks every frame by the memory it owns, so the offender is whatever tops the
-**Own Memory %** column. Here a single list comprehension in `_rows` owns 83% of peak — that's
-the line to change:
+## A worked example — building a k-d tree
+
+The captures below profile a real, tested function
+([`examples/kdtree.py`](https://github.com/fluxopt/pytest-benchmem/blob/main/examples/kdtree.py)):
+building a 2-D k-d tree, which recursively splits points by alternating axes — the backbone of
+nearest-neighbour search. The naive build commits a classic mistake: every node keeps a reference
+to the whole sublist it was split from, so the finished tree retains `O(n·log n)` points instead
+of `O(n)`.
+
+```python
+def build_kdtree_naive(points, depth=0):
+    if not points:
+        return None
+    ordered = sorted(points, key=lambda p: p[depth % 2])
+    mid = len(ordered) // 2
+    node = RegionNode(ordered[mid], ordered)   # ← the leak: keeps the whole sublist alive
+    node.left = build_kdtree_naive(ordered[:mid], depth + 1)
+    node.right = build_kdtree_naive(ordered[mid + 1 :], depth + 1)
+    return node
+```
+
+Because the work is recursive, the flamegraph is a proper tree — every `build_kdtree_naive` frame
+is a subtree, and the per-level `sorted(...)` and slice allocations are what pile up:
+
+![memray flamegraph: a deep recursive pyramid of build_kdtree_naive frames, one subtree per recursive call](assets/flamegraph.png){ .flameshot }
+
+`summary` is the fastest read in the terminal — it ranks every frame by the memory it owns, so the
+offender tops the **Own Memory %** column. Here `build_kdtree_naive` owns **95% of peak** — the
+retained sublists:
 
 <figure class="termshot" markdown="span">
-![Colored benchmem flamegraph summary table: frames ranked by total and own memory, a list comprehension owning 83% of peak highlighted red](assets/flamegraph-summary.svg)
+![Colored benchmem flamegraph summary table: build_kdtree_naive tops the Own Memory column at 95% of peak](assets/flamegraph-summary.svg)
 </figure>
+
+The fix keeps only the split point and its children — nothing else is retained:
+
+```python
+def build_kdtree(points, depth=0):
+    if not points:
+        return None
+    ordered = sorted(points, key=lambda p: p[depth % 2])
+    mid = len(ordered) // 2
+    return Node(
+        ordered[mid],
+        build_kdtree(ordered[:mid], depth + 1),
+        build_kdtree(ordered[mid + 1 :], depth + 1),
+    )
+```
+
+Re-run and [confirm the drop](compare-runs.md) — peak falls by ~80% (the tree is back to `O(n)`),
+and the test asserts both builds produce the identical tree.
+
 ## Native-backed workloads: attribute the C/Rust memory
 
 By default the capture records **Python** frames only. For a native-backed workload (polars/Rust,
