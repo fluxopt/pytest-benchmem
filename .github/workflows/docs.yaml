@@ -24,5 +24,5 @@ jobs:
           enable-cache: true
       # Build the notebooks from their jupytext sources, then build+execute the site.
       - run: uv sync --group docs --frozen
-      - run: uv run jupytext --to ipynb docs/compare-plot.md
+      - run: uv run jupytext --to ipynb docs/visualize.md
       - run: uv run mkdocs gh-deploy --force

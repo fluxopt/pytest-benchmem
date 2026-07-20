@@ -42,7 +42,8 @@ before. Add `--benchmark-json=run.json` to save both metrics to one file.
 ## 3. Where to go next
 
 - Want `allocated` / `allocations` too, or a different table layout? → [Choosing a metric](metrics.md)
-- Want to diff two runs or fail CI on a regression? → [Compare & gate CI](compare-plot.ipynb)
+- Want to diff two runs? → [Compare two runs](compare-runs.md)
+- Want to fail CI on a memory regression? → [Catch regressions in CI](catch-regressions.md)
 - Want to slice tables and plots by an axis (input size, op, …)? → [Grouping by dims](dims.md)
 
 ---

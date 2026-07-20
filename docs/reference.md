@@ -3,8 +3,8 @@
 Every flag, marker, fixture, CLI command, and public function. The CLI and Python API
 below are rendered live from the source; the pytest surface (flags, marker, fixture, blob
 schema) is curated here. For the narrative versions see [Quickstart](getting-started.md),
-[Choosing a metric](metrics.md), [Grouping by dims](dims.md), and
-[Compare & gate CI](compare-plot.ipynb).
+[Choosing a metric](metrics.md), [Grouping by dims](dims.md), [Compare two runs](compare-runs.md),
+and [Catch regressions in CI](catch-regressions.md).
 
 ## pytest command-line flags
 
@@ -17,7 +17,7 @@ Timing regressions still use pytest-benchmark's own `--benchmark-compare` /
 `--benchmark-compare-fail`; the `--benchmark-memory-compare*` flags are the memory
 mirror. Their baseline comes from pytest-benchmark's storage (`.benchmarks/`) — save
 one first with `--benchmark-save=NAME` or `--benchmark-autosave`, or the gate finds
-nothing and passes. See [Gate CI on a regression](compare-plot.ipynb#gate-ci-on-a-regression).
+nothing and passes. See [Gating without separate files](catch-regressions.md#gating-without-separate-files).
 
 ## The `benchmem` marker
 

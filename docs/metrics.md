@@ -54,7 +54,7 @@ summed) and `allocations` counts the calls. A peak gate would wave this churn th
 
 ## Where to go next
 
-- See these metrics in a delta table or plot, and gate CI on them → [Compare & gate CI](compare-plot.ipynb)
+- See these metrics in a delta table → [Compare two runs](compare-runs.md), a plot → [Visualize memory](visualize.ipynb), or a CI gate → [Catch regressions in CI](catch-regressions.md)
 - Every flag and the blob schema → [Reference](reference.md)
 
 ---
@@ -65,7 +65,7 @@ summed) and `allocations` counts the calls. A peak gate would wave this churn th
     `allocations` is often the best tripwire — it's near-deterministic, so a change there is
     almost always real behaviour, not measurement noise. `peak` answers the capacity
     question; `allocated` catches churn regressions a peak gate would miss. You can gate on
-    several at once — see [Compare & gate CI](compare-plot.ipynb).
+    several at once — see [Catch regressions in CI](catch-regressions.md).
 
 ### Repeats & adaptive sampling
 
