@@ -17,17 +17,9 @@ def test_sort(benchmark, n):          # your existing pytest-benchmark test, unc
 Add one flag, and peak memory appears in pytest-benchmark's own table, after the timing
 columns. Same test, same run, one JSON file, no second tool:
 
-<!-- termynal -->
-
-```console
-$ pytest --benchmark-only --benchmark-memory
- Name (time in us)              Min                  Median         │  peak (MiB)
- ──────────────────────────────────────────────────────────────────────────────
-  test_sort[10000]           32.5830 (1.0)         41.2080 (1.0)    │       0.08
-  test_sort[100000]         321.2080 (9.86)       419.9160 (10.19)  │       0.76
-  test_sort[1000000]      3,669.2920 (112.61)   4,331.5421 (105.11) │       7.63
-```
-
+<figure class="termshot" markdown="span">
+![Colored pytest output: the benchmark table with peak·min / peak·mean / peak·max memory columns after the timing columns](assets/benchmark-memory-table.svg)
+</figure>
 [Quickstart →](getting-started.md){ .md-button .md-button--primary }
 
 ## Find where the memory goes
@@ -40,12 +32,22 @@ pytest --benchmark-only --benchmark-memory --benchmark-memory-profile profiles/
 benchmem flamegraph profiles/ --worst peak --open
 ```
 
-Then change the code, re-run, and diff the two runs to confirm the peak actually dropped:
+The report ranks every frame by the memory it owns — here a single list comprehension in
+`_rows` accounts for 83% of peak:
+
+<figure class="termshot" markdown="span">
+![Colored benchmem flamegraph summary table: frames ranked by total and own memory, with a list comprehension owning 83% of peak](assets/flamegraph-summary.svg)
+</figure>
+Then change the code, re-run, and diff the two runs to confirm the peak actually dropped
+(green is a shrink):
 
 ```bash
 benchmem compare before.json after.json --columns peak --diff
 ```
 
+<figure class="termshot" markdown="span">
+![Colored benchmem compare --diff table: peak memory dropping ~48% per benchmark, shown as green negative percentages](assets/compare-diff.svg)
+</figure>
 ## Is this for you?
 
 **Yes, if** you maintain code where memory is a real constraint — large arrays, dataframes,
