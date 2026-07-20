@@ -455,6 +455,30 @@ def test_markdown_escapes_pipes_in_ids(tmp_path):
     assert r"test_x[a\|b] (a)" in out.getvalue()  # pipe escaped inside the cell
 
 
+def test_html_format_emits_standalone_sortable_page(tmp_path):
+    a = _write(tmp_path / "base.json", [_bm("pkg::test_x", t=1.0, peak=10 * 1024**2)])
+    b = _write(tmp_path / "head.json", [_bm("pkg::test_x", t=1.0, peak=12 * 1024**2)])
+    out = StringIO()
+    compare_runs([a, b], columns="peak", stat="min", out_format="html", out=out)
+    text = out.getvalue()
+    assert text.startswith("<!doctype html>")  # standalone document, not a fragment
+    assert "<style>" in text and "<script>" in text  # self-contained: no external assets
+    assert "aria-sort" in text  # the click-to-sort handler drives aria-sort on the header
+    assert '<td class="worst" data-v="12582912.0">12.00 (1.20)</td>' in text  # colour + sort key
+    assert '<td class="best" data-v="10485760.0">10.00 (1.0)</td>' in text  # best cell is green
+    assert "\x1b[" not in text and "─" not in text  # no ANSI, no rich box-drawing
+
+
+def test_html_escapes_markup_in_ids(tmp_path):
+    # a node id carrying HTML metacharacters must be escaped, not injected into the page
+    a = _write(tmp_path / "a.json", [_bm("test_x[<b>]", peak=1024), _bm("test_y", peak=2048)])
+    out = StringIO()
+    compare_runs([a], columns="peak", group_by=None, out_format="html", out=out)
+    text = out.getvalue()
+    assert "test_x[&lt;b&gt;] (a)" in text  # angle brackets escaped inside the cell
+    assert "<b>" not in text  # and never emitted as live markup
+
+
 def test_unknown_format_raises(tmp_path):
     a = _write(tmp_path / "a.json", [_bm("x", peak=1)])
     with pytest.raises(ValueError, match="unknown --format"):

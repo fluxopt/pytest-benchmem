@@ -263,7 +263,9 @@ def compare(
         typer.Option(
             "--format",
             help="Output format: table (rich terminal, default) | md (GitHub-flavored markdown to "
-            "stdout — redirect to a file or pipe into a PR comment / $GITHUB_STEP_SUMMARY).",
+            "stdout — redirect to a file or pipe into a PR comment / $GITHUB_STEP_SUMMARY) | html "
+            "(standalone colored, click-to-sort page to stdout — redirect to a .html for a CI "
+            "artifact).",
         ),
     ] = "table",
     csv: Annotated[

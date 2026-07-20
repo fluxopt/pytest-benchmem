@@ -16,6 +16,7 @@ mirroring pytest-benchmark's ``--benchmark-compare-fail=min:5%`` grammar, for me
 
 from __future__ import annotations
 
+import html
 import math
 import re
 import sys
@@ -380,6 +381,110 @@ def _md_escape(text: str) -> str:
     return text.replace("|", "\\|")
 
 
+#: Self-contained page styling for ``--format html`` — theme-aware (light/dark), tabular
+#: numerals, and best-green/worst-red cells mirroring the terminal's ``rank_style``.
+_HTML_STYLE = """\
+:root{--fg:#1a1a1a;--bg:#fff;--line:#e4e4e4;--muted:#666;--best:#0a7a2f;\
+--best-bg:#e7f6ec;--worst:#b3261e;--worst-bg:#fdeceb;--accent:#2563eb}
+@media(prefers-color-scheme:dark){:root{--fg:#e8e8e8;--bg:#161616;--line:#333;\
+--muted:#9a9a9a;--best:#4ade80;--best-bg:#12331e;--worst:#f87171;--worst-bg:#331414;\
+--accent:#60a5fa}}
+body{font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;color:var(--fg);\
+background:var(--bg);margin:2rem auto;max-width:64rem;padding:0 1rem}
+h1{font-size:1.3rem}h2{font-size:1rem;margin:1.6rem 0 .3rem}
+.wrap{overflow-x:auto}
+table.cmp{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+table.cmp th,table.cmp td{padding:.35rem .6rem;border-bottom:1px solid var(--line);\
+text-align:right;white-space:nowrap}
+table.cmp th:first-child,table.cmp td:first-child{text-align:left}
+table.cmp th{cursor:pointer;user-select:none;color:var(--muted);font-weight:600;\
+border-bottom:2px solid var(--line)}
+table.cmp th small{font-weight:400}
+table.cmp th[aria-sort=ascending]::after{content:" \\25B2";color:var(--accent)}
+table.cmp th[aria-sort=descending]::after{content:" \\25BC";color:var(--accent)}
+td.best{color:var(--best);background:var(--best-bg)}
+td.worst{color:var(--worst);background:var(--worst-bg)}
+.note{color:var(--worst)}"""
+
+#: Click-a-header sort for every ``table.cmp``: numeric by each cell's ``data-v`` (missing values
+#: sink to the bottom), else alphabetic on the name column. Vanilla, no dependency.
+_HTML_SCRIPT = """\
+document.querySelectorAll('table.cmp').forEach(function(t){
+ var body=t.tBodies[0];
+ t.querySelectorAll('th').forEach(function(th,col){
+  th.addEventListener('click',function(){
+   var asc=th.getAttribute('aria-sort')!=='ascending';
+   t.querySelectorAll('th').forEach(function(o){o.removeAttribute('aria-sort')});
+   th.setAttribute('aria-sort',asc?'ascending':'descending');
+   Array.prototype.slice.call(body.rows).sort(function(a,b){
+    var x=a.cells[col].dataset.v,y=b.cells[col].dataset.v,r;
+    if(x===undefined&&y===undefined)
+     r=a.cells[col].textContent.localeCompare(b.cells[col].textContent);
+    else r=(x===undefined?Infinity:parseFloat(x))-(y===undefined?Infinity:parseFloat(y));
+    return asc?r:-r;
+   }).forEach(function(row){body.appendChild(row)});
+  });
+ });
+});"""
+
+
+def _render_html(
+    out: TextIO | None,
+    views: Sequence[_GroupView],
+    values: dict[tuple[str, str, str], float],
+    *,
+    single: bool,
+    rss_missing: bool,
+) -> None:
+    """Write the comparison as a standalone, self-contained HTML page.
+
+    One ``<table>`` per group, best-green/worst-red cells (inline CSS survives outside GitHub),
+    the ``(N.NN)`` multiplier, and click-a-header sorting via ~20 lines of vanilla JS. No external
+    assets — open the file, or upload it as a CI artifact. GitHub PR comments strip
+    ``<style>``/``<script>``, so use ``md`` there.
+    """
+    esc = html.escape
+    lines = [
+        "<!doctype html>",
+        '<html lang="en"><head><meta charset="utf-8">',
+        '<meta name="viewport" content="width=device-width, initial-scale=1">',
+        "<title>benchmem compare</title>",
+        f"<style>{_HTML_STYLE}</style>",
+        "</head><body>",
+        "<h1>benchmem compare</h1>",
+    ]
+    if rss_missing:
+        lines.append(f'<p class="note">{esc(_RSS_MISSING_NOTE)}</p>')
+    for view in views:
+        heads = "".join(
+            f"<th>{esc(c.metric)}{f' ({esc(c.uname)})' if c.uname else ''}"
+            f"<br><small>{esc(c.stat)}</small></th>"
+            for c in view.cols
+        )
+        lines += [
+            f"<h2>{esc(view.title)}</h2>",
+            '<div class="wrap"><table class="cmp"><thead><tr><th>name</th>',
+            heads,
+            "</tr></thead><tbody>",
+        ]
+        for i, lab in view.rows:
+            cells = [f"<td>{esc(_row_label(i, lab, view.single_id))}</td>"]
+            for c in view.cols:
+                if (c.col_id, i, lab) not in values:
+                    cells.append("<td>—</td>")
+                    continue
+                v = values[(c.col_id, i, lab)]
+                body = _cell_body(v, c.factor, c.unit) + ("" if single else _mult(v, c.best))
+                rank = None if single else rank_style(v, c.best, c.worst)
+                klass = {"green": "best", "red": "worst"}.get(rank or "", "")
+                attr = f' class="{klass}"' if klass else ""
+                cells.append(f'<td{attr} data-v="{v}">{esc(body)}</td>')
+            lines.append("<tr>" + "".join(cells) + "</tr>")
+        lines.append("</tbody></table></div>")
+    lines += [f"<script>{_HTML_SCRIPT}</script>", "</body></html>"]
+    (out or sys.stdout).write("\n".join(lines) + "\n")
+
+
 def _render_markdown(
     out: TextIO | None,
     views: Sequence[_GroupView],
@@ -458,14 +563,15 @@ def compare_runs(
     dropped rather than shown all dashes (so timing-only runs collapse to just ``time``).
     ``sort`` orders rows within a group: ``name``, ``value`` (largest in the last series), or
     ``change`` (biggest growth first). ``out_format`` picks the rendering — ``table`` (the rich
-    terminal default) or ``md`` (GitHub-flavored markdown to ``out``, for a PR comment or
-    ``$GITHUB_STEP_SUMMARY``); both render the same model. ``csv`` also writes the raw (unscaled)
+    terminal default), ``md`` (GitHub-flavored markdown to ``out``, for a PR comment or
+    ``$GITHUB_STEP_SUMMARY``), or ``html`` (a standalone, click-to-sort, colored page to ``out``,
+    for a CI artifact); all three render the same model. ``csv`` also writes the raw (unscaled)
     comparison to a file.
     """
     if sort not in _SORTS:
         raise ValueError(f"unknown --sort {sort!r}; use one of {', '.join(_SORTS)}")
-    if out_format not in ("table", "md"):
-        raise ValueError(f"unknown --format {out_format!r}; use table or md")
+    if out_format not in ("table", "md", "html"):
+        raise ValueError(f"unknown --format {out_format!r}; use table, md, or html")
     metrics, stats = _resolve_columns(columns), _resolve_stats(stat)
     labels, values, units, dims = _load_columns(runs, metrics, stats, pivot)
     if not labels:
@@ -493,8 +599,8 @@ def compare_runs(
     # would conflate "timing-only file" with "forgot to mark the benchmark isolate").
     rss_missing = "rss" in metrics and not any(col.startswith("rss:") for col in with_data)
     views = _build_views(groups, cols, values, units, labels, sort)
-    render = _render_markdown if out_format == "md" else _render_rich
-    render(out, views, values, single=single, rss_missing=rss_missing)
+    renderers = {"table": _render_rich, "md": _render_markdown, "html": _render_html}
+    renderers[out_format](out, views, values, single=single, rss_missing=rss_missing)
 
 
 # --- regression gate (--fail-on) -------------------------------------------------

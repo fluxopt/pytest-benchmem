@@ -125,6 +125,18 @@ def test_compare_format_md_emits_markdown(tmp_path):
     assert "(1.20)" in result.output  # multiplier carried; no colour needed
 
 
+def test_compare_format_html_emits_standalone_page(tmp_path):
+    a = _run(tmp_path, "base.json", [_bm("test_x", peak=10 * 1024**2)])
+    b = _run(tmp_path, "head.json", [_bm("test_x", peak=12 * 1024**2)])
+    result = runner.invoke(
+        app, ["compare", str(a), str(b), "--columns", "peak", "--format", "html"]
+    )
+    assert result.exit_code == 0, _text(result)
+    assert result.output.startswith("<!doctype html>")
+    assert "<table" in result.output and "aria-sort" in result.output  # sortable table
+    assert "(1.20)" in result.output  # multiplier carried alongside the colour
+
+
 def test_compare_pivot_folds_run_along_dim(tmp_path):
     # --pivot makes a param the comparison series within one run (the A/B a file-pair gives)
     def _b(sem, peak):

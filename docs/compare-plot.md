@@ -243,10 +243,11 @@ benchmem compare baseline.json candidate.json --columns peak --sort value --csv 
 
 #### Sharing the table
 
-For a readable artifact rather than the terminal view, you have three paths:
+For a readable artifact rather than the terminal view, you have four paths:
 
 ```bash
 benchmem compare base.json head.json --format md      # GitHub-flavored markdown to stdout
+benchmem compare base.json head.json --format html > report.html  # standalone colored, sortable page
 benchmem compare base.json head.json > out.txt        # plain monospace table (rich drops colour)
 benchmem compare base.json head.json --csv out.csv    # raw unscaled values for another tool
 ```
@@ -254,6 +255,12 @@ benchmem compare base.json head.json --csv out.csv    # raw unscaled values for 
 `--format md` is the one to pipe into a PR comment or `$GITHUB_STEP_SUMMARY` — it renders as a
 native table on GitHub. It drops the terminal's best-green/worst-red colour (GFM strips inline
 styles), but the `(N.NN)` multiplier already carries it: `(1.0)` is the best, larger is worse.
+
+`--format html` keeps the colour *and* adds click-a-header sorting: a self-contained page (inline
+CSS/JS, no external assets, light/dark aware) for when you want to sort by peak or time and eyeball
+the outliers. GitHub strips `<style>`/`<script>` from comments, so this is for opening locally or
+publishing as a CI artifact / GitHub Pages — use `md` for an inline PR comment.
+
 A plain `> out.txt` redirect is enough when you just need a monospace block to paste in `` ``` ``
 fences.
 
