@@ -601,13 +601,50 @@ body[data-md-color-scheme="slate"] .jupyter-wrapper {
   padding-left: 0.6em;
 }
 
+/* Stream/text output (the `benchmem …` terminal tables). mkdocs-jupyter inlines
+   `.jp-RenderedText pre { font-size: var(--jp-code-font-size) }` later in the cascade, so an
+   equal-specificity rule loses — pin an explicit, smaller size (dense tables read better small,
+   and it keeps output visibly secondary to the 14.5px input code) and win with the extra class. */
+.jupyter-wrapper .jp-OutputArea .jp-RenderedText pre,
 .jupyter-wrapper .jp-RenderedText pre {
   background: transparent;
   border: none;
   padding: 0.3em 0.75em;
   margin: 0;
-  font-size: 0.85em;
+  font-size: 12px;
   line-height: 1.4;
+}
+
+/* ANSI colours for the rendered terminal output (rich emits colour because the notebook sets
+   FORCE_COLOR=1). mkdocs-jupyter ships a single light-oriented palette with no dark variant, so
+   green/red wash out on the slate scheme — and its selector (`.jupyter-wrapper .jp-RenderedText
+   pre .ansi-*-fg`) needs the `body[scheme]` prefix here to be outranked. Map to the compare
+   table's own semantics: green = best / shrink, red = worst / growth, yellow = the rss note.
+   `-intense` variants (rich's bright colours) get the same value. */
+body[data-md-color-scheme="default"] .jupyter-wrapper .jp-RenderedText pre .ansi-red-fg,
+body[data-md-color-scheme="default"] .jupyter-wrapper .jp-RenderedText pre .ansi-red-intense-fg {
+  color: #cf222e;   /* red — readable on the light code bg */
+}
+body[data-md-color-scheme="default"] .jupyter-wrapper .jp-RenderedText pre .ansi-green-fg,
+body[data-md-color-scheme="default"] .jupyter-wrapper .jp-RenderedText pre .ansi-green-intense-fg {
+  color: #1a7f37;   /* green */
+}
+body[data-md-color-scheme="default"] .jupyter-wrapper .jp-RenderedText pre .ansi-yellow-fg,
+body[data-md-color-scheme="default"] .jupyter-wrapper .jp-RenderedText pre .ansi-yellow-intense-fg {
+  color: #9a6700;   /* amber — the rss-missing note */
+}
+
+body[data-md-color-scheme="slate"] .jupyter-wrapper .jp-RenderedText pre .ansi-red-fg,
+body[data-md-color-scheme="slate"] .jupyter-wrapper .jp-RenderedText pre .ansi-red-intense-fg {
+  color: #ff7b72;   /* brighter red for contrast on the dark slate bg */
+}
+body[data-md-color-scheme="slate"] .jupyter-wrapper .jp-RenderedText pre .ansi-green-fg,
+body[data-md-color-scheme="slate"] .jupyter-wrapper .jp-RenderedText pre .ansi-green-intense-fg {
+  color: #3fb950;   /* brighter green */
+}
+body[data-md-color-scheme="slate"] .jupyter-wrapper .jp-RenderedText pre .ansi-yellow-fg,
+body[data-md-color-scheme="slate"] .jupyter-wrapper .jp-RenderedText pre .ansi-yellow-intense-fg {
+  color: #d29922;   /* brighter amber */
 }
 
 /* Markdown cells: aggressive heading spacing.
