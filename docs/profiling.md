@@ -50,14 +50,42 @@ heaviest, so you don't have to look up the id. `--report` passes through to any 
 (`flamegraph` default, plus `table` / `tree` / `summary` / `stats`); HTML reports land next to the
 `.bin` (override with `-o`, overwrite with `-f`).
 
+## A worked example — pairwise distances
+
+The captures below profile a real, tested function
+([`examples/pairwise.py`](https://github.com/fluxopt/pytest-benchmem/blob/main/examples/pairwise.py)):
+the squared Euclidean distance between every pair of `n` points — a staple of clustering and
+nearest-neighbour search. The obvious vectorised form hides a memory trap: subtracting the two
+broadcast views materialises a full `(n, n, d)` temporary before reducing it back to `(n, n)`.
+
+```python
+def pairwise_sq_dists_naive(x):           # x: (n, d) points
+    diff = x[:, None, :] - x[None, :, :]  # (n, n, d) — the memory hog
+    return np.einsum("ijk,ijk->ij", diff, diff)
+```
+
 The interactive `flamegraph` is the richest view, but `summary` is the fastest read in the
 terminal: it ranks every frame by the memory it owns, so the offender is whatever tops the
-**Own Memory %** column. Here a single list comprehension in `_rows` owns 83% of peak — that's
-the line to change:
+**Own Memory %** column. For `n=800, d=16` that one `(n, n, d)` temporary is **94% of peak**
+(82 MB of 87 MB) — one line, and exactly the line to change:
 
 <figure class="termshot" markdown="span">
-![Colored benchmem flamegraph summary table: frames ranked by total and own memory, a list comprehension owning 83% of peak highlighted red](assets/flamegraph-summary.svg)
+![Colored benchmem flamegraph summary table: pairwise_sq_dists_naive tops the Own Memory column at 94% of peak, the broadcast temporary highlighted red](assets/flamegraph-summary.svg)
 </figure>
+
+The fix uses the identity ‖xᵢ − xⱼ‖² = ‖xᵢ‖² + ‖xⱼ‖² − 2·xᵢ·xⱼ, so nothing larger than the
+`(n, n)` result is ever allocated:
+
+```python
+def pairwise_sq_dists(x):
+    gram = x @ x.T
+    sq = np.einsum("ij,ij->i", x, x)
+    return np.maximum(sq[:, None] + sq[None, :] - 2.0 * gram, 0.0)
+```
+
+Re-run and [confirm the drop](compare-runs.md) — peak falls ~82%, the result unchanged (the test
+asserts both forms agree).
+
 ## Native-backed workloads: attribute the C/Rust memory
 
 By default the capture records **Python** frames only. For a native-backed workload (polars/Rust,

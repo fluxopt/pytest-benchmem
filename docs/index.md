@@ -32,11 +32,11 @@ pytest --benchmark-only --benchmark-memory --benchmark-memory-profile profiles/
 benchmem flamegraph profiles/ --worst peak --open
 ```
 
-The report ranks every frame by the memory it owns — here a single list comprehension in
-`_rows` accounts for 83% of peak:
+The report ranks every frame by the memory it owns — here a naive pairwise-distance function's
+`(n, n, d)` broadcast temporary is **94% of peak**:
 
 <figure class="termshot" markdown="span">
-![Colored benchmem flamegraph summary table: frames ranked by total and own memory, with a list comprehension owning 83% of peak](assets/flamegraph-summary.svg)
+![Colored benchmem flamegraph summary table: pairwise_sq_dists_naive tops the Own Memory column at 94% of peak](assets/flamegraph-summary.svg)
 </figure>
 Then change the code, re-run, and diff the two runs to confirm the peak actually dropped
 (green is a shrink):
@@ -46,7 +46,7 @@ benchmem compare before.json after.json --columns peak --diff
 ```
 
 <figure class="termshot" markdown="span">
-![Colored benchmem compare --diff table: peak memory dropping ~48% per benchmark, shown as green negative percentages](assets/compare-diff.svg)
+![Colored benchmem compare --diff table: peak memory dropping ~82% per benchmark, shown as green negative percentages](assets/compare-diff.svg)
 </figure>
 ## Is this for you?
 
