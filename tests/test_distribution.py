@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import json
-
 import pytest
 
 from pytest_benchmem.memray import Measurement, MemoryResult
 from pytest_benchmem.snapshot import load_samples
+from tests._builders import blob, write_run
 
 
 def test_memory_result_derives_headline_from_min_peak_run():
@@ -51,18 +50,13 @@ def test_blob_omits_rss_when_absent():
     assert MemoryResult.from_blob(res.as_dict()).rss_bytes is None  # back-compatible
 
 
-_SERIES_BLOB = {
-    "peak_bytes": [10, 20, 30],
-    "allocations": [1, 1, 1],
-    "total_bytes": [100, 100, 100],
-}
+_SERIES_BLOB = blob([10, 20, 30], allocations=1, total_bytes=100)
 
 
-def _write_blob(tmp_path, blob):
-    bm = {"fullname": "t::x", "stats": {"min": 1.0}, "extra_info": {"benchmem": blob}}
-    p = tmp_path / "r.json"
-    p.write_text(json.dumps({"benchmarks": [bm]}))
-    return p
+def _write_blob(tmp_path, benchmem):
+    """A one-benchmark run carrying ``benchmem`` (a pre-built blob) under a fixed id."""
+    entry = {"fullname": "t::x", "stats": {"min": 1.0}, "extra_info": {"benchmem": benchmem}}
+    return write_run(tmp_path / "r.json", [entry])
 
 
 def test_stat_reduces_the_series(tmp_path):
@@ -75,8 +69,7 @@ def test_stat_reduces_the_series(tmp_path):
 
 
 def test_stat_works_on_allocations_series(tmp_path):
-    blob = {"peak_bytes": [5, 5, 5], "allocations": [2, 4, 6], "total_bytes": [1, 1, 1]}
-    p = _write_blob(tmp_path, blob)
+    p = _write_blob(tmp_path, blob([5, 5, 5], allocations=[2, 4, 6], total_bytes=1))
     assert load_samples(p, metric="allocations", stat="mean")[1][0].value == 4.0
 
 
@@ -87,8 +80,7 @@ def test_rejects_unknown_stat(tmp_path):
 
 
 def test_rss_metric_reads_isolated_series(tmp_path):
-    blob = {**_SERIES_BLOB, "rss_bytes": [900, 950, 1000]}
-    p = _write_blob(tmp_path, blob)
+    p = _write_blob(tmp_path, {**_SERIES_BLOB, "rss_bytes": [900, 950, 1000]})
     assert load_samples(p, metric="rss")[1][0].value == 900.0  # headline = min
     assert load_samples(p, metric="rss", stat="mean")[1][0].value == 950.0
     assert load_samples(p, metric="rss")[2] == "B"  # bytes unit

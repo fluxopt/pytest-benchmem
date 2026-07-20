@@ -1,8 +1,12 @@
 # pytest-benchmem
 
-The memory companion to [pytest-benchmark](https://pytest-benchmark.readthedocs.io). A
-**drop-in** for your existing suite: add one flag and a memray **peak-memory** number lands
-next to the timing — same test, same run, one JSON file. No test changes.
+Measure how much memory your code allocates, on the same benchmarks you already time. For
+Python libraries and pipelines where memory is a real constraint — large numpy arrays,
+pandas frames, solvers, C/Cython/Rust extensions. Track it in CI the way you track
+performance, and fail a PR when the footprint grows.
+
+It builds on [pytest-benchmark](https://pytest-benchmark.readthedocs.io). Take an existing
+test — you don't change it:
 
 ```python
 @pytest.mark.parametrize("n", [10_000, 100_000, 1_000_000])
@@ -10,8 +14,8 @@ def test_sort(benchmark, n):          # your existing pytest-benchmark test, unc
     benchmark(sorted, list(range(n, 0, -1)))
 ```
 
-Peak appears in pytest-benchmark's own table, appended after the timing columns — no
-second tool:
+Add one flag, and peak memory appears in pytest-benchmark's own table, after the timing
+columns. Same test, same run, one JSON file, no second tool:
 
 <!-- termynal -->
 
@@ -26,11 +30,25 @@ $ pytest --benchmark-only --benchmark-memory
 
 [Quickstart →](getting-started.md){ .md-button .md-button--primary }
 
+## Plots from your params
+
+Your `parametrize` params become plot axes on their own — no id parsing, no config. The `n`
+above is a numeric x-axis, so `benchmem plot` draws a scaling curve from it. The plots read
+pytest-benchmark's JSON, so they work on your timing results too, not just memory:
+
+```bash
+benchmem plot run.json --columns peak     # peak vs n
+benchmem plot run.json --columns time     # the same axis, timing instead
+```
+
+See [Grouping by dims](dims.md) for how params, `extra_info`, and `node.*` map to axes.
+
 ## Is this for you?
 
-**Reach for it when** you already use pytest-benchmark (or want to) and want a memory
-number on the *same* benchmarks — peak footprint, allocation churn, or a CI gate that
-fails a PR when memory regresses.
+**Yes, if** you maintain code where memory is a real constraint — large arrays, dataframes,
+solvers, C/Rust extensions — and you want a footprint regression to fail a PR the way a
+slowdown does. You measure it on the benchmarks you already time, at allocator precision,
+and gate, plot, or sweep it across inputs and versions.
 
 **Look elsewhere when** you want a whole-test memory limit or leak check rather than a
 number on one benchmarked call — that's [pytest-memray](https://pytest-memray.readthedocs.io).

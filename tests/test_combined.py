@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pytest_benchmem.combined import _best_worst, _peak_delta_cells, _rank_style, _rel, _result_of
 from pytest_benchmem.memray import Measurement, MemoryResult
+from tests._builders import blob
 
 
 def _bench(**stats):
@@ -37,8 +38,7 @@ def test_rel_matches_pytest_benchmark_annotation():
 
 
 def test_result_of_reconstructs_or_none():
-    blob = {"peak_bytes": [10, 20], "allocations": [1, 1], "total_bytes": [5, 5]}
-    res = _result_of({"extra_info": {"benchmem": blob}})
+    res = _result_of({"extra_info": {"benchmem": blob([10, 20], allocations=1, total_bytes=5)}})
     assert res is not None and res.peak_bytes == 10 and res.peak_bytes_max == 20  # min / max
     assert _result_of({"extra_info": {}}) is None  # timing-only
     assert _result_of({}) is None  # no extra_info at all

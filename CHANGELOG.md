@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.4.8](https://github.com/fluxopt/pytest-benchmem/compare/v0.4.7...v0.4.8) (2026-07-01)
+
+
+### Bug Fixes
+
+* scaling overlays multiple runs + CLI axis/series controls ([#150](https://github.com/fluxopt/pytest-benchmem/issues/150)) ([#151](https://github.com/fluxopt/pytest-benchmem/issues/151)) ([ab0140e](https://github.com/fluxopt/pytest-benchmem/commit/ab0140e9523bbedd6c9060a1a31e1919d9ae404c))
+
+## [0.4.7](https://github.com/fluxopt/pytest-benchmem/compare/v0.4.6...v0.4.7) (2026-06-29)
+
+
+### Features
+
+* **plot:** clearer titles, axis labels, unit notes, and colorbars ([#148](https://github.com/fluxopt/pytest-benchmem/issues/148)) ([9a7b66e](https://github.com/fluxopt/pytest-benchmem/commit/9a7b66e28e23183eca176280eb1929a15855c7c9))
+
+## [0.4.6](https://github.com/fluxopt/pytest-benchmem/compare/v0.4.5...v0.4.6) (2026-06-29)
+
+
+### Features
+
+* plot -o exports a static image when the suffix is png/svg/pdf/... ([#145](https://github.com/fluxopt/pytest-benchmem/issues/145)) ([#146](https://github.com/fluxopt/pytest-benchmem/issues/146)) ([ab2ab2c](https://github.com/fluxopt/pytest-benchmem/commit/ab2ab2c06193d68a90413acf28fcfff6c0e1d76e))
+
+
+### Bug Fixes
+
+* keep the baseline frame in the animated scatter (drop only when static) ([#142](https://github.com/fluxopt/pytest-benchmem/issues/142)) ([e600841](https://github.com/fluxopt/pytest-benchmem/commit/e600841b3cb3561c98e9a74dc36bf569bbe97ca0))
+
 ## [0.4.5](https://github.com/fluxopt/pytest-benchmem/compare/v0.4.4...v0.4.5) (2026-06-29)
 
 

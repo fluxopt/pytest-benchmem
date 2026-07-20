@@ -1,7 +1,7 @@
 [project]
 name = "pytest-benchmem"
 dynamic = ["version"]
-description = "The memory companion to pytest-benchmark: a memray peak-memory pass on the same test, plus dims-aware plots and cross-version sweeps."
+description = "Memory benchmarking for Python, on the pytest-benchmark suites you already time: a memray peak-memory pass on the same tests, plus param-driven plots and cross-version sweeps."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
@@ -27,6 +27,9 @@ dependencies = [
 
 [project.optional-dependencies]
 plot = ["pandas", "plotly>=5", "typer>=0.12"]
+# kaleido (and a Chromium it drives) is only needed to export a plot as a static image
+# (plot -o out.png / .svg / .pdf); kept out of [plot] so interactive HTML stays lightweight.
+plot-static = ["pytest-benchmem[plot]", "kaleido"]
 
 [project.scripts]
 benchmem = "pytest_benchmem.cli:app"
@@ -49,7 +52,7 @@ source = "vcs"
 
 [dependency-groups]
 # mypy <2.1: 2.1.0 errors on numpy's PEP 695 stub under python_version=3.11. Lift once fixed upstream.
-dev = ["ruff", "mypy<2.2", "pre-commit", "pytest-benchmem[plot]", { include-group = "docs" }]
+dev = ["ruff", "mypy<2.2", "pre-commit", "pytest-benchmem[plot-static]", { include-group = "docs" }]
 docs = [
     "jupytext",
     "ipykernel",

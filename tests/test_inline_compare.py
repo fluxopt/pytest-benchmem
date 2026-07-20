@@ -5,6 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from pytest_benchmem import pytest_plugin as P
+from tests._builders import blob
 
 
 def _config(**opts):
@@ -32,22 +33,28 @@ def test_compare_explicit_ref_is_kept():
 
 
 def test_memory_blobs_picks_only_recorded():
-    blob = {"peak_bytes": [100], "allocations": [1], "total_bytes": [100]}
+    series = blob([100], allocations=1, total_bytes=100)
     benchmarks = [
-        SimpleNamespace(fullname="t::a", extra_info={"benchmem": blob}),
+        SimpleNamespace(fullname="t::a", extra_info={"benchmem": series}),
         SimpleNamespace(fullname="t::b", extra_info={}),  # timing only
         SimpleNamespace(fullname="t::c", extra_info={"benchmem": "nope"}),  # malformed
     ]
     result = P._memory_blobs(benchmarks)
     assert set(result) == {"t::a"}  # only the recorded one
-    assert result["t::a"] == blob  # the raw per-repeat series, copied out
+    assert result["t::a"] == series  # the raw per-repeat series, copied out
 
 
 def test_load_baseline_reads_latest_and_blobs():
-    blob = {"peak_bytes": [42], "allocations": [2], "total_bytes": [42]}
+    series = blob([42], allocations=2, total_bytes=42)
     runs = [
-        ("0001_old.json", {"benchmarks": [{"fullname": "t::a", "extra_info": {"benchmem": blob}}]}),
-        ("0002_new.json", {"benchmarks": [{"fullname": "t::a", "extra_info": {"benchmem": blob}}]}),
+        (
+            "0001_old.json",
+            {"benchmarks": [{"fullname": "t::a", "extra_info": {"benchmem": series}}]},
+        ),
+        (
+            "0002_new.json",
+            {"benchmarks": [{"fullname": "t::a", "extra_info": {"benchmem": series}}]},
+        ),
     ]
 
     class _Storage:
@@ -56,7 +63,7 @@ def test_load_baseline_reads_latest_and_blobs():
 
     label, blobs = P._load_baseline(_Storage(), True)
     assert label == "0002_new.json"  # the most recent wins
-    assert blobs["t::a"] == blob  # the raw per-repeat series
+    assert blobs["t::a"] == series  # the raw per-repeat series
 
 
 def test_load_baseline_empty_storage():
