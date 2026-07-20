@@ -33,11 +33,16 @@ theme:
 nav:
   - Home: index.md
   - Quickstart: getting-started.md
-  - Guides:
+  - Find & fix:
+      - Find where memory goes: profiling.md
+      - Compare two runs: compare-runs.md
+  - Concepts:
       - Choosing a metric: metrics.md
-      - Compare & gate CI: compare-plot.ipynb
       - Grouping by dims: dims.md
-      - Cross-version sweeps: sweeps.md
+  - More (newer):
+      - Catch regressions in CI: catch-regressions.md
+      - Visualize memory: visualize.ipynb
+      - Compare across versions: sweeps.md
   - Reference: reference.md
   - Release notes: changelog.md
 
@@ -75,11 +80,11 @@ plugins:
       prompt_literal_start:
         - "$"
 
-# compare-plot is the one executed notebook (live plotly views) — CI converts its
+# visualize is the one executed notebook (live plotly views) — CI converts its
 # jupytext .md source to .ipynb (docs.yaml) and mkdocs-jupyter serves that. Every other
 # page is plain markdown.
 exclude_docs: |
-  compare-plot.md
+  visualize.md
 
 markdown_extensions:
   - admonition

@@ -30,7 +30,7 @@ want isn't a plain scalar param, set it yourself (below).
 
 ## Where to go next
 
-- Use a dim to facet or scale a plot → [Compare & gate CI](compare-plot.ipynb)
+- Use a dim to facet or scale a plot → [Visualize memory](visualize.ipynb)
 - The full dim resolution order and the `node.*` keys → [Reference](reference.md)
 
 ---

@@ -1,5 +1,8 @@
 # Cross-version sweeps
 
+> **Newer feature** — less battle-tested than the [find & fix](profiling.md) core. It works, but
+> feedback is welcome.
+
 To benchmark *across installed versions* of a package — something pytest-benchmark has no
 answer for — pytest-benchmem provisions one fresh `uv` venv per version (with import
 isolation), runs your suite in each, and writes a per-version JSON.
@@ -38,7 +41,7 @@ benchmem plot 1.2.0.json 1.3.0.json main.json --columns peak
 
 `compare` shows `time` and `peak` across every stat by default (pick metrics with
 `--columns`, a stat with `--stat`); `plot` takes one `--columns`. See
-[Compare & gate CI](compare-plot.ipynb) for the other views.
+[Visualize memory](visualize.ipynb) for the other views.
 
 ---
 

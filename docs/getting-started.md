@@ -21,19 +21,12 @@ def test_sort(benchmark, n):
 
 ## 2. Run it with `--benchmark-memory`
 
-Add the flag and peak memory appends to pytest-benchmark's own table:
+Add the flag and peak memory appends to pytest-benchmark's own table — the
+`peak` columns land right of the `│` divider, after the timing columns:
 
-<!-- termynal -->
-
-```console
-$ pytest test_sortbench.py --benchmark-only --benchmark-memory
- Name (time in us)              Min                  Median         │  peak (MiB)
- ──────────────────────────────────────────────────────────────────────────────
-  test_sort[10000]           32.5830 (1.0)         41.2080 (1.0)    │       0.08
-  test_sort[100000]         321.2080 (9.86)       419.9160 (10.19)  │       0.76
-  test_sort[1000000]      3,669.2920 (112.61)   4,331.5421 (105.11) │       7.63
-```
-
+<figure class="termshot" markdown="span">
+![Colored pytest output: the benchmark table with peak·min / peak·mean / peak·max memory columns after the timing columns, separated by a vertical divider](assets/benchmark-memory-table.svg)
+</figure>
 That's it. Left of the divider is pytest-benchmark's timing, untouched; `peak` (right) is a
 separate, untimed memray pass on the same call — so the allocator hooks cost the timing
 nothing. It's opt-in at the run level: **without** the flag, your suite runs exactly as
@@ -41,9 +34,11 @@ before. Add `--benchmark-json=run.json` to save both metrics to one file.
 
 ## 3. Where to go next
 
+- The point of the tool — **find where the memory goes** → [Find where memory goes](profiling.md)
+- Confirm a fix by diffing two runs → [Compare two runs](compare-runs.md)
 - Want `allocated` / `allocations` too, or a different table layout? → [Choosing a metric](metrics.md)
-- Want to diff two runs or fail CI on a regression? → [Compare & gate CI](compare-plot.ipynb)
-- Want to slice tables and plots by an axis (input size, op, …)? → [Grouping by dims](dims.md)
+- Slice tables and plots by an axis (input size, op, …) → [Grouping by dims](dims.md)
+- Newer — fail CI on a memory regression → [Catch regressions in CI](catch-regressions.md)
 
 ---
 
