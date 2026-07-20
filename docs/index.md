@@ -1,9 +1,9 @@
 # pytest-benchmem
 
-Measure how much memory your code allocates, on the same benchmarks you already time. For
-Python libraries and pipelines where memory is a real constraint — large numpy arrays,
-pandas frames, solvers, C/Cython/Rust extensions. Track it in CI the way you track
-performance, and fail a PR when the footprint grows.
+**On-demand memory profiling for your benchmarks.** Measure how much memory your code actually
+uses — and see *where* it goes — on the same benchmarks you already time. For Python libraries and
+pipelines where memory is a real constraint: large numpy arrays, pandas frames, solvers,
+C/Cython/Rust extensions. Find the heavy path, fix it, confirm the drop.
 
 It builds on [pytest-benchmark](https://pytest-benchmark.readthedocs.io). Take an existing
 test — you don't change it:
@@ -30,29 +30,33 @@ $ pytest --benchmark-only --benchmark-memory
 
 [Quickstart →](getting-started.md){ .md-button .md-button--primary }
 
-## Plots from your params
+## Find where the memory goes
 
-Your `parametrize` params become plot axes on their own — no id parsing, no config. The `n`
-above is a numeric x-axis, so `benchmem plot` draws a scaling curve from it. The plots read
-pytest-benchmark's JSON, so they work on your timing results too, not just memory:
+A peak number tells you *which* benchmark is heavy, not *where* the memory goes. Keep the memray
+profile for the offenders and render the allocating call paths — the heart of the tool:
 
 ```bash
-benchmem plot run.json --columns peak     # peak vs n
-benchmem plot run.json --columns time     # the same axis, timing instead
+pytest --benchmark-only --benchmark-memory --benchmark-memory-profile profiles/
+benchmem flamegraph profiles/ --worst peak --open
 ```
 
-See [Grouping by dims](dims.md) for how params, `extra_info`, and `node.*` map to axes.
+Then change the code, re-run, and diff the two runs to confirm the peak actually dropped:
+
+```bash
+benchmem compare before.json after.json --columns peak --diff
+```
 
 ## Is this for you?
 
 **Yes, if** you maintain code where memory is a real constraint — large arrays, dataframes,
-solvers, C/Rust extensions — and you want a footprint regression to fail a PR the way a
-slowdown does. You measure it on the benchmarks you already time, at allocator precision,
-and gate, plot, or sweep it across inputs and versions.
+solvers, C/Rust extensions — and you want to *find* what's heavy, *see* where it allocates (at
+allocator precision, not RSS sampling), and *confirm* a fix, on the benchmarks you already time.
 
 **Look elsewhere when** you want a whole-test memory limit or leak check rather than a
 number on one benchmarked call — that's [pytest-memray](https://pytest-memray.readthedocs.io).
-For where it sits against ASV, CodSpeed, and plain memray, see the
+For **continuous CI tracking** (history, dashboards, PR annotations), reach for
+[CodSpeed](https://codspeed.io) — it runs the same pytest-benchmark `benchmark()` tests, so one set
+of benchmarks serves both. For where it sits against ASV, CodSpeed, and plain memray, see the
 [README](https://github.com/fluxopt/pytest-benchmem#why-memray-and-where-it-sits).
 
 !!! note "Want memory on specific tests only?"
@@ -84,18 +88,27 @@ pytest-benchmark and memray are core deps. The memory pass needs memray, which i
 
 ## Where to next
 
+The core loop — measure, find, fix:
+
 | If you want to… | Go to |
 |---|---|
 | Run your first benchmark and read both metrics | [Quickstart](getting-started.md) |
-| Know which of peak / allocated / allocations / rss to track | [Choosing a metric](metrics.md) |
-| Diff two runs and see what moved | [Compare two runs](compare-runs.md) |
-| Fail CI when memory grows | [Catch regressions in CI](catch-regressions.md) |
 | Find where the memory actually goes | [Find where memory goes](profiling.md) |
-| Slice plots and tables by an axis (input size, op, …) | [Grouping by dims](dims.md) |
-| Benchmark across installed versions of a package | [Cross-version sweeps](sweeps.md) |
+| Confirm a fix — diff two runs and see what moved | [Compare two runs](compare-runs.md) |
+| Know which of peak / allocated / allocations / rss to track | [Choosing a metric](metrics.md) |
+| Slice tables and plots by an axis (input size, op, …) | [Grouping by dims](dims.md) |
 | Look up a specific flag, marker, or function | [Reference](reference.md) |
+
+Newer, less battle-tested — feedback welcome:
+
+| If you want to… | Go to |
+|---|---|
+| Fail CI when memory grows, or cap it at a budget | [Catch regressions in CI](catch-regressions.md) |
+| Chart memory across inputs | [Visualize memory](visualize.ipynb) |
+| Benchmark across installed versions of a package | [Compare across versions](sweeps.md) |
 
 ## Status
 
 Early. Extracted from the linopy internal benchmark suite, where it's the local
-memory-profiling layer. The API may move before 1.0.
+memory-profiling layer. The measure → profile → fix loop is the hardened core; the newer
+features may move before 1.0.

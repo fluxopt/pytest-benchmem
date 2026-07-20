@@ -13,6 +13,9 @@ kernelspec:
 
 # Visualize memory
 
+> **Newer feature** — less battle-tested than the [find & fix](profiling.md) core. It works, but
+> feedback is welcome.
+
 A number tells you *whether* memory grew; a chart tells you the **shape** — how cost scales with
 input size, which ids moved and were already big, how a metric drifts across versions. `benchmem
 plot` writes an interactive plotly view to standalone HTML, picking the view by run count. It reads

@@ -1,5 +1,8 @@
 # Cross-version sweeps
 
+> **Newer feature** — less battle-tested than the [find & fix](profiling.md) core. It works, but
+> feedback is welcome.
+
 To benchmark *across installed versions* of a package — something pytest-benchmark has no
 answer for — pytest-benchmem provisions one fresh `uv` venv per version (with import
 isolation), runs your suite in each, and writes a per-version JSON.

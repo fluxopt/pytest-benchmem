@@ -41,10 +41,11 @@ before. Add `--benchmark-json=run.json` to save both metrics to one file.
 
 ## 3. Where to go next
 
+- The point of the tool — **find where the memory goes** → [Find where memory goes](profiling.md)
+- Confirm a fix by diffing two runs → [Compare two runs](compare-runs.md)
 - Want `allocated` / `allocations` too, or a different table layout? → [Choosing a metric](metrics.md)
-- Want to diff two runs? → [Compare two runs](compare-runs.md)
-- Want to fail CI on a memory regression? → [Catch regressions in CI](catch-regressions.md)
-- Want to slice tables and plots by an axis (input size, op, …)? → [Grouping by dims](dims.md)
+- Slice tables and plots by an axis (input size, op, …) → [Grouping by dims](dims.md)
+- Newer — fail CI on a memory regression → [Catch regressions in CI](catch-regressions.md)
 
 ---
 

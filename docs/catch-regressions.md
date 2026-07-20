@@ -1,5 +1,13 @@
 # Catch regressions in CI
 
+> **Newer feature** — less battle-tested than the [find & fix](profiling.md) core. It works, but
+> feedback is welcome before you lean on it in CI.
+>
+> For **continuous** CI tracking — history, dashboards, PR annotations — [CodSpeed] is likely the
+> better tool. And because it also builds on pytest-benchmark's `benchmark()`, the same tests you
+> profile with pytest-benchmem work there unchanged: write the benchmark once, let CodSpeed watch
+> timing in CI and pytest-benchmem profile memory on demand.
+
 You already fail a PR when it gets slower. This does the same for **memory**: run the suite with
 `--benchmark-memory`, then fail the job when a benchmark's footprint grows past a threshold.
 
@@ -106,3 +114,5 @@ for how the fold works.
 - The full before/after table, `--diff`, and sharing it in a PR → [Compare two runs](compare-runs.md)
 - A `peak +20%` says *that* it grew, not *where* → [Find where memory goes](profiling.md)
 - Which metric to gate on → [Choosing a metric](metrics.md)
+
+[CodSpeed]: https://codspeed.io

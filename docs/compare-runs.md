@@ -1,8 +1,9 @@
 # Compare two runs
 
-You have two saved runs — a baseline and a candidate — and you want to see **what moved**.
-`benchmem compare` lays them side by side as a table, keyed on the benchmark id and modelled on
-pytest-benchmark's own.
+You changed the code to slim a benchmark down — now **confirm it worked**. `benchmem compare` lays
+two saved runs side by side, keyed on the benchmark id, so the before/after peak (and whether it
+actually dropped) reads at a glance. It's the same view for any two runs — a fix vs. its baseline,
+one config against another, a PR against `main`.
 
 ## The comparison table
 

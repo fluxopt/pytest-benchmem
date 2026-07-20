@@ -1,7 +1,9 @@
 # Find where memory goes
 
-A `peak +20%` number tells you *that* a benchmark regressed, not *where*. When the gate flags an id,
-keep its memray profile and render the allocating call paths.
+This is the heart of pytest-benchmem. A peak number tells you *which* benchmark is heavy, not
+*where* the memory goes — so keep the memray profile for it and render the allocating call paths.
+Now you know exactly what to optimize; change the code, re-run, and
+[confirm the drop](compare-runs.md).
 
 ## Keep a profile for the offenders
 

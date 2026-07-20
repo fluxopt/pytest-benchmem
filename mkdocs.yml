@@ -33,15 +33,16 @@ theme:
 nav:
   - Home: index.md
   - Quickstart: getting-started.md
-  - Guides:
-      - Catch regressions in CI: catch-regressions.md
-      - Compare two runs: compare-runs.md
-      - Visualize memory: visualize.ipynb
+  - Find & fix:
       - Find where memory goes: profiling.md
-      - Compare across versions: sweeps.md
+      - Compare two runs: compare-runs.md
   - Concepts:
       - Choosing a metric: metrics.md
       - Grouping by dims: dims.md
+  - More (newer):
+      - Catch regressions in CI: catch-regressions.md
+      - Visualize memory: visualize.ipynb
+      - Compare across versions: sweeps.md
   - Reference: reference.md
   - Release notes: changelog.md
 
