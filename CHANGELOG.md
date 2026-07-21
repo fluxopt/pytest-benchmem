@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.10](https://github.com/fluxopt/pytest-benchmem/compare/v0.4.9...v0.4.10) (2026-07-20)
+
+
+### Bug Fixes
+
+* add lower bounds to dev/plot deps so floor-deps CI resolves ([#160](https://github.com/fluxopt/pytest-benchmem/issues/160)) ([4543078](https://github.com/fluxopt/pytest-benchmem/commit/4543078fb2d588c71c52d260304f0ca5b60119e0))
+
 ## [0.4.9](https://github.com/fluxopt/pytest-benchmem/compare/v0.4.8...v0.4.9) (2026-07-20)
 
 
