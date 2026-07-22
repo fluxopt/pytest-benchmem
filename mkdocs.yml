@@ -43,6 +43,8 @@ nav:
       - Catch regressions in CI: catch-regressions.md
       - Visualize memory: visualize.ipynb
       - Compare across versions: sweeps.md
+  - Gallery:
+      - "PyPSA: a netCDF memory spike": gallery/pypsa-shapes.ipynb
   - Reference: reference.md
   - Release notes: changelog.md
 
@@ -85,6 +87,7 @@ plugins:
 # page is plain markdown.
 exclude_docs: |
   visualize.md
+  gallery/pypsa-shapes.md
 
 markdown_extensions:
   - admonition
