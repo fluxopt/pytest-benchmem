@@ -12,6 +12,7 @@ build/
 
 # jupytext-built notebooks (source is the .md) + mkdocs build
 docs/*.ipynb
+docs/**/*.ipynb
 site/
 .cache/
 
