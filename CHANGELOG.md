@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.11](https://github.com/fluxopt/pytest-benchmem/compare/v0.4.10...v0.4.11) (2026-07-23)
+
+
+### Bug Fixes
+
+* **cli:** ship a working benchmem entry point with the base install ([#174](https://github.com/fluxopt/pytest-benchmem/issues/174)) ([5f1404d](https://github.com/fluxopt/pytest-benchmem/commit/5f1404d34b778e8c5c208ad5b9d98c7eafbc8dc1)), closes [#168](https://github.com/fluxopt/pytest-benchmem/issues/168)
+* **sweep:** make the documented one-line sweep work from a clean checkout ([#173](https://github.com/fluxopt/pytest-benchmem/issues/173)) ([63b98b1](https://github.com/fluxopt/pytest-benchmem/commit/63b98b165b013047133d355f5e0da073f4922ebc))
+
 ## [0.4.10](https://github.com/fluxopt/pytest-benchmem/compare/v0.4.9...v0.4.10) (2026-07-20)
 
 
