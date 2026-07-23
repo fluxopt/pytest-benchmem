@@ -7,5 +7,5 @@ build:
   commands:
     - pip install uv
     - uv sync --group docs
-    - uv run jupytext --to ipynb docs/getting-started.md docs/metrics.md docs/dims.md docs/visualize.md docs/reference.md docs/gallery/pypsa-shapes.md
+    - uv run jupytext --to ipynb docs/getting-started.md docs/metrics.md docs/dims.md docs/visualize.md docs/reference.md docs/gallery/linopy-memory.md
     - uv run mkdocs build --strict --site-dir "$READTHEDOCS_OUTPUT/html"
