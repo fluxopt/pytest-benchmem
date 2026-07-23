@@ -538,7 +538,10 @@ def sweep(
     ] = None,
     copy_dir: Annotated[
         Path | None,
-        typer.Option(help="Directory copied into each venv's cwd (the suite imports from here)."),
+        typer.Option(
+            help="Directory staged into each venv's cwd (default: the --suite dir). Point it at "
+            "the repo root when the suite reads a conftest or data files outside the suite dir."
+        ),
     ] = None,
 ) -> None:
     """Run a benchmark suite across several installed versions of a package.
@@ -601,7 +604,8 @@ def sweep(
     if failed_runs:
         typer.secho(
             f"sweep: no benchmark data from {', '.join(failed_runs)} "
-            "(pytest failed or the run collected no benchmarks)",
+            "(pytest failed or the run collected no benchmarks; if the suite reads files "
+            "outside the suite dir, try --copy-dir <repo-root>)",
             fg=typer.colors.RED,
         )
     if failed:
