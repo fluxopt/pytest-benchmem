@@ -26,6 +26,26 @@ doesn't need to depend on it; a `--pin` naming the package overrides the auto-in
 `--memory` adds the memory pass; forward any other pytest flag with `--pytest-arg` (one token
 each, repeatable). A non-zero exit lists any versions that failed to provision.
 
+Each version runs in an isolated working directory holding a *copy* of the suite (so a dev
+checkout of the swept package can't shadow the venv-installed version). By default only the
+`--suite` directory is copied — if your suite reaches outside it, say a repo-root
+`conftest.py` or data files resolved relative to the test file
+(`Path(__file__).parent.parent / "data"`), those benchmarks error under sweep even though
+plain pytest runs them fine. Declare the suite's true root with `--copy-dir`:
+
+```bash
+benchmem sweep mypkg 1.2.0 1.3.0 --suite benchmarks/ --copy-dir . --memory
+```
+
+That stages the whole repo (minus `.venv`, `.git`, `.benchmarks`, `.pytest_cache` and
+caches) into the isolated directory, so relative resolution works as it does locally.
+One caveat: the wider the copy, the weaker the isolation. With a `src/` layout the copied
+source can't shadow the venv-installed package (nothing importable sits next to the
+tests), so `--copy-dir .` is safe. With a flat layout the copied package directory can
+end up on `sys.path` ahead of the venv under pytest's path rules — there, prefer pointing
+`--copy-dir` at a narrower directory holding just the suite's shared files (conftest,
+data), or sanity-check a swept value that you know differs between the versions.
+
 ## Viewing a sweep
 
 Hand the per-version JSONs (oldest → newest) straight to `benchmem compare` for a table —
