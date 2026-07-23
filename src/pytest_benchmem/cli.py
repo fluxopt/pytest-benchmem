@@ -16,6 +16,8 @@ it resolves the profile for a test (or ``--worst``) and renders it through memra
 from __future__ import annotations
 
 import importlib.util
+import json
+import re
 import subprocess
 import sys
 from collections.abc import Iterator
@@ -417,6 +419,68 @@ def compare(
     typer.secho("no regressions over thresholds", fg=typer.colors.GREEN)
 
 
+def _pin_name(spec: str) -> str:
+    """The normalized project name a pip spec pins (best effort).
+
+    Takes everything up to the first version/extras/URL delimiter and normalizes
+    it PEP-503-style, so ``PyTest_Benchmem==0.4``, ``pytest-benchmem[plot]`` and
+    ``pytest-benchmem @ git+…`` all yield ``pytest-benchmem``. Bare URL specs
+    (``git+https://…``) have no leading name and yield the URL itself, which
+    never matches a project name.
+    """
+    return re.split(r"[\s=<>!~\[@;]", spec, maxsplit=1)[0].lower().replace("_", "-")
+
+
+def _harness_pins(memory: bool, user_pins: list[str]) -> list[str]:
+    """The pip spec(s) for the pytest stack every sweep venv needs.
+
+    ``sweep`` runs ``pytest --benchmark-only`` (and, with ``--memory``, this
+    plugin's memory pass) inside each freshly provisioned venv, but the swept
+    package rarely depends on its own benchmark harness — so install it
+    alongside: ``pytest-benchmem`` (which pulls pytest-benchmark, pytest and
+    memray) when the memory pass runs, plain ``pytest-benchmark`` otherwise.
+    A user ``--pin`` naming the package takes precedence, e.g. to hold a
+    specific version or install from git.
+    """
+    needed = "pytest-benchmem" if memory else "pytest-benchmark"
+    if any(_pin_name(p) == needed for p in user_pins):
+        return []
+    return [needed]
+
+
+def _resolve_suite(suite: Path, copy_dir: Path | None) -> tuple[Path, Path | None]:
+    """Make ``--suite`` reachable from the per-venv isolation cwd.
+
+    pytest runs inside a temporary isolation directory, not the invocation cwd,
+    so a local suite path can't be passed verbatim. The suite directory (or the
+    suite file's parent) is copied into that cwd — an explicit ``--copy-dir``
+    containing the suite wins — and the returned pytest path argument points
+    into the copy. A suite that doesn't exist locally, or lies outside
+    ``--copy-dir``, is passed through untouched for callers that address a path
+    relative to the venv cwd themselves.
+    """
+    local = suite.resolve()
+    if not local.exists():
+        return suite, copy_dir
+    root = copy_dir.resolve() if copy_dir is not None else local if local.is_dir() else local.parent
+    if root == local or root in local.parents:
+        return Path(root.name) / local.relative_to(root), root
+    return suite, root
+
+
+def _run_has_benchmarks(json_path: Path) -> bool:
+    """True if ``json_path`` is a pytest-benchmark run with at least one benchmark.
+
+    Guards against the silent-failure modes of a sweep pytest run: a missing or
+    0-byte file (pytest crashed before writing) and a run that collected nothing.
+    """
+    try:
+        data = json.loads(json_path.read_text())
+    except (OSError, ValueError):
+        return False
+    return isinstance(data, dict) and bool(data.get("benchmarks"))
+
+
 @app.command()
 def sweep(
     package: Annotated[
@@ -467,19 +531,25 @@ def sweep(
 ) -> None:
     """Run a benchmark suite across several installed versions of a package.
 
-    Provisions one fresh uv venv per version, runs 'pytest <suite> --benchmark-only'
+    Provisions one fresh uv venv per version — with the pytest harness installed
+    alongside (pytest-benchmem with --memory, pytest-benchmark without) — copies the
+    suite into the venv's working directory, runs 'pytest <suite> --benchmark-only'
     in each writing <out>/<version>.json, then prints the next step. --memory adds
     the memory pass; forward any other pytest flag with --pytest-arg, e.g.
     benchmem sweep mypkg 1.2.0 1.3.0 --suite benchmarks/ --memory --pytest-arg=-k.
+    Exits non-zero if any version fails to provision or yields no benchmark data.
     """
     if not versions:
         raise _fail("sweep needs at least one version", 2)
     from pytest_benchmem.sweep import sweep as run_sweep
     from pytest_benchmem.sweep import version_label
 
+    out = out.resolve()  # pytest runs from the per-venv isolation cwd, not the invocation cwd
     out.mkdir(parents=True, exist_ok=True)
+    suite_arg, copy_dir = _resolve_suite(suite, copy_dir)
     extra = (["--benchmark-memory"] if memory else []) + list(pytest_arg or [])
     produced: list[Path] = []
+    failed_runs: list[str] = []
 
     def run(venv: object) -> None:
         v = venv  # a sweep.Venv (python/env/cwd resolved)
@@ -488,21 +558,24 @@ def sweep(
             str(v.python),  # type: ignore[attr-defined]
             "-m",
             "pytest",
-            str(suite),
+            str(suite_arg),
             "--benchmark-only",
             f"--benchmark-json={json_path}",
             *extra,
         ]
         typer.secho(f"sweep[{v.version}]: {' '.join(cmd)}", fg=typer.colors.BLUE)  # type: ignore[attr-defined]
-        subprocess.run(cmd, cwd=v.cwd, env=v.env, check=False)  # type: ignore[attr-defined]
-        if json_path.exists():
+        r = subprocess.run(cmd, cwd=v.cwd, env=v.env, check=False)  # type: ignore[attr-defined]
+        if r.returncode == 0 and _run_has_benchmarks(json_path):
             produced.append(json_path)
+        else:
+            failed_runs.append(str(v.version))  # type: ignore[attr-defined]
 
+    user_pins = list(pins or ())
     failed = run_sweep(
         versions,
         run,
         install_spec=lambda v: f"{package}=={v}",
-        pins=tuple(pins or ()),
+        pins=tuple(user_pins + _harness_pins(memory, user_pins)),
         copy_dir=copy_dir,
         import_check=import_check,
         as_of=as_of,
@@ -513,8 +586,16 @@ def sweep(
         typer.secho(f"sweep: wrote {len(produced)} run(s) under {out}/", fg=typer.colors.GREEN)
         typer.echo(f"  compare: benchmem compare {files}")
         typer.echo(f"  plot:    benchmem plot {files} --columns peak")
+    if failed_runs:
+        typer.secho(
+            f"sweep: no benchmark data from {', '.join(failed_runs)} "
+            "(pytest failed or the run collected no benchmarks)",
+            fg=typer.colors.RED,
+        )
     if failed:
         raise _fail(f"failed to provision: {', '.join(failed)}", 1)
+    if failed_runs:
+        raise typer.Exit(code=1)
 
 
 # --- flamegraph: render a kept --benchmark-memory-profile .bin ----------------------

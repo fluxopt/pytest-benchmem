@@ -19,9 +19,12 @@ benchmem sweep mypkg 1.2.0 1.3.0 git+https://github.com/me/pkg@main \
 
 It provisions a venv per version (a plain version installs `mypkg==<version>`; a `git+…`/pip
 spec is used verbatim), runs `pytest <suite> --benchmark-only` in each writing
-`<out>/<version>.json`, then prints the `benchmem compare` / `plot` next step. `--memory`
-adds the memory pass; forward any other pytest flag with `--pytest-arg` (one token each,
-repeatable). A non-zero exit lists any versions that failed to provision.
+`<out>/<version>.json`, then prints the `benchmem compare` / `plot` next step. The harness
+itself is installed into each venv automatically — `pytest-benchmem` (pytest, pytest-benchmark
+and memray included) with `--memory`, plain `pytest-benchmark` without — so the swept package
+doesn't need to depend on it; a `--pin` naming the package overrides the auto-install.
+`--memory` adds the memory pass; forward any other pytest flag with `--pytest-arg` (one token
+each, repeatable). A non-zero exit lists any versions that failed to provision.
 
 ## Viewing a sweep
 

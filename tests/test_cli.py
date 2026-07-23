@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import importlib.util
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -433,16 +434,18 @@ def test_plot_without_plotly_exits_2(tmp_path, monkeypatch):
 # --- sweep -----------------------------------------------------------------------
 
 
-def _patch_sweep(monkeypatch, tmp_path, *, failed=()):
+def _patch_sweep(monkeypatch, tmp_path, *, failed=(), returncode=0, json_content=None):
     """Stub the sweep engine + subprocess so no uv/network is touched.
 
     Records the call into the returned dict; the fake engine runs the CLI's ``run``
-    callback against one fake Venv per version, and the fake subprocess writes the
-    JSON the callback expects (so ``produced`` is populated).
+    callback against one fake Venv per version, and the fake subprocess exits with
+    ``returncode`` after writing ``json_content`` (a one-benchmark run by default)
+    to the JSON path the callback expects (so ``produced`` is populated).
     """
     import pytest_benchmem.sweep as sweepmod
 
     captured: dict[str, Any] = {"cmds": []}
+    content = '{"benchmarks": [{"name": "t"}]}' if json_content is None else json_content
 
     def fake_sweep(versions, run, **kw):
         captured["versions"] = list(versions)
@@ -457,12 +460,9 @@ def _patch_sweep(monkeypatch, tmp_path, *, failed=()):
             if isinstance(arg, str) and arg.startswith("--benchmark-json="):
                 path = Path(arg.split("=", 1)[1])
                 path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text("{}")
+                path.write_text(content)
 
-        class _Completed:
-            returncode = 0
-
-        return _Completed()
+        return SimpleNamespace(returncode=returncode)
 
     monkeypatch.setattr(sweepmod, "sweep", fake_sweep)
     monkeypatch.setattr("pytest_benchmem.cli.subprocess.run", fake_subprocess_run)
@@ -499,6 +499,132 @@ def test_sweep_runs_each_version_and_hints_next_step(tmp_path, monkeypatch):
     # one json per version, under --out, and the next-step hint is printed
     assert (out / "1.2.0.json").exists() and (out / "1.3.0.json").exists()
     assert "benchmem compare" in result.output
+
+
+@pytest.mark.parametrize(
+    ("flags", "expected_pin"),
+    [
+        (["--memory"], "pytest-benchmem"),  # memory pass needs the plugin in the venv
+        ([], "pytest-benchmark"),  # plain run only needs the benchmark harness
+    ],
+)
+def test_sweep_auto_pins_harness(tmp_path, monkeypatch, flags, expected_pin):
+    captured = _patch_sweep(monkeypatch, tmp_path)
+    result = runner.invoke(
+        app,
+        ["sweep", "mypkg", "1.2.0", "--suite", "b/", "--out", str(tmp_path / "o"), *flags],
+    )
+    assert result.exit_code == 0, _text(result)
+    assert captured["pins"] == (expected_pin,)
+
+
+def test_sweep_user_pin_overrides_auto_harness(tmp_path, monkeypatch):
+    captured = _patch_sweep(monkeypatch, tmp_path)
+    result = runner.invoke(
+        app,
+        [
+            "sweep",
+            "mypkg",
+            "1.2.0",
+            "--suite",
+            "b/",
+            "--out",
+            str(tmp_path / "o"),
+            "--memory",
+            "--pin",
+            "pytest_benchmem==0.4.0",  # normalized name matches → no duplicate auto-pin
+        ],
+    )
+    assert result.exit_code == 0, _text(result)
+    assert captured["pins"] == ("pytest_benchmem==0.4.0",)
+
+
+def test_sweep_resolves_relative_out_against_invocation_cwd(tmp_path, monkeypatch):
+    _patch_sweep(monkeypatch, tmp_path)
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["sweep", "mypkg", "1.2.0", "--suite", "b/", "--out", "o"])
+    assert result.exit_code == 0, _text(result)
+    assert (tmp_path / "o" / "1.2.0.json").exists()
+
+
+def test_sweep_copies_suite_dir_and_repoints_the_pytest_arg(tmp_path, monkeypatch):
+    captured = _patch_sweep(monkeypatch, tmp_path)
+    suite = tmp_path / "bench"
+    suite.mkdir()
+    result = runner.invoke(
+        app,
+        ["sweep", "mypkg", "1.2.0", "--suite", str(suite), "--out", str(tmp_path / "o")],
+    )
+    assert result.exit_code == 0, _text(result)
+    # the suite dir becomes the copy_dir; pytest gets the path of the copy (its basename)
+    assert captured["copy_dir"] == suite
+    assert captured["cmds"][0][3] == "bench"
+
+
+def test_sweep_copies_a_suite_files_parent_dir(tmp_path, monkeypatch):
+    captured = _patch_sweep(monkeypatch, tmp_path)
+    suite = tmp_path / "bench" / "test_speed.py"
+    suite.parent.mkdir()
+    suite.write_text("")
+    result = runner.invoke(
+        app,
+        ["sweep", "mypkg", "1.2.0", "--suite", str(suite), "--out", str(tmp_path / "o")],
+    )
+    assert result.exit_code == 0, _text(result)
+    assert captured["copy_dir"] == suite.parent
+    assert captured["cmds"][0][3] == str(Path("bench") / "test_speed.py")
+
+
+def test_sweep_repoints_suite_inside_an_explicit_copy_dir(tmp_path, monkeypatch):
+    captured = _patch_sweep(monkeypatch, tmp_path)
+    (tmp_path / "proj" / "bench").mkdir(parents=True)
+    result = runner.invoke(
+        app,
+        [
+            "sweep",
+            "mypkg",
+            "1.2.0",
+            "--suite",
+            str(tmp_path / "proj" / "bench"),
+            "--copy-dir",
+            str(tmp_path / "proj"),
+            "--out",
+            str(tmp_path / "o"),
+        ],
+    )
+    assert result.exit_code == 0, _text(result)
+    assert captured["copy_dir"] == tmp_path / "proj"
+    assert captured["cmds"][0][3] == str(Path("proj") / "bench")
+
+
+def test_sweep_passes_a_nonlocal_suite_through_verbatim(tmp_path, monkeypatch):
+    captured = _patch_sweep(monkeypatch, tmp_path)
+    result = runner.invoke(
+        app,
+        ["sweep", "mypkg", "1.2.0", "--suite", "nonexistent/", "--out", str(tmp_path / "o")],
+    )
+    assert result.exit_code == 0, _text(result)
+    assert captured["copy_dir"] is None
+    assert captured["cmds"][0][3] == "nonexistent"
+
+
+@pytest.mark.parametrize(
+    "stub_kw",
+    [
+        {"returncode": 1},  # pytest failed
+        {"json_content": "{}"},  # pytest "succeeded" but the run has no benchmarks
+        {"json_content": ""},  # 0-byte file — pytest crashed before writing
+    ],
+)
+def test_sweep_exits_1_when_a_run_yields_no_benchmark_data(tmp_path, monkeypatch, stub_kw):
+    _patch_sweep(monkeypatch, tmp_path, **stub_kw)
+    result = runner.invoke(
+        app,
+        ["sweep", "mypkg", "1.2.0", "--suite", "b/", "--out", str(tmp_path / "o")],
+    )
+    assert result.exit_code == 1, _text(result)
+    assert "no benchmark data from 1.2.0" in _text(result)
+    assert "benchmem compare" not in result.output  # no green next-step hint for a dead run
 
 
 def test_sweep_exits_1_on_provision_failure(tmp_path, monkeypatch):

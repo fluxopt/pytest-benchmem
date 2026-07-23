@@ -106,7 +106,15 @@ def provision(
                 shutil.copytree(
                     src,
                     cwd / src.name,
-                    ignore=shutil.ignore_patterns("__pycache__", "*.ipynb", ".DS_Store"),
+                    ignore=shutil.ignore_patterns(
+                        "__pycache__",
+                        "*.ipynb",
+                        ".DS_Store",
+                        ".venv",
+                        ".git",
+                        ".pytest_cache",
+                        ".benchmarks",
+                    ),
                 )
             env = os.environ.copy()
             env.pop("PYTHONPATH", None)
