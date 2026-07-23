@@ -170,7 +170,8 @@ See [Choosing a metric](metrics.md) for when to reach for each, and `--stat` for
 
 ## CLI — `benchmem`
 
-Installed with `pytest-benchmem[plot]`. The full command tree and every option, captured
+Ships with the base install (`sweep`, `flamegraph`); `compare` and `plot` need
+`pytest-benchmem[plot]`. The full command tree and every option, captured
 live from the typer app as it actually renders in a terminal:
 
 ::: mkdocs-typer2

@@ -76,9 +76,10 @@ of benchmarks serves both. For where it sits against ASV, CodSpeed, and plain me
     uv add pytest-benchmem
     ```
 
-=== "With plots & CLI"
+=== "With plots"
 
-    Adds the `benchmem` compare/plot/sweep CLI (pandas, plotly, typer).
+    The base install includes the `benchmem` CLI with `sweep` and `flamegraph`;
+    this adds the pandas-backed `compare` tables and `plot` views.
 
     ```bash
     uv add "pytest-benchmem[plot]"
