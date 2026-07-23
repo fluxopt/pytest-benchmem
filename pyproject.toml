@@ -56,6 +56,8 @@ dev = ["ruff>=0.6", "mypy>=1,<2.2", "pre-commit>=3", "pytest-benchmem[plot-stati
 docs = [
     "jupytext>=1.16",
     "ipykernel>=6",
+    "linopy>=0.8",  # the gallery/linopy-memory.md notebook benchmarks a real linopy model build
+
     "mkdocs>=1.6",
     "mkdocs-material>=9",
     "mkdocs-jupyter>=0.24",
