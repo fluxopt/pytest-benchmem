@@ -105,8 +105,8 @@ profiled, compared, and plotted across inputs and versions.
 ## Install
 
 ```bash
-uv add pytest-benchmem            # the fixture + flag + memray engine
-uv add "pytest-benchmem[plot]"    # + the benchmem plot/compare/sweep CLI (pandas, plotly, typer)
+uv add pytest-benchmem            # the fixture + flag + memray engine + benchmem sweep CLI
+uv add "pytest-benchmem[plot]"    # + benchmem compare tables and plot views (pandas, plotly)
 ```
 
 memray is Linux/macOS only; Windows installs cleanly with timing-only (the memory pass raises a

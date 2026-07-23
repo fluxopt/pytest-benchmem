@@ -81,6 +81,17 @@ def _need_plotly() -> None:
         raise _fail("plotting needs extras: pip install 'pytest-benchmem[plot]'", 2)
 
 
+def _need_pandas(command: str) -> None:
+    """Exit(2) with an install hint when ``command`` needs the [plot] extra's pandas.
+
+    The base install ships a working `benchmem` (sweep/flamegraph); the table/plot
+    pipeline is pandas-backed, so compare and plot point at the extra instead of
+    tracebacking mid-command.
+    """
+    if importlib.util.find_spec("pandas") is None:
+        raise _fail(f"{command} needs extras: pip install 'pytest-benchmem[plot]'", 2)
+
+
 # Static raster/vector suffixes go through kaleido's write_image; .html (or a bare name) stays
 # interactive HTML. Anything else is a typo we refuse rather than silently writing HTML.
 _IMAGE_SUFFIXES = frozenset({".png", ".svg", ".pdf", ".jpg", ".jpeg", ".webp"})
@@ -364,6 +375,7 @@ def compare(
     ] = None,
 ) -> None:
     """Print a per-id table for one run, or compare two or more (and optionally gate CI)."""
+    _need_pandas("compare")
     if not runs:
         raise _fail("compare needs at least one run", 2)
     # A growth gate needs a base and a head: two runs, or one run folded along --pivot (which

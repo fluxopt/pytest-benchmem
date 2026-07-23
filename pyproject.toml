@@ -23,10 +23,13 @@ dependencies = [
     "pytest-benchmark>=4,<6",
     "memray>=1.11,<2; platform_system == 'Linux' or platform_system == 'Darwin'",
     "rich>=13",
+    # the benchmem console script is installed unconditionally, so its runtime must be too;
+    # compare/sweep/flamegraph need nothing beyond it — only plot pulls the [plot] extra.
+    "typer>=0.12",
 ]
 
 [project.optional-dependencies]
-plot = ["pandas>=2", "plotly>=5", "typer>=0.12"]
+plot = ["pandas>=2", "plotly>=5"]
 # kaleido (and a Chromium it drives) is only needed to export a plot as a static image
 # (plot -o out.png / .svg / .pdf); kept out of [plot] so interactive HTML stays lightweight.
 plot-static = ["pytest-benchmem[plot]", "kaleido>=0.2"]

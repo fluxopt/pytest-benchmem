@@ -119,6 +119,18 @@ def test_compare_columns_selects_time_and_peak(tmp_path):
     assert "time (s)" in result.output and "peak (MiB)" in result.output
 
 
+def test_compare_without_pandas_exits_2_with_install_hint(tmp_path, monkeypatch):
+    a = write_run(tmp_path / "a.json", [bm("test_x")])
+    real_find_spec = importlib.util.find_spec
+    monkeypatch.setattr(
+        "pytest_benchmem.cli.importlib.util.find_spec",
+        lambda name: None if name == "pandas" else real_find_spec(name),
+    )
+    result = runner.invoke(app, ["compare", str(a)])
+    assert result.exit_code == 2
+    assert "pytest-benchmem[plot]" in _text(result)
+
+
 def test_compare_missing_file_exits_2(tmp_path):
     a = write_run(tmp_path / "base.json", [bm("test_x")])
     result = runner.invoke(app, ["compare", str(a), str(tmp_path / "nope.json")])
