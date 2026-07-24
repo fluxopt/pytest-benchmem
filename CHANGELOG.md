@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.12](https://github.com/fluxopt/pytest-benchmem/compare/v0.4.11...v0.4.12) (2026-07-24)
+
+
+### Features
+
+* extra_info label columns in compare (--columns extra:NAME) ([#177](https://github.com/fluxopt/pytest-benchmem/issues/177)) ([40a25f5](https://github.com/fluxopt/pytest-benchmem/commit/40a25f53373728dc7215ceba335f53976acec176))
+
 ## [0.4.11](https://github.com/fluxopt/pytest-benchmem/compare/v0.4.10...v0.4.11) (2026-07-23)
 
 
