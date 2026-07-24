@@ -553,3 +553,69 @@ def test_find_regressions_ignores_improvements(tmp_path):
     a = write_run(tmp_path / "base.json", [bm("x", peak=200)])
     b = write_run(tmp_path / "head.json", [bm("x", peak=100)])  # halved — not a regression
     assert find_regressions(a, b, [parse_threshold("peak:1%")]) == []
+
+
+def _bm_labeled(name, *, t=1.0, peak=1024, **extra):
+    """A benchmark entry carrying scalar ``extra_info`` labels beside the benchmem blob."""
+    entry = bm(name, t=t, peak=peak)
+    entry["extra_info"].update(extra)
+    return entry
+
+
+def test_extra_column_renders_label_without_multiplier(tmp_path):
+    # extra:NAME is a per-series readout: values show, but no (N.NN) — a label describes
+    # the benchmark, it doesn't compete.
+    a = write_run(tmp_path / "a.json", [_bm_labeled("test_x", peak=10 * 1024**2, variables=100)])
+    b = write_run(tmp_path / "b.json", [_bm_labeled("test_x", peak=15 * 1024**2, variables=120)])
+    text = render([a, b], columns="peak,extra:variables", stat="min")
+    assert "variables" in text and "extra:" not in text  # header shows the bare name
+    rows = _lines(text, "test_x")
+    assert "100" in rows and "120" in rows  # per-series values (a label may differ across runs)
+    assert "(1.50)" in rows  # peak still ranks...
+    assert "(1.20)" not in rows  # ...the label doesn't
+
+
+def test_extra_column_alone_is_a_plain_readout(tmp_path):
+    a = write_run(tmp_path / "run.json", [_bm_labeled("test_x", variables=499104)])
+    text = render([a], columns="extra:variables")
+    assert "499,104" in text  # count-formatted, no metric columns required
+
+
+def test_extra_absent_everywhere_is_dropped(tmp_path):
+    # mirrors the metric rule: absent from every run → dropped, not all-dash
+    a = write_run(tmp_path / "a.json", [bm("test_x", t=1.0, peak=1024)])
+    b = write_run(tmp_path / "b.json", [bm("test_x", t=2.0, peak=2048)])
+    text = render([a, b], columns="peak,extra:nope", stat="min")
+    assert "nope" not in text
+
+
+def test_extra_non_numeric_values_are_skipped(tmp_path):
+    a = write_run(tmp_path / "a.json", [_bm_labeled("test_x", mode="fast", flows=15)])
+    text = render([a], columns="peak,extra:mode,extra:flows", stat="min")
+    assert "15" in text and "fast" not in text  # only numeric labels render
+
+
+def test_extra_empty_name_is_rejected(tmp_path):
+    a = write_run(tmp_path / "a.json", [bm("test_x", t=1.0, peak=1)])
+    with pytest.raises(ValueError, match="unknown column metric"):
+        render([a], columns="peak,extra:")
+
+
+def test_extra_column_in_markdown(tmp_path):
+    from io import StringIO
+
+    a = write_run(tmp_path / "a.json", [_bm_labeled("test_x", peak=1024, flows=204)])
+    out = StringIO()
+    compare_runs([a], columns="peak,extra:flows", stat="min", out_format="md", out=out)
+    text = out.getvalue()
+    assert "| flows |" in text
+    assert "| 204 |" in text
+
+
+def test_extra_column_in_diff_view(tmp_path):
+    # across refs a label can legitimately move (a formulation change): the diff shows Δ%
+    a = write_run(tmp_path / "a.json", [_bm_labeled("test_x", peak=1024, variables=100)])
+    b = write_run(tmp_path / "b.json", [_bm_labeled("test_x", peak=2048, variables=110)])
+    text = render([a, b], columns="peak,extra:variables", diff=True)
+    assert "variables" in text
+    assert "+10.0%" in text

@@ -16,7 +16,10 @@ from typing import TextIO
 from pytest_benchmem.compare.model import (
     _COMPARE_WIDTH,
     _RSS_MISSING_NOTE,
+    _col_id,
+    _display_metric,
     _group_title,
+    _is_extra,
     _md_escape,
     _mult,
     _ordered_ids,
@@ -43,7 +46,7 @@ class _Col:
 
     @property
     def col_id(self) -> str:
-        return f"{self.metric}:{self.stat}"
+        return _col_id(self.metric, self.stat)
 
 
 @dataclass
@@ -69,7 +72,7 @@ def _scale_columns(
     """
     scaled: list[_Col] = []
     for metric, stat in cols:
-        col_id = f"{metric}:{stat}"
+        col_id = _col_id(metric, stat)
         unit = units.get(metric, "")
         present = [values[(col_id, i, lab)] for i, lab in rows if (col_id, i, lab) in values]
         uname, factor = byte_unit(present) if unit == "B" and present else (unit, 1.0)
@@ -107,12 +110,12 @@ def _build_views(
     """
     views: list[_GroupView] = []
     for key in sorted(groups):
-        gids = _ordered_ids(groups[key], values, f"{cols[0][0]}:{cols[0][1]}", labels, sort)
+        gids = _ordered_ids(groups[key], values, _col_id(*cols[0]), labels, sort)
         rows = [
             (i, lab)
             for i in gids
             for lab in labels
-            if any((f"{m}:{s}", i, lab) in values for m, s in cols)
+            if any((_col_id(m, s), i, lab) in values for m, s in cols)
         ]
         single_id = len({i for i, _lab in rows}) == 1
         view = _GroupView(
@@ -150,8 +153,9 @@ def _render_rich(
             if prev_metric is not None and (c.metric == "time") != (prev_metric == "time"):
                 table.add_column("│", justify="center", style="dim")  # timed | untimed boundary
             prev_metric = c.metric
-            head = f"{c.metric} ({c.uname})\n{c.stat}" if c.uname else f"{c.metric}\n{c.stat}"
-            table.add_column(head, justify="right")
+            name = _display_metric(c.metric)
+            stem = f"{name} ({c.uname})" if c.uname else name
+            table.add_column(f"{stem}\n{c.stat}" if c.stat else stem, justify="right")
         for i, lab in view.rows:
             cells = [Text(_row_label(i, lab, view.single_id))]
             prev_metric = None
@@ -163,8 +167,9 @@ def _render_rich(
                     cells.append(Text("—"))
                     continue
                 v = values[(c.col_id, i, lab)]
-                text = _cell_body(v, c.factor, c.unit) + ("" if single else _mult(v, c.best))
-                style = "" if single else (rank_style(v, c.best, c.worst) or "")
+                plain = single or _is_extra(c.metric)  # a label describes, it doesn't compete
+                text = _cell_body(v, c.factor, c.unit) + ("" if plain else _mult(v, c.best))
+                style = "" if plain else (rank_style(v, c.best, c.worst) or "")
                 cells.append(Text(text, style=style))
             table.add_row(*cells)
         console.print(table)
@@ -188,7 +193,15 @@ def _render_markdown(
         lines += [f"> {_RSS_MISSING_NOTE}", ""]
     for view in views:
         headers = ["name"] + [
-            f"{c.metric} ({c.uname}) {c.stat}" if c.uname else f"{c.metric} {c.stat}"
+            " ".join(
+                part
+                for part in (
+                    _display_metric(c.metric),
+                    f"({c.uname})" if c.uname else "",
+                    c.stat,
+                )
+                if part
+            )
             for c in view.cols
         ]
         lines += [
@@ -204,7 +217,8 @@ def _render_markdown(
                     cells.append("—")
                     continue
                 v = values[(c.col_id, i, lab)]
-                cells.append(_cell_body(v, c.factor, c.unit) + ("" if single else _mult(v, c.best)))
+                plain = single or _is_extra(c.metric)  # a label describes, it doesn't compete
+                cells.append(_cell_body(v, c.factor, c.unit) + ("" if plain else _mult(v, c.best)))
             lines.append("| " + " | ".join(_md_escape(x) for x in cells) + " |")
         lines.append("")
     (out or sys.stdout).write("\n".join(lines).rstrip() + "\n")

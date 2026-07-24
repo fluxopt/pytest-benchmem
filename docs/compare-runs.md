@@ -38,6 +38,19 @@ the cross-run ratio). `--columns` is a comma list of `time` / `peak` / `allocate
 `stddev`, or `all`. `--group-by` follows pytest-benchmark's grammar (`fullname` | `name` | `func` |
 `group` | `module` | `class` | `param:NAME`, comma-composable).
 
+`--columns` also accepts `extra:NAME`, which shows the numeric `extra_info` value `NAME` as a plain
+stat-less **label column** — one readout per benchmark and series, with no multiplier or ranking
+colour (a label describes the benchmark, it doesn't compete). Use it to carry model-size labels a
+test records (`extra_info["variables"] = ...`) next to the measured columns:
+
+```bash
+benchmem compare baseline.json candidate.json --columns time,peak,extra:variables --stat min
+```
+
+Like a metric, a label absent from every run is dropped; one absent from a single series shows `—`.
+In the `--diff` view a label column diffs like a metric — useful when the label itself legitimately
+moves between refs (a model that grew after a formulation change).
+
 To fail CI when a cell grows past a threshold, add `--fail-on` — see
 [Catch regressions in CI](catch-regressions.md).
 

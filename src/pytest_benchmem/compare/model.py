@@ -12,8 +12,9 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
+from pytest_benchmem.format import fmt_count
 from pytest_benchmem.snapshot import RESERVED_COLUMNS, Metric, _human_bytes, load_long_df
 
 #: fail-on field → (reader kind, reader field/stat, display unit).
@@ -41,6 +42,8 @@ _RSS_MISSING_NOTE = (
 
 def _fmt_value(field: str, value: float) -> str:
     """Format a value in its field's unit: ``4.1 MiB``, ``1.2e-05s``, ``40``."""
+    if _is_extra(field):
+        return fmt_count(value)
     unit = _FIELD[field][2]
     if unit == "B":
         return _human_bytes(value)
@@ -49,6 +52,25 @@ def _fmt_value(field: str, value: float) -> str:
 
 #: Metrics selectable as table columns (each carries its own unit), in canonical order.
 _COLUMN_METRICS: tuple[Metric, ...] = ("time", "peak", "allocated", "allocations", "rss")
+
+#: ``--columns`` prefix selecting a numeric ``extra_info`` value as a plain label column.
+_EXTRA_PREFIX = "extra:"
+
+
+def _is_extra(metric: str) -> bool:
+    """Whether a column id names an ``extra_info`` label rather than a measured metric."""
+    return metric.startswith(_EXTRA_PREFIX)
+
+
+def _display_metric(metric: str) -> str:
+    """The header/stem text for a column metric — ``extra:flows`` shows as ``flows``."""
+    return metric[len(_EXTRA_PREFIX) :] if _is_extra(metric) else metric
+
+
+def _col_id(metric: str, stat: str) -> str:
+    """The value-map key for a ``metric × stat`` column; a stat-less label column is bare."""
+    return f"{metric}:{stat}" if stat else metric
+
 
 #: Valid ``--sort`` keys for the comparison table.
 _SORTS = ("name", "value", "change")
@@ -66,19 +88,26 @@ _DEFAULT_COLUMNS: tuple[Metric, ...] = ("time", "peak")
 _GROUP_NODE = {"func", "group", "module", "class"}
 
 
-def _resolve_columns(columns: Sequence[str] | str | None) -> list[Metric]:
-    """The metric columns to show: explicit ``columns``, else ``time,peak`` (the default)."""
+def _resolve_columns(columns: Sequence[str] | str | None) -> list[str]:
+    """The columns to show: explicit ``columns``, else ``time,peak`` (the default).
+
+    Metric names come from :data:`_COLUMN_METRICS`; ``extra:NAME`` selects the numeric
+    ``extra_info`` value ``NAME`` as a stat-less label column (params share the same flat
+    dim namespace, as with ``--pivot``).
+    """
     if columns:
         cols = columns.split(",") if isinstance(columns, str) else list(columns)
         cols = [c.strip() for c in cols]
     else:
         cols = list(_DEFAULT_COLUMNS)
-    bad = [c for c in cols if c not in _COLUMN_METRICS]
+    bad = [c for c in cols if not _is_extra(c) and c not in _COLUMN_METRICS]
+    bad += [c for c in cols if _is_extra(c) and not _display_metric(c)]
     if bad:
         raise ValueError(
-            f"unknown column metric(s): {', '.join(bad)}; choose from {', '.join(_COLUMN_METRICS)}"
+            f"unknown column metric(s): {', '.join(bad)}; "
+            f"choose from {', '.join(_COLUMN_METRICS)}, or extra:NAME for an extra_info label"
         )
-    return cast("list[Metric]", cols)
+    return cols
 
 
 def _resolve_stats(stat: str | None) -> list[str]:
@@ -146,6 +175,7 @@ def _load_columns(
     metrics: Sequence[Metric],
     stats: Sequence[str],
     pivot: str | None = None,
+    extras: Sequence[str] = (),
 ) -> tuple[list[str], dict[tuple[str, str, str], float], dict[str, str], dict[str, dict[str, Any]]]:
     """Load each ``metric × stat`` column into ``(labels, values, units, dims)``.
 
@@ -154,27 +184,54 @@ def _load_columns(
     file order (oldest → newest) for run-files, or dim-value order when ``pivot`` folds a single
     run along a dim. Each stat reads pytest-benchmark's own ``stats`` for ``time`` and reduces
     the per-repeat series for the memory metrics.
+
+    ``extras`` names ``extra_info`` labels loaded per ``(id, series)`` under the stat-less
+    ``extra:NAME`` column id — so a label that legitimately differs between runs (a model
+    size after a formulation change) shows per series. Only numeric values are kept.
     """
     paths = [Path(r) for r in runs]
     labels: list[str] = []
     values: dict[tuple[str, str, str], float] = {}
     units: dict[str, str] = {}
     dims: dict[str, dict[str, Any]] = {}
+
+    def collect(df: Any) -> None:
+        """Register the series labels, dims and ``extras`` values one long df carries."""
+        for lab in df["snapshot"]:
+            if lab not in labels:
+                labels.append(lab)
+        dim_cols = [c for c in df.columns if c not in RESERVED_COLUMNS]
+        for idx, test_id in enumerate(df["id"]):
+            dims.setdefault(test_id, {c: df[c].iloc[idx] for c in dim_cols})
+        for name in extras:
+            if name not in df.columns:
+                continue
+            col_id = _EXTRA_PREFIX + name
+            units.setdefault(col_id, "")
+            for lab, test_id, v in zip(df["snapshot"], df["id"], df[name], strict=True):
+                if isinstance(v, bool):
+                    continue
+                try:
+                    fv = float(v)
+                except (TypeError, ValueError):
+                    continue
+                if not math.isnan(fv):
+                    values.setdefault((col_id, test_id, lab), fv)
+
     for metric in metrics:
         for stat in stats:
             df, unit = load_long_df(paths, metric=metric, stat=stat, pivot=pivot)
             units[metric] = unit
             if df.empty:  # metric absent from every run (e.g. memory on timing-only files)
                 continue
-            col_id = f"{metric}:{stat}"
-            for lab in df["snapshot"]:
-                if lab not in labels:
-                    labels.append(lab)
+            col_id = _col_id(metric, stat)
             for lab, test_id, value in zip(df["snapshot"], df["id"], df["value"], strict=True):
                 values[(col_id, test_id, lab)] = float(value)
-            dim_cols = [c for c in df.columns if c not in RESERVED_COLUMNS]
-            for idx, test_id in enumerate(df["id"]):
-                dims.setdefault(test_id, {c: df[c].iloc[idx] for c in dim_cols})
+            collect(df)
+    if extras and not metrics:  # label-only columns still need one pass over the runs
+        df, _unit = load_long_df(paths, metric="time", stat="min", pivot=pivot)
+        if not df.empty:
+            collect(df)
     return labels, values, units, dims
 
 

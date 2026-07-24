@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TextIO
+from typing import TextIO, cast
 
 from pytest_benchmem.compare.diff import (
     _build_diff_views,
@@ -18,13 +18,17 @@ from pytest_benchmem.compare.diff import (
 )
 from pytest_benchmem.compare.model import (
     _SORTS,
+    _col_id,
+    _display_metric,
     _group_of,
+    _is_extra,
     _load_columns,
     _resolve_columns,
     _resolve_stats,
     _write_csv,
 )
 from pytest_benchmem.compare.table import _build_views, _render_markdown, _render_rich
+from pytest_benchmem.snapshot import Metric
 
 
 def compare_runs(
@@ -65,6 +69,10 @@ def compare_runs(
     ``stddev`` or ``all`` (the default), which expands each metric into its full stat
     spread — so no single statistic is privileged. A metric absent from every run is
     dropped rather than shown all dashes (so timing-only runs collapse to just ``time``).
+    An ``extra:NAME`` entry adds the numeric ``extra_info`` value ``NAME`` as a plain
+    label column — one stat-less readout per ``(benchmark × series)``, with no multiplier
+    or ranking colour (a label describes the benchmark, it doesn't compete); like a
+    metric, one absent from every run is dropped.
     ``sort`` orders rows within a group: ``name``, ``value`` (largest in the last series), or
     ``change`` (biggest growth first). ``out_format`` picks the rendering — ``table`` (the rich
     terminal default) or ``md`` (GitHub-flavored markdown to ``out``, for a PR comment or
@@ -87,9 +95,11 @@ def compare_runs(
         raise ValueError(f"unknown --format {out_format!r}; use table or md")
     # The diff view is a base→head readout, so a full stat spread would triple every column; when
     # the user hasn't asked for a specific stat, show just the headline min.
-    metrics = _resolve_columns(columns)
+    cols_spec = _resolve_columns(columns)  # metric names validated there
+    metrics = cast("list[Metric]", [c for c in cols_spec if not _is_extra(c)])
+    extras = [_display_metric(c) for c in cols_spec if _is_extra(c)]
     stats = _resolve_stats("min" if diff and stat is None else stat)
-    labels, values, units, dims = _load_columns(runs, metrics, stats, pivot)
+    labels, values, units, dims = _load_columns(runs, metrics, stats, pivot, extras=extras)
     if not labels:
         raise ValueError("no benchmarks found in the given run(s)")
     if len(labels) < 2 and len(runs) > 1:  # noqa: PLR2004 — distinct paths collapsed to one series
@@ -106,11 +116,11 @@ def compare_runs(
     # the best/worst colour are meaningless (best == worst == the value), so they're dropped.
     single = len(labels) == 1
     with_data = {col_id for col_id, _i, _lab in values}
-    all_cols = [(m, s) for m in metrics for s in stats]
-    cols = [(m, s) for m, s in all_cols if f"{m}:{s}" in with_data] or all_cols  # drop empties
+    all_cols = [(c, s) for c in cols_spec for s in ([""] if _is_extra(c) else stats)]
+    cols = [(m, s) for m, s in all_cols if _col_id(m, s) in with_data] or all_cols  # drop empties
     ids = sorted({test_id for _c, test_id, _lab in values})
     if csv is not None:
-        _write_csv(values, [f"{m}:{s}" for m, s in cols], ids, labels, csv)
+        _write_csv(values, [_col_id(m, s) for m, s in cols], ids, labels, csv)
 
     groups: dict[tuple[str, ...], list[str]] = {}
     for test_id in ids:
