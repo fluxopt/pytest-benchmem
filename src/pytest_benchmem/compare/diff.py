@@ -17,6 +17,8 @@ from typing import TextIO
 from pytest_benchmem.compare.model import (
     _COMPARE_WIDTH,
     _RSS_MISSING_NOTE,
+    _col_id,
+    _display_metric,
     _fmt_value,
     _group_title,
     _md_escape,
@@ -61,9 +63,11 @@ class _DiffMetricRow:
 
 def _diff_stem(metric: str, stat: str, *, one_stat: bool) -> str:
     """The metric label for a diff row — just the metric when a single stat is shown (the common
-    case), else ``metric stat`` so a multi-stat diff stays unambiguous.
+    case), else ``metric stat`` so a multi-stat diff stays unambiguous. A stat-less
+    ``extra:NAME`` label column is always just its name.
     """
-    return metric if one_stat else f"{metric} {stat}"
+    name = _display_metric(metric)
+    return name if one_stat or not stat else f"{name} {stat}"
 
 
 def _diff_headers(
@@ -107,7 +111,7 @@ def _diff_metric_rows(
     base_lab, comps = labels[0], labels[1:]
     rows: list[_DiffMetricRow] = []
     for metric, stat in cols:
-        col_id = f"{metric}:{stat}"
+        col_id = _col_id(metric, stat)
         baseline = values.get((col_id, i, base_lab))
         deltas = [_diff_delta_cell(baseline, values.get((col_id, i, comp))) for comp in comps]
         rows.append(
@@ -132,11 +136,11 @@ def _build_diff_views(
     """
     views: list[_DiffView] = []
     for key in sorted(groups):
-        gids = _ordered_ids(groups[key], values, f"{cols[0][0]}:{cols[0][1]}", list(labels), sort)
+        gids = _ordered_ids(groups[key], values, _col_id(*cols[0]), list(labels), sort)
         ids = [
             i
             for i in gids
-            if any((f"{m}:{s}", i, lab) in values for m, s in cols for lab in labels)
+            if any((_col_id(m, s), i, lab) in values for m, s in cols for lab in labels)
         ]
         if ids:
             views.append(_DiffView(_group_title(key), ids))

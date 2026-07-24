@@ -43,6 +43,13 @@ def fmt_count(value: float) -> str:
     return f"{int(value):,}"
 
 
+def fmt_label(value: float) -> str:
+    """A numeric label readout: a thousands-separated integer when the value is integral
+    (the common count case), else 4 significant figures — never silently truncated.
+    """
+    return fmt_count(value) if float(value).is_integer() else f"{value:,.4g}"
+
+
 def rank_style(value: float | None, best: float | None, worst: float | None) -> str | None:
     """Green for the group's best (smallest) value, red for the worst, else unstyled.
 

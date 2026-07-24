@@ -16,13 +16,16 @@ from typing import TextIO
 from pytest_benchmem.compare.model import (
     _COMPARE_WIDTH,
     _RSS_MISSING_NOTE,
+    _col_id,
+    _display_metric,
     _group_title,
+    _is_extra,
     _md_escape,
     _mult,
     _ordered_ids,
     _short,
 )
-from pytest_benchmem.format import byte_unit, fmt_bytes, fmt_count, rank_style
+from pytest_benchmem.format import byte_unit, fmt_bytes, fmt_count, fmt_label, rank_style
 
 
 @dataclass
@@ -43,7 +46,14 @@ class _Col:
 
     @property
     def col_id(self) -> str:
-        return f"{self.metric}:{self.stat}"
+        return _col_id(self.metric, self.stat)
+
+    @property
+    def is_label(self) -> bool:
+        """An ``extra:NAME`` column. A label describes the benchmark, it doesn't compete —
+        so its cells render plain: no ``(N.NN)`` multiplier, no ranking colour.
+        """
+        return _is_extra(self.metric)
 
 
 @dataclass
@@ -69,7 +79,7 @@ def _scale_columns(
     """
     scaled: list[_Col] = []
     for metric, stat in cols:
-        col_id = f"{metric}:{stat}"
+        col_id = _col_id(metric, stat)
         unit = units.get(metric, "")
         present = [values[(col_id, i, lab)] for i, lab in rows if (col_id, i, lab) in values]
         uname, factor = byte_unit(present) if unit == "B" and present else (unit, 1.0)
@@ -78,13 +88,27 @@ def _scale_columns(
     return scaled
 
 
-def _cell_body(value: float, factor: float, unit: str) -> str:
-    """The unit-formatted number for a cell, without the multiplier: bytes / count / 4 sig figs."""
-    if unit == "B":
-        return fmt_bytes(value, factor)
-    if unit == "":
+def _cell_body(value: float, col: _Col) -> str:
+    """The unit-formatted number for a cell, without the multiplier: bytes / count / label /
+    4 sig figs. An ``extra:NAME`` label keeps its decimals (:func:`fmt_label`) — it isn't the
+    integer count its empty unit would suggest.
+    """
+    if col.is_label:
+        return fmt_label(value)
+    if col.unit == "B":
+        return fmt_bytes(value, col.factor)
+    if col.unit == "":
         return fmt_count(value)
     return f"{value:.4g}"
+
+
+def _col_header(col: _Col, sep: str) -> str:
+    """The column's header text — ``metric (unit)``, then the stat behind ``sep`` (a newline
+    in the rich table, a space in markdown). A stat-less label column is just its name.
+    """
+    name = _display_metric(col.metric)
+    stem = f"{name} ({col.uname})" if col.uname else name
+    return f"{stem}{sep}{col.stat}" if col.stat else stem
 
 
 def _row_label(test_id: str, series: str, single_id: bool) -> str:
@@ -107,12 +131,12 @@ def _build_views(
     """
     views: list[_GroupView] = []
     for key in sorted(groups):
-        gids = _ordered_ids(groups[key], values, f"{cols[0][0]}:{cols[0][1]}", labels, sort)
+        gids = _ordered_ids(groups[key], values, _col_id(*cols[0]), labels, sort)
         rows = [
             (i, lab)
             for i in gids
             for lab in labels
-            if any((f"{m}:{s}", i, lab) in values for m, s in cols)
+            if any((_col_id(m, s), i, lab) in values for m, s in cols)
         ]
         single_id = len({i for i, _lab in rows}) == 1
         view = _GroupView(
@@ -150,8 +174,7 @@ def _render_rich(
             if prev_metric is not None and (c.metric == "time") != (prev_metric == "time"):
                 table.add_column("│", justify="center", style="dim")  # timed | untimed boundary
             prev_metric = c.metric
-            head = f"{c.metric} ({c.uname})\n{c.stat}" if c.uname else f"{c.metric}\n{c.stat}"
-            table.add_column(head, justify="right")
+            table.add_column(_col_header(c, "\n"), justify="right")
         for i, lab in view.rows:
             cells = [Text(_row_label(i, lab, view.single_id))]
             prev_metric = None
@@ -163,8 +186,9 @@ def _render_rich(
                     cells.append(Text("—"))
                     continue
                 v = values[(c.col_id, i, lab)]
-                text = _cell_body(v, c.factor, c.unit) + ("" if single else _mult(v, c.best))
-                style = "" if single else (rank_style(v, c.best, c.worst) or "")
+                plain = single or c.is_label
+                text = _cell_body(v, c) + ("" if plain else _mult(v, c.best))
+                style = "" if plain else (rank_style(v, c.best, c.worst) or "")
                 cells.append(Text(text, style=style))
             table.add_row(*cells)
         console.print(table)
@@ -187,10 +211,7 @@ def _render_markdown(
     if rss_missing:
         lines += [f"> {_RSS_MISSING_NOTE}", ""]
     for view in views:
-        headers = ["name"] + [
-            f"{c.metric} ({c.uname}) {c.stat}" if c.uname else f"{c.metric} {c.stat}"
-            for c in view.cols
-        ]
+        headers = ["name"] + [_col_header(c, " ") for c in view.cols]
         lines += [
             f"#### {view.title}",
             "",
@@ -204,7 +225,8 @@ def _render_markdown(
                     cells.append("—")
                     continue
                 v = values[(c.col_id, i, lab)]
-                cells.append(_cell_body(v, c.factor, c.unit) + ("" if single else _mult(v, c.best)))
+                plain = single or c.is_label
+                cells.append(_cell_body(v, c) + ("" if plain else _mult(v, c.best)))
             lines.append("| " + " | ".join(_md_escape(x) for x in cells) + " |")
         lines.append("")
     (out or sys.stdout).write("\n".join(lines).rstrip() + "\n")

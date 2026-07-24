@@ -312,7 +312,9 @@ def compare(
             help="Comma list of metrics: time | peak | allocated | allocations | rss "
             "(rss = isolated runs only; e.g. peak or time,peak,rss). Default: time,peak. "
             "Each is shown across "
-            "every --stat; a metric absent from every run is dropped.",
+            "every --stat; a metric absent from every run is dropped. extra:NAME adds "
+            "the numeric extra_info value NAME as a plain stat-less label column "
+            "(e.g. extra:variables).",
         ),
     ] = None,
     group_by: Annotated[
