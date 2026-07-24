@@ -602,8 +602,6 @@ def test_extra_empty_name_is_rejected(tmp_path):
 
 
 def test_extra_column_in_markdown(tmp_path):
-    from io import StringIO
-
     a = write_run(tmp_path / "a.json", [_bm_labeled("test_x", peak=1024, flows=204)])
     out = StringIO()
     compare_runs([a], columns="peak,extra:flows", stat="min", out_format="md", out=out)
@@ -619,3 +617,37 @@ def test_extra_column_in_diff_view(tmp_path):
     text = render([a, b], columns="peak,extra:variables", diff=True)
     assert "variables" in text
     assert "+10.0%" in text
+
+
+def test_extra_survives_all_empty_metric_columns(tmp_path):
+    # rss absent from every (non-isolated) run used to abort with "no benchmarks found",
+    # taking the label down with it — the label pass must not depend on any metric loading.
+    a = write_run(tmp_path / "a.json", [_bm_labeled("test_x", variables=100)])
+    b = write_run(tmp_path / "b.json", [_bm_labeled("test_x", variables=120)])
+    text = render([a, b], columns="rss,extra:variables", stat="min")
+    assert "100" in text and "120" in text
+
+
+def test_extra_float_label_keeps_decimals(tmp_path):
+    # a non-integral label must not be truncated to an int (0.85 used to render as 0)
+    a = write_run(tmp_path / "a.json", [_bm_labeled("test_x", sparsity=0.85)])
+    text = render([a], columns="extra:sparsity")
+    assert "0.85" in text
+
+
+def test_extra_reserved_name_is_rejected(tmp_path):
+    # snapshot/id/value are the long frame's own columns — extra:value would silently
+    # render metric values as a "label", so it's an input error instead
+    a = write_run(tmp_path / "a.json", [bm("test_x", t=1.0, peak=1)])
+    with pytest.raises(ValueError, match="reserved"):
+        render([a], columns="peak,extra:value")
+
+
+def test_extra_column_flows_into_csv(tmp_path):
+    a = write_run(tmp_path / "a.json", [_bm_labeled("test_x", peak=1024, flows=204)])
+    b = write_run(tmp_path / "b.json", [_bm_labeled("test_x", peak=2048, flows=210)])
+    out = StringIO()
+    compare_runs([a, b], columns="peak,extra:flows", stat="min", csv=tmp_path / "out.csv", out=out)
+    text = (tmp_path / "out.csv").read_text()
+    assert "extra:flows:a" in text and "extra:flows:b" in text
+    assert "204" in text and "210" in text

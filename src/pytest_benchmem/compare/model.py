@@ -14,7 +14,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-from pytest_benchmem.format import fmt_count
+from pytest_benchmem.format import fmt_label
 from pytest_benchmem.snapshot import RESERVED_COLUMNS, Metric, _human_bytes, load_long_df
 
 #: fail-on field → (reader kind, reader field/stat, display unit).
@@ -43,7 +43,7 @@ _RSS_MISSING_NOTE = (
 def _fmt_value(field: str, value: float) -> str:
     """Format a value in its field's unit: ``4.1 MiB``, ``1.2e-05s``, ``40``."""
     if _is_extra(field):
-        return fmt_count(value)
+        return fmt_label(value)
     unit = _FIELD[field][2]
     if unit == "B":
         return _human_bytes(value)
@@ -106,6 +106,12 @@ def _resolve_columns(columns: Sequence[str] | str | None) -> list[str]:
         raise ValueError(
             f"unknown column metric(s): {', '.join(bad)}; "
             f"choose from {', '.join(_COLUMN_METRICS)}, or extra:NAME for an extra_info label"
+        )
+    reserved = [c for c in cols if _is_extra(c) and _display_metric(c) in RESERVED_COLUMNS]
+    if reserved:
+        raise ValueError(
+            f"reserved extra_info name(s): {', '.join(reserved)}; "
+            f"{', '.join(RESERVED_COLUMNS)} are the long frame's own columns, not labels"
         )
     return cols
 
@@ -228,7 +234,9 @@ def _load_columns(
             for lab, test_id, value in zip(df["snapshot"], df["id"], df["value"], strict=True):
                 values[(col_id, test_id, lab)] = float(value)
             collect(df)
-    if extras and not metrics:  # label-only columns still need one pass over the runs
+    # No metric df populated the frame — label-only columns, or every requested metric absent
+    # (e.g. rss on non-isolated runs) — so the labels still need one pass over the runs.
+    if extras and not labels:
         df, _unit = load_long_df(paths, metric="time", stat="min", pivot=pivot)
         if not df.empty:
             collect(df)
