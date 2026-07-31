@@ -269,12 +269,11 @@ def test_isolate_rss_is_independent_of_warmup():
     high-water, so warming inside the child would make the reading a function of the warmup
     count rather than of the workload.
     """
-    rss = [
-        measure_memory(_retain_8mib, repeats=1, warmup=w, isolate=True).rss_bytes for w in (0, 3)
-    ]
-    assert all(r is not None for r in rss)
+    cold = measure_memory(_retain_8mib, repeats=1, warmup=0, isolate=True).rss_bytes
+    warmed = measure_memory(_retain_8mib, repeats=1, warmup=3, isolate=True).rss_bytes
+    assert cold is not None and warmed is not None
     # 3 extra retained calls would show up as ~24 MiB of drift; allow slack for interpreter noise
-    assert abs(rss[0] - rss[1]) < 4 * 1024 * 1024
+    assert abs(cold - warmed) < 4 * 1024 * 1024
 
 
 _ISOLATED_STATE: list[bytearray] = []
