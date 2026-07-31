@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.5.0](https://github.com/fluxopt/pytest-benchmem/compare/v0.4.12...v0.5.0) (2026-07-31)
+
+
+### Features
+
+* **memray:** add calls=N to measure buildup across invocations ([#181](https://github.com/fluxopt/pytest-benchmem/issues/181)) ([7906838](https://github.com/fluxopt/pytest-benchmem/commit/790683849306d0c7a1095fd0d22a5c3a89715f31))
+
+
+### Bug Fixes
+
+* **memray:** don't let warmup inflate isolated rss ([#180](https://github.com/fluxopt/pytest-benchmem/issues/180)) ([ff4f780](https://github.com/fluxopt/pytest-benchmem/commit/ff4f7806c73a4adb6c78b7c9316493d195f1ce9a))
+* **memray:** read the child's own resident high-water on Linux ([#184](https://github.com/fluxopt/pytest-benchmem/issues/184)) ([b34039b](https://github.com/fluxopt/pytest-benchmem/commit/b34039bd1721039d7a2a25de1a989227830013a0))
+* **memray:** run setup before the measured pass in isolated mode ([#179](https://github.com/fluxopt/pytest-benchmem/issues/179)) ([a300909](https://github.com/fluxopt/pytest-benchmem/commit/a30090990f2e23a699c0543d576b60afb34e9f36))
+
+
+### Miscellaneous Chores
+
+* release 0.5.0 ([#185](https://github.com/fluxopt/pytest-benchmem/issues/185)) ([833ce0d](https://github.com/fluxopt/pytest-benchmem/commit/833ce0d8e78673e1f5fe8cad8d7f188ff1e41d70))
+
 ## [0.4.12](https://github.com/fluxopt/pytest-benchmem/compare/v0.4.11...v0.4.12) (2026-07-24)
 
 
