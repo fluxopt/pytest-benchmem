@@ -253,6 +253,31 @@ def _consume(buf: bytes) -> int:
     return len(buf)  # module-level so the partial is picklable
 
 
+_ISOLATED_STATE: list[bytearray] = []
+
+
+def _build_isolated_state():
+    """Untracked setup for the isolated child: the state the action needs to run at all."""
+    _ISOLATED_STATE.clear()
+    _ISOLATED_STATE.append(bytearray(4 * 1024 * 1024))
+
+
+def _operate_on_isolated_state():
+    """Fails with IndexError unless ``setup`` ran in this child first."""
+    return len(_ISOLATED_STATE[0]) + len(bytearray(1024))
+
+
+def test_isolate_runs_setup_before_the_measured_pass():
+    """``setup`` must run in the child before its tracked call — it used to run only as part of
+    warmup, so with ``warmup=0`` the measured action saw state that was never built.
+    """
+    res = measure_memory(
+        _operate_on_isolated_state, setup=_build_isolated_state, repeats=1, warmup=0, isolate=True
+    )
+    assert res.peak_bytes < 1024**2  # setup's 4 MiB stayed outside the tracker
+    assert res.rss_bytes is not None and res.rss_bytes > 4 * 1024**2  # but is resident, so in rss
+
+
 def test_isolate_warns_on_heavy_pickled_action():
     # a partial closing over a big pre-built object pickles heavy → rss would measure
     # deserializing it, not building it. Warn (the build-inside-the-callable rule).

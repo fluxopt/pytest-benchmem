@@ -306,7 +306,9 @@ def measure_memory(
             run) — its allocations are not measured. Use it to rebuild fresh state so a stateful
             ``action`` (one that caches on or mutates a carried-over object) gives *independent*
             samples instead of a decaying/accumulating series. Mirrors pytest-benchmark's
-            ``pedantic(setup=...)``.
+            ``pedantic(setup=...)``. Under ``isolate=True`` it runs inside each child, before
+            that child's tracked call; its state is excluded from ``peak`` but is *resident*, so
+            it counts towards ``rss`` — which is a whole-job figure by design.
 
     Returns:
         A :class:`MemoryResult` over every measured pass (warmup runs are not retained).
@@ -379,8 +381,11 @@ def _ru_maxrss_bytes() -> int:
 
 
 def _isolated_child(queue: Any, action: Action, setup: Action | None, warmup: int) -> None:
-    """Body of an isolated pass, run in a fresh spawned process: warm, one tracked pass, read
-    ``ru_maxrss``; put the :class:`Measurement` (or the raised exception) on ``queue``.
+    """Body of an isolated pass, run in a fresh spawned process: warm, ``setup``, one tracked
+    pass, read ``ru_maxrss``; put the :class:`Measurement` (or the raised exception) on ``queue``.
+
+    ``setup`` runs before the tracked call as well as before each warmup run — mirroring the
+    in-process :func:`_run_pass`, whose contract is that every measured pass gets fresh state.
     """
     try:
         _require_memray()
@@ -388,6 +393,8 @@ def _isolated_child(queue: Any, action: Action, setup: Action | None, warmup: in
             if setup is not None:
                 setup()
             action()
+        if setup is not None:
+            setup()  # untracked: excluded from `peak`, but resident, so it counts towards `rss`
         gc.collect()
         m = _track_once(action)
         queue.put(
