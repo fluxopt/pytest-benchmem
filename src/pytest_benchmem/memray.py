@@ -191,8 +191,12 @@ def _compute_statistics() -> Callable[[str], Any]:
 _NESTED_TRACKER_MARKER = "more than one Tracker"
 
 
-def _track_to(out: Path, action: Action, *, native: bool = False) -> Measurement:
-    """Track ``action`` to the ``out`` ``.bin`` (which memray creates) → a :class:`Measurement`.
+def _track_to(out: Path, action: Action, *, native: bool = False, calls: int = 1) -> Measurement:
+    """Track ``calls`` invocations of ``action`` to the ``out`` ``.bin`` (which memray creates)
+    → a :class:`Measurement`.
+
+    The calls happen **inside** one tracker, so the resulting peak is the high-water across the
+    whole sequence and the counts are its totals — see :func:`measure_memory`'s ``calls``.
 
     With ``native=True`` the tracker also captures native (C/C++/Rust) stacks, so a flamegraph
     of the kept ``.bin`` attributes memory inside extension code (polars/numpy/solver bindings)
@@ -209,7 +213,8 @@ def _track_to(out: Path, action: Action, *, native: bool = False) -> Measurement
     compute_statistics = _compute_statistics()
     try:
         with memray.Tracker(out, native_traces=native):
-            action()
+            for _ in range(calls):
+                action()
     except RuntimeError as exc:
         if _NESTED_TRACKER_MARKER in str(exc):
             raise RuntimeError(
@@ -228,8 +233,10 @@ def _track_to(out: Path, action: Action, *, native: bool = False) -> Measurement
     )
 
 
-def _track_once(action: Action, keep_bin: Path | None = None, native: bool = False) -> Measurement:
-    """One fresh tracker run → a :class:`Measurement`.
+def _track_once(
+    action: Action, keep_bin: Path | None = None, native: bool = False, calls: int = 1
+) -> Measurement:
+    """One fresh tracker run of ``calls`` invocations → a :class:`Measurement`.
 
     With ``keep_bin`` the profile ``.bin`` is written there and retained (for a later
     :func:`render_flamegraph`); otherwise it goes to a temp dir and is discarded. ``native``
@@ -239,9 +246,9 @@ def _track_once(action: Action, keep_bin: Path | None = None, native: bool = Fal
     if keep_bin is not None:
         keep_bin.parent.mkdir(parents=True, exist_ok=True)
         keep_bin.unlink(missing_ok=True)  # memray must create the file itself
-        return _track_to(keep_bin, action, native=native)
+        return _track_to(keep_bin, action, native=native, calls=calls)
     with tempfile.TemporaryDirectory(prefix="pytest-benchmem-") as tmp:
-        return _track_to(Path(tmp) / "track.bin", action)
+        return _track_to(Path(tmp) / "track.bin", action, calls=calls)
 
 
 #: Adaptive-sampling defaults, used when ``repeats`` is ``None`` (the default). memray
@@ -262,6 +269,7 @@ def measure_memory(
     *,
     warmup: int = _DEFAULT_WARMUP,
     isolate: bool = False,
+    calls: int = 1,
     max_time: float | None = None,
     min_passes: int = _ADAPTIVE_MIN_PASSES,
     max_passes: int = _ADAPTIVE_MAX_PASSES,
@@ -284,6 +292,14 @@ def measure_memory(
     callable, not a lambda/closure);
     ``keep_bin`` is ignored in this mode.
 
+    ``calls`` sets how many invocations make up **one** measured pass — they run inside a single
+    tracker, so ``peak`` becomes the high-water across the whole sequence and the counts its
+    totals. It's how you measure **buildup**: with ``isolate=True``, ``calls=N`` answers "what
+    does a process hold after N of these?", which ``repeats`` can't (those are N *separate* cold
+    processes) and in-process ``peak`` can't either (memray only sees allocations made after its
+    tracker starts, so state retained from earlier is invisible to it — the OS-level ``rss``
+    is what catches it).
+
     Two modes, by ``repeats``:
 
     - ``repeats=N`` (an int) — run exactly ``N`` passes. Fixed and reproducible; what CI
@@ -300,10 +316,14 @@ def measure_memory(
             **Ignored when** ``isolate=True`` — every isolated pass is already a cold, fresh
             process, and a second call in it would inflate that child's resident high-water (a
             monotonic figure that can't be reset), tying ``rss`` to the warmup count.
-        isolate: Run each pass in a fresh spawned process that calls the action once, and record
-            that child's resident high-water as :attr:`Measurement.rss_bytes`. Requires a
-            picklable ``action``/``setup``; makes ``peak`` a cold first-call number rather than
-            the warm steady state.
+        calls: Invocations per measured pass, inside one tracker (default 1). ``peak`` is then
+            the high-water across the sequence and ``allocations`` / ``allocated`` its totals.
+            Use it with ``isolate=True`` to measure buildup — memory a workload accumulates
+            across repeated calls (a cache that grows, a leak) shows up in ``rss``.
+        isolate: Run each pass in a fresh spawned process that calls the action ``calls`` times
+            (once by default), and record that child's resident high-water as
+            :attr:`Measurement.rss_bytes`. Requires a picklable ``action``/``setup``; makes
+            ``peak`` a cold first-call number rather than the warm steady state.
         max_time: Wall-clock budget (seconds) for adaptive sampling; ``None`` = no time bound.
         min_passes: Minimum passes when sampling adaptively.
         max_passes: Hard ceiling on passes when sampling adaptively.
@@ -337,8 +357,10 @@ def measure_memory(
 
     def _one(first: bool) -> Measurement:
         if isolate:
-            return _isolated_run(action, setup)
-        return _run_pass(action, setup=setup, keep_bin=keep_bin if first else None, native=native)
+            return _isolated_run(action, setup, calls)
+        return _run_pass(
+            action, setup=setup, keep_bin=keep_bin if first else None, native=native, calls=calls
+        )
 
     if repeats is not None:
         samples = [_one(i == 0) for i in range(max(1, repeats))]
@@ -370,11 +392,12 @@ def _run_pass(
     setup: Action | None = None,
     keep_bin: Path | None = None,
     native: bool = False,
+    calls: int = 1,
 ) -> Measurement:
     """``setup()`` (untracked) then one tracked pass, then a ``gc.collect()`` for a clean heap."""
     if setup is not None:
         setup()  # rebuild fresh state outside the tracker — its memory isn't counted
-    sample = _track_once(action, keep_bin=keep_bin, native=native)
+    sample = _track_once(action, keep_bin=keep_bin, native=native, calls=calls)
     gc.collect()
     return sample
 
@@ -425,7 +448,7 @@ def _peak_rss_bytes() -> int:
     return raw if platform.system() == "Darwin" else raw * 1024
 
 
-def _isolated_child(queue: Any, action: Action, setup: Action | None) -> None:
+def _isolated_child(queue: Any, action: Action, setup: Action | None, calls: int) -> None:
     """Body of an isolated pass, run in a fresh spawned process: optional untracked ``setup``,
     one tracked call, read the resident high-water; put the :class:`Measurement` (or the raised
     exception) on ``queue``.
@@ -441,7 +464,7 @@ def _isolated_child(queue: Any, action: Action, setup: Action | None) -> None:
         if setup is not None:
             setup()  # untracked: excluded from `peak`, but resident, so it counts towards `rss`
         gc.collect()
-        m = _track_once(action)
+        m = _track_once(action, calls=calls)
         queue.put(
             Measurement(m.peak_bytes, m.allocations, m.total_bytes, rss_bytes=_peak_rss_bytes())
         )
@@ -455,7 +478,7 @@ def _isolated_child(queue: Any, action: Action, setup: Action | None) -> None:
 _HEAVY_PICKLE_WARN_BYTES = 1024 * 1024
 
 
-def _isolated_run(action: Action, setup: Action | None) -> Measurement:
+def _isolated_run(action: Action, setup: Action | None, calls: int = 1) -> Measurement:
     """One measured pass in a **fresh** spawned process, so the heap is cold and the resident
     high-water is attributable to the action. Returns the child's :class:`Measurement`, incl.
     ``rss_bytes``.
@@ -491,7 +514,7 @@ def _isolated_run(action: Action, setup: Action | None) -> Measurement:
 
     ctx = multiprocessing.get_context("spawn")
     queue = ctx.SimpleQueue()
-    proc = ctx.Process(target=_isolated_child, args=(queue, action, setup))
+    proc = ctx.Process(target=_isolated_child, args=(queue, action, setup, calls))
     proc.start()
     proc.join()
     if queue.empty():  # nothing was put → the child died before returning a result

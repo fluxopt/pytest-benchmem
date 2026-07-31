@@ -375,6 +375,37 @@ def test_isolate_records_rss_series_in_json(pytester):
     assert blob["rss_bytes"][0] > 0  # whole-process resident high-water, recorded from the child
 
 
+def test_calls_marker_measures_a_sequence_of_invocations(pytester):
+    """`calls=N` makes one measured pass N invocations inside a single tracker, so the recorded
+    counts are the sequence's totals rather than one call's."""
+    pytester.makepyfile(
+        workload="def build():\n    return [bytearray(1024) for _ in range(3000)]\n"
+    )
+    pytester.makepyfile(
+        """
+        import pytest
+        from workload import build
+
+        @pytest.mark.benchmem(repeats=1, warmup=0)
+        def test_one(benchmark_memory):
+            benchmark_memory(build)
+
+        @pytest.mark.benchmem(repeats=1, warmup=0, calls=4)
+        def test_four(benchmark_memory):
+            benchmark_memory(build)
+        """
+    )
+    out = pytester.path / "bench.json"
+    result = pytester.runpytest_subprocess(
+        "--benchmark-only", f"--benchmark-json={out}", "-p", "no:cacheprovider"
+    )
+    result.assert_outcomes(passed=2)
+    blobs = {
+        b["name"]: b["extra_info"]["benchmem"] for b in json.loads(out.read_text())["benchmarks"]
+    }
+    assert blobs["test_four"]["allocations"][0] > 3 * blobs["test_one"]["allocations"][0]
+
+
 # --- @pytest.mark.benchmem(max_*=...): action-scoped absolute ceilings -----------
 
 

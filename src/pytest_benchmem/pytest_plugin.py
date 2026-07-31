@@ -179,6 +179,20 @@ def _warmup_from_node(node: Any) -> int:
     return _global_warmup(getattr(node, "config", None))
 
 
+def _calls_from_node(node: Any) -> int:
+    """Invocations per measured pass for this test — ``@pytest.mark.benchmem(calls=N)``; 1 by
+    default.
+
+    Per test only, like ``isolate``: ``calls`` redefines *what the number means* (one call vs a
+    sequence of N), so a suite-wide flag would silently change every benchmark's meaning rather
+    than tune its cost.
+    """
+    marker = node.get_closest_marker(MARKER) if node is not None else None
+    if marker is not None and "calls" in marker.kwargs:
+        return max(1, int(marker.kwargs["calls"]))
+    return 1
+
+
 def _isolate_from_node(node: Any) -> bool:
     """Whether to isolate (and record ``rss``) for this test — opt-in **per test only**, via
     ``@pytest.mark.benchmem(isolate=True)``; off otherwise.
@@ -292,6 +306,7 @@ def _record_memory(
     repeats: int | None = None,
     warmup: int = 1,
     isolate: bool = False,
+    calls: int = 1,
     native: bool = False,
     max_time: float | None = None,
     limits: Mapping[str, float] | None = None,
@@ -324,6 +339,7 @@ def _record_memory(
             repeats=repeats,
             warmup=warmup,
             isolate=isolate,
+            calls=calls,
             max_time=max_time,
             keep_bin=keep_bin,
             native=native and keep_bin is not None,
@@ -351,6 +367,7 @@ class MemoryBenchmark:
         repeats: int | None = None,
         warmup: int = 1,
         isolate: bool = False,
+        calls: int = 1,
         native: bool = False,
         max_time: float | None = None,
         limits: Mapping[str, float] | None = None,
@@ -359,6 +376,7 @@ class MemoryBenchmark:
         self._repeats = repeats
         self._warmup = warmup
         self._isolate = isolate
+        self._calls = calls
         self._native = native
         self._max_time = max_time
         self._limits = dict(limits or {})
@@ -387,6 +405,7 @@ class MemoryBenchmark:
             repeats=self._repeats,
             warmup=self._warmup,
             isolate=self._isolate,
+            calls=self._calls,
             native=self._native,
             max_time=self._max_time,
             limits=self._limits,
@@ -419,6 +438,7 @@ class MemoryBenchmark:
             repeats=self._repeats,
             warmup=self._warmup,
             isolate=self._isolate,
+            calls=self._calls,
             native=self._native,
             max_time=self._max_time,
             limits=self._limits,
@@ -488,6 +508,7 @@ def benchmark_memory(
         repeats=_repeats_from_node(request.node),
         warmup=_warmup_from_node(request.node),
         isolate=_isolate_from_node(request.node),
+        calls=_calls_from_node(request.node),
         native=_native_from_node(request.node),
         max_time=_max_time_from_node(request.node),
         limits=_limits_from_node(request.node),
@@ -551,6 +572,9 @@ def _install_auto_memory() -> None:
     def _isolate(self: BenchmarkFixture) -> bool:
         return _isolate_from_node(getattr(self, "_benchmem_node", None))
 
+    def _calls(self: BenchmarkFixture) -> int:
+        return _calls_from_node(getattr(self, "_benchmem_node", None))
+
     def _native(self: BenchmarkFixture) -> bool:
         return _native_from_node(getattr(self, "_benchmem_node", None))
 
@@ -569,6 +593,7 @@ def _install_auto_memory() -> None:
             repeats=_repeats(self),
             warmup=_warmup(self),
             isolate=_isolate(self),
+            calls=_calls(self),
             native=_native(self),
             max_time=_max_time(self),
             limits=_limits(self),
@@ -594,6 +619,7 @@ def _install_auto_memory() -> None:
             repeats=_repeats(self),
             warmup=_warmup(self),
             isolate=_isolate(self),
+            calls=_calls(self),
             native=_native(self),
             max_time=_max_time(self),
             limits=_limits(self),
@@ -741,13 +767,15 @@ def pytest_configure(config: pytest.Config) -> None:
     """Register the ``benchmem`` marker; patch ``benchmark`` if ``--benchmark-memory`` is set."""
     config.addinivalue_line(
         "markers",
-        "benchmem(repeats=N, warmup=N, isolate=True, profile_native=True, max_peak=..., "
+        "benchmem(repeats=N, warmup=N, isolate=True, calls=N, profile_native=True, max_peak=..., "
         "max_allocated=..., max_allocations=N): "
         "pytest-benchmem peak-memory options — repeats forces a fixed number of memray passes "
         "(the reported peak is the min; default adapts the count); warmup sets the untracked "
         "dry-runs done before measuring (default 1, in-process passes only); isolate runs each "
         "pass as one cold call in a fresh process and records whole-process rss (needs a "
-        "picklable top-level function); profile_native "
+        "picklable top-level function); calls sets how many invocations make up one measured "
+        "pass, inside a single tracker (default 1) — use it with isolate to measure buildup; "
+        "profile_native "
         "captures native stacks in the kept --benchmark-memory-profile .bin; max_peak / "
         "max_allocated / max_allocations fail the "
         "test if the worst measured pass exceeds an absolute ceiling (e.g. "

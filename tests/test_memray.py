@@ -169,7 +169,9 @@ def _feed_peaks(monkeypatch, peaks):
     seq = iter(peaks)
     monkeypatch.setattr(m, "_require_memray", lambda: None)
     monkeypatch.setattr(
-        m, "_track_once", lambda action, keep_bin=None, native=False: Measurement(next(seq), 1, 1)
+        m,
+        "_track_once",
+        lambda action, keep_bin=None, native=False, calls=1: Measurement(next(seq), 1, 1),
     )
 
 
@@ -328,3 +330,25 @@ def test_isolate_warns_on_heavy_pickled_action():
     action = partial(_consume, bytes(2 * 1024 * 1024))  # 2 MiB shipped in the pickle
     with pytest.warns(UserWarning, match="deserializing"):
         measure_memory(action, repeats=1, warmup=0, isolate=True)
+
+
+# --- calls=N: one measured pass = N invocations inside a single tracker ---
+
+
+def test_calls_accumulate_into_one_pass():
+    """``calls=N`` tracks N invocations together, so the counts are the sequence's totals."""
+    one = measure_memory(_alloc_for_isolation, repeats=1, warmup=0)
+    five = measure_memory(_alloc_for_isolation, repeats=1, warmup=0, calls=5)
+    assert five.allocations > 4 * one.allocations  # ~5x the calls → ~5x the allocation count
+    assert five.total_bytes > 4 * one.total_bytes
+
+
+def test_calls_measures_buildup_in_isolated_rss():
+    """The point of ``calls`` with ``isolate=True``: memory a workload *retains* across calls
+    shows up in ``rss``, which one call can't reveal and ``repeats`` (separate cold processes)
+    can't either.
+    """
+    one = measure_memory(_retain_8mib, repeats=1, warmup=0, isolate=True, calls=1)
+    four = measure_memory(_retain_8mib, repeats=1, warmup=0, isolate=True, calls=4)
+    assert four.rss_bytes is not None and one.rss_bytes is not None
+    assert four.rss_bytes - one.rss_bytes > 16 * 1024 * 1024  # 3 more retained calls = ~24 MiB
