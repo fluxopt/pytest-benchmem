@@ -212,6 +212,29 @@ def _native_from_node(node: Any) -> bool:
     return _global_native(getattr(node, "config", None))
 
 
+def _global_memory_only(config: Any) -> bool:
+    """Suite-wide ``--benchmark-memory-only`` (off by default)."""
+    if config is None:
+        return False
+    return bool(config.getoption("--benchmark-memory-only"))
+
+
+def _memory_only_from_node(node: Any) -> bool:
+    """Resolve memory-only mode: ``@pytest.mark.benchmem(time=False)`` wins, else the
+    suite-wide ``--benchmark-memory-only``, else ``False`` (time normally).
+
+    When on, the memray pass runs as usual but pytest-benchmark's timed rounds collapse to a
+    **single** call — the timing column shows that one call's duration. For a capacity
+    benchmark (``isolate=True``) whose payload rebuilds heavy state every round, this sheds the
+    rounds that would otherwise dominate wall-clock only to be discarded once ``rss``/``peak``
+    is in hand.
+    """
+    marker = node.get_closest_marker(MARKER) if node is not None else None
+    if marker is not None and "time" in marker.kwargs:
+        return not bool(marker.kwargs["time"])
+    return _global_memory_only(getattr(node, "config", None))
+
+
 def _parse_limit(kwarg: str, value: Any, *, is_bytes: bool) -> float:
     """Parse one ``max_*`` marker value → an absolute ceiling in base units (bytes or count).
 
@@ -352,6 +375,7 @@ class MemoryBenchmark:
         warmup: int = 1,
         isolate: bool = False,
         native: bool = False,
+        memory_only: bool = False,
         max_time: float | None = None,
         limits: Mapping[str, float] | None = None,
     ) -> None:
@@ -360,6 +384,7 @@ class MemoryBenchmark:
         self._warmup = warmup
         self._isolate = isolate
         self._native = native
+        self._memory_only = memory_only
         self._max_time = max_time
         self._limits = dict(limits or {})
         self.result: MemoryResult | None = None
@@ -391,6 +416,17 @@ class MemoryBenchmark:
             max_time=self._max_time,
             limits=self._limits,
         )
+        if self._memory_only:
+            # Skip the full timed rounds — one call is enough to register the row; the timing
+            # column then reads that single call rather than rebuilding heavy state N times.
+            return self._benchmark.pedantic(  # type: ignore[no-untyped-call]
+                function_to_benchmark,
+                args=args,
+                kwargs=kwargs,
+                rounds=1,
+                warmup_rounds=0,
+                iterations=1,
+            )
         return self._benchmark(function_to_benchmark, *args, **kwargs)
 
     def pedantic(
@@ -423,6 +459,8 @@ class MemoryBenchmark:
             max_time=self._max_time,
             limits=self._limits,
         )
+        if self._memory_only:  # collapse the timed rounds to a single call
+            rounds, warmup_rounds, iterations = 1, 0, 1
         return self._benchmark.pedantic(  # type: ignore[no-untyped-call]
             target,
             args=args,
@@ -489,6 +527,7 @@ def benchmark_memory(
         warmup=_warmup_from_node(request.node),
         isolate=_isolate_from_node(request.node),
         native=_native_from_node(request.node),
+        memory_only=_memory_only_from_node(request.node),
         max_time=_max_time_from_node(request.node),
         limits=_limits_from_node(request.node),
     )
@@ -560,6 +599,9 @@ def _install_auto_memory() -> None:
     def _limits(self: BenchmarkFixture) -> dict[str, float]:
         return _limits_from_node(getattr(self, "_benchmem_node", None))
 
+    def _memory_only(self: BenchmarkFixture) -> bool:
+        return _memory_only_from_node(getattr(self, "_benchmem_node", None))
+
     def call(
         self: BenchmarkFixture, function_to_benchmark: Callable[..., Any], *a: Any, **k: Any
     ) -> Any:
@@ -573,6 +615,16 @@ def _install_auto_memory() -> None:
             max_time=_max_time(self),
             limits=_limits(self),
         )
+        if _memory_only(self):  # one timed call instead of the full rounds (memory already taken)
+            return orig_pedantic(  # type: ignore[no-untyped-call]
+                self,
+                function_to_benchmark,
+                args=a,
+                kwargs=k,
+                rounds=1,
+                warmup_rounds=0,
+                iterations=1,
+            )
         return orig_call(self, function_to_benchmark, *a, **k)  # type: ignore[no-untyped-call]
 
     def pedantic(
@@ -598,6 +650,8 @@ def _install_auto_memory() -> None:
             max_time=_max_time(self),
             limits=_limits(self),
         )
+        if _memory_only(self):  # collapse the timed rounds to a single call
+            rounds, warmup_rounds, iterations = 1, 0, 1
         return orig_pedantic(  # type: ignore[no-untyped-call]
             self,
             target,
@@ -710,6 +764,15 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "Off by default.",
     )
     group.addoption(
+        "--benchmark-memory-only",
+        action="store_true",
+        default=False,
+        help="Skip pytest-benchmark's timed rounds suite-wide: run the memory pass, then a "
+        "single timed call (the timing column shows that one call). For capacity benchmarks "
+        "whose payload rebuilds heavy state each round, the discarded rounds dominate "
+        "wall-clock. Per-test override: @pytest.mark.benchmem(time=False/True). Off by default.",
+    )
+    group.addoption(
         "--benchmark-memory-table",
         action="store",
         choices=["combined", "split"],
@@ -741,13 +804,15 @@ def pytest_configure(config: pytest.Config) -> None:
     """Register the ``benchmem`` marker; patch ``benchmark`` if ``--benchmark-memory`` is set."""
     config.addinivalue_line(
         "markers",
-        "benchmem(repeats=N, warmup=N, isolate=True, profile_native=True, max_peak=..., "
-        "max_allocated=..., max_allocations=N): "
+        "benchmem(repeats=N, warmup=N, isolate=True, time=False, profile_native=True, "
+        "max_peak=..., max_allocated=..., max_allocations=N): "
         "pytest-benchmem peak-memory options — repeats forces a fixed number of memray passes "
         "(the reported peak is the min; default adapts the count); warmup sets the untracked "
         "dry-runs done before measuring (default 1); isolate runs each pass in a fresh process "
-        "and records whole-process rss (needs a picklable top-level function); profile_native "
-        "captures native stacks in the kept --benchmark-memory-profile .bin; max_peak / "
+        "and records whole-process rss (needs a picklable top-level function); time=False skips "
+        "the timed rounds (one timed call instead) when only memory/rss is wanted; "
+        "profile_native captures native stacks in the kept --benchmark-memory-profile .bin; "
+        "max_peak / "
         "max_allocated / max_allocations fail the "
         "test if the worst measured pass exceeds an absolute ceiling (e.g. "
         "max_peak='100MiB', max_allocations=5000).",

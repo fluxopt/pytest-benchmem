@@ -32,6 +32,7 @@ def test_build(benchmark_memory):
 | `repeats` | *auto* | force a fixed `N` memray passes for this test (default: adaptive — see below). **Every** pass is kept (the blob stores the whole series); the headline `peak` is the *minimum* across them, and `--stat` reports any other. Overrides the suite-wide `--benchmark-memory-repeats`. |
 | `warmup` | `1` | untracked dry-runs of the action before measuring, to shed one-time costs (lazy imports, first-touch caches). `0` disables. Overrides the suite-wide `--benchmark-memory-warmup`. |
 | `isolate` | `False` | run each memray pass in a **fresh process** and also record whole-process resident memory as the `rss` metric — the physical/OOM-relevant peak memray's logical heap can't give. **Per-test only** (no suite-wide flag): `rss` is a whole-job capacity number, meaningful only for build+operate benchmarks, so you mark the specific ones. Needs a **top-level, picklable** benchmarked function (see the whole-job warning below). |
+| `time` | `True` | `time=False` **skips pytest-benchmark's timed rounds** — the memory pass runs as usual, then a *single* timed call registers the row (the timing column shows that one call). For a capacity benchmark (`isolate=True`) whose payload rebuilds heavy state each round, those discarded rounds otherwise dominate wall-clock. Overrides the suite-wide `--benchmark-memory-only`. |
 | `profile_native` | `False` | on the `--benchmark-memory-profile` path, capture **native** (C/C++/Rust) stacks in the kept `.bin`, so a flamegraph attributes extension-code memory (polars/numpy/solver bindings) instead of one opaque `??? at ???` bucket. Opt-in (slower, bigger `.bin`). Overrides the suite-wide `--benchmark-memory-profile-native`. |
 | `max_peak` | — | fail the test if the headline `peak` exceeds this **absolute** ceiling. A size string (`"100MiB"`, units `B`/`KiB`/`MiB`/`GiB`) or a bare int (bytes). |
 | `max_allocated` | — | as `max_peak`, on `allocated` (total bytes). |
@@ -64,6 +65,20 @@ def test_build(benchmark_memory):
     figure (e.g. *write-only*). For per-phase memory, use the in-process `peak` metric, which
     *can* measure a write given an already-built model. So the rule is two-part: **use a
     top-level function (no lambdas), and don't pass heavy pre-built state — build it inside.**
+
+!!! tip "Only want `rss`? Skip the timing with `time=False`"
+    A capacity benchmark rebuilds its whole state every call, so pytest-benchmark's timed rounds
+    re-run that expensive build many times — then discard it, since you only wanted `rss`. Add
+    `time=False` to run the memory pass plus a *single* timed call instead:
+
+    ```python
+    @pytest.mark.benchmem(isolate=True, time=False)
+    def test_whole_pipeline(benchmark_memory):
+        benchmark_memory(build_and_write, spec, n)   # rss measured; one timed call, not N rounds
+    ```
+
+    Suite-wide, `--benchmark-memory-only` does the same for every benchmark (a per-test
+    `time=True` opts back in).
 
 ### Absolute ceilings — `max_peak` / `max_allocated` / `max_allocations`
 
