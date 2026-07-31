@@ -32,6 +32,7 @@ def test_build(benchmark_memory):
 | `repeats` | *auto* | force a fixed `N` memray passes for this test (default: adaptive — see below). **Every** pass is kept (the blob stores the whole series); the headline `peak` is the *minimum* across them, and `--stat` reports any other. Overrides the suite-wide `--benchmark-memory-repeats`. |
 | `warmup` | `1` | untracked dry-runs of the action before measuring, to shed one-time costs (lazy imports, first-touch caches). `0` disables. **Ignored under `isolate=True`** — see the note below. Overrides the suite-wide `--benchmark-memory-warmup`. |
 | `isolate` | `False` | run each memray pass in a **fresh process** that calls the action **once**, and also record whole-process resident memory as the `rss` metric — the physical/OOM-relevant peak memray's logical heap can't give. **Per-test only** (no suite-wide flag): `rss` is a whole-job capacity number, meaningful only for build+operate benchmarks, so you mark the specific ones. Needs a **top-level, picklable** benchmarked function (see the whole-job warning below). |
+| `calls` | `1` | how many invocations make up **one** measured pass, inside a single tracker. `peak` becomes the high-water across the whole sequence and `allocated` / `allocations` its totals. Pair with `isolate=True` to measure **buildup** — see below. **Per-test only**, like `isolate`: it redefines what the number means, so there's no suite-wide flag. |
 | `profile_native` | `False` | on the `--benchmark-memory-profile` path, capture **native** (C/C++/Rust) stacks in the kept `.bin`, so a flamegraph attributes extension-code memory (polars/numpy/solver bindings) instead of one opaque `??? at ???` bucket. Opt-in (slower, bigger `.bin`). Overrides the suite-wide `--benchmark-memory-profile-native`. |
 | `max_peak` | — | fail the test if the headline `peak` exceeds this **absolute** ceiling. A size string (`"100MiB"`, units `B`/`KiB`/`MiB`/`GiB`) or a bare int (bytes). |
 | `max_allocated` | — | as `max_peak`, on `allocated` (total bytes). |
@@ -75,6 +76,34 @@ def test_build(benchmark_memory):
     it — and `rss` carries the child's interpreter + memray floor (~25-40 MiB) plus any `setup`
     state. Both are capacity figures; compare them across runs of the same harness, not against
     the in-process `peak` for the same test.
+
+### Measuring buildup — `calls`
+
+`repeats` and `calls` both run the action more than once, but they answer different questions:
+
+| | What it does | Answers |
+|---|---|---|
+| `repeats=N` | N *separate* passes, each measured on its own | "how noisy is one call?" — the headline is the min across them |
+| `calls=N` | N invocations inside **one** tracked pass | "what does N of these cost together?" |
+
+`calls` is how you catch memory a workload *accumulates* — a cache that grows, a leak — which a
+single call can't show and `repeats` can't either (those are independent passes; under `isolate`
+they're independent *processes*):
+
+```python
+@pytest.mark.benchmem(isolate=True, calls=50)
+def test_buildup(benchmark_memory):
+    benchmark_memory(handle_request, payload)
+```
+
+`rss` then reports what the process holds after 50 requests. Compare against a `calls=1` variant
+of the same benchmark and the difference is the buildup.
+
+!!! note "Why `rss` and not `peak`"
+    memray only sees allocations made *after* its tracker starts, so in-process `peak` measures
+    demand within the tracked window — it can't see state a previous call retained. The OS-level
+    `rss` can, which is why buildup wants `isolate=True`. (Within a single `calls=N` pass, `peak`
+    *does* see the accumulation, since all N calls are inside one tracker.)
 
 ### Absolute ceilings — `max_peak` / `max_allocated` / `max_allocations`
 

@@ -60,6 +60,7 @@ summed) and `allocations` counts the calls. A peak gate would wave this churn th
 
 - See these metrics in a delta table → [Compare two runs](compare-runs.md), a plot → [Visualize memory](visualize.ipynb), or a CI gate → [Catch regressions in CI](catch-regressions.md)
 - Every flag and the blob schema → [Reference](reference.md)
+- Measure what a workload *accumulates* over many calls → [Measuring buildup](reference.md#measuring-buildup-calls)
 
 ---
 
