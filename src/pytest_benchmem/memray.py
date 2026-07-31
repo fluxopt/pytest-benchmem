@@ -50,7 +50,10 @@ class Measurement:
     whole-process resident high-water.
 
     ``rss_bytes`` is ``getrusage``'s ``ru_maxrss`` from an **isolated** pass (a fresh child
-    process); ``None`` in-process, where a process-global RSS isn't attributable to the action.
+    process that calls the action once); ``None`` in-process, where a process-global RSS isn't
+    attributable to the action. Being a whole-process high-water it also carries the child's
+    fixed floor — interpreter, the ``memray`` import and tracker (~25-40 MiB together, varying
+    with the harness) — plus any ``setup`` state, so it's a capacity figure, not a delta.
     """
 
     peak_bytes: int
@@ -272,11 +275,12 @@ def measure_memory(
     gets a fresh tracker. The headline is the **min** across passes (see :class:`MemoryResult`);
     every pass's :class:`Measurement` is kept for spread stats.
 
-    With ``isolate=True`` each measured pass runs in a **fresh spawned process** (each warming
-    itself), and that child's whole-process resident high-water (``ru_maxrss``) is recorded as
-    :attr:`Measurement.rss_bytes` — a physical-memory reading attributable to the action, which
-    an in-process pass can't give. The action (and ``setup``) must be **picklable** (a top-level
-    callable, not a lambda/closure); ``keep_bin`` is ignored in this mode.
+    With ``isolate=True`` each measured pass runs in a **fresh spawned process** that calls the
+    action **exactly once**, and that child's whole-process resident high-water (``ru_maxrss``)
+    is recorded as :attr:`Measurement.rss_bytes` — a physical-memory reading attributable to the
+    action, which an in-process pass can't give. ``warmup`` does not apply (see below), and the
+    action (and ``setup``) must be **picklable** (a top-level callable, not a lambda/closure);
+    ``keep_bin`` is ignored in this mode.
 
     Two modes, by ``repeats``:
 
@@ -291,8 +295,13 @@ def measure_memory(
         action: The zero-argument callable to measure.
         repeats: Fixed pass count, or ``None`` to sample adaptively.
         warmup: Untracked dry-runs (``setup`` + ``action``) before measuring; ``0`` disables.
-        isolate: Run each pass in a fresh spawned process and record its ``ru_maxrss`` as
-            :attr:`Measurement.rss_bytes`. Requires a picklable ``action``/``setup``.
+            **Ignored when** ``isolate=True`` — every isolated pass is already a cold, fresh
+            process, and a second call in it would inflate that child's ``ru_maxrss`` (a
+            monotonic high-water that can't be reset), tying ``rss`` to the warmup count.
+        isolate: Run each pass in a fresh spawned process that calls the action once, and record
+            that child's ``ru_maxrss`` as :attr:`Measurement.rss_bytes`. Requires a picklable
+            ``action``/``setup``; makes ``peak`` a cold first-call number rather than the warm
+            steady state.
         max_time: Wall-clock budget (seconds) for adaptive sampling; ``None`` = no time bound.
         min_passes: Minimum passes when sampling adaptively.
         max_passes: Hard ceiling on passes when sampling adaptively.
@@ -306,9 +315,9 @@ def measure_memory(
             run) — its allocations are not measured. Use it to rebuild fresh state so a stateful
             ``action`` (one that caches on or mutates a carried-over object) gives *independent*
             samples instead of a decaying/accumulating series. Mirrors pytest-benchmark's
-            ``pedantic(setup=...)``. Under ``isolate=True`` it runs inside each child, before
-            that child's tracked call; its state is excluded from ``peak`` but is *resident*, so
-            it counts towards ``rss`` — which is a whole-job figure by design.
+            ``pedantic(setup=...)``. Under ``isolate=True`` it runs once in each child, before
+            that child's single tracked call; its state is excluded from ``peak`` but is
+            *resident*, so it counts towards ``rss`` — which is a whole-job figure by design.
 
     Returns:
         A :class:`MemoryResult` over every measured pass (warmup runs are not retained).
@@ -326,7 +335,7 @@ def measure_memory(
 
     def _one(first: bool) -> Measurement:
         if isolate:
-            return _isolated_run(action, setup, warmup)
+            return _isolated_run(action, setup)
         return _run_pass(action, setup=setup, keep_bin=keep_bin if first else None, native=native)
 
     if repeats is not None:
@@ -380,19 +389,19 @@ def _ru_maxrss_bytes() -> int:
     return raw if platform.system() == "Darwin" else raw * 1024
 
 
-def _isolated_child(queue: Any, action: Action, setup: Action | None, warmup: int) -> None:
-    """Body of an isolated pass, run in a fresh spawned process: warm, ``setup``, one tracked
-    pass, read ``ru_maxrss``; put the :class:`Measurement` (or the raised exception) on ``queue``.
+def _isolated_child(queue: Any, action: Action, setup: Action | None) -> None:
+    """Body of an isolated pass, run in a fresh spawned process: optional untracked ``setup``,
+    one tracked call, read ``ru_maxrss``; put the :class:`Measurement` (or the raised exception)
+    on ``queue``.
 
-    ``setup`` runs before the tracked call as well as before each warmup run — mirroring the
-    in-process :func:`_run_pass`, whose contract is that every measured pass gets fresh state.
+    The action is called **exactly once** — no warmup. ``ru_maxrss`` is a monotonic high-water
+    over the whole process, so it can't be reset between calls: any extra call would fold its
+    own high-water into the reading, making ``rss`` a function of the warmup count rather than
+    of the workload. One cold call keeps ``rss`` and ``peak`` describing the same execution, and
+    is the fresh-process floor the headline is defined as anyway.
     """
     try:
         _require_memray()
-        for _ in range(max(0, warmup)):
-            if setup is not None:
-                setup()
-            action()
         if setup is not None:
             setup()  # untracked: excluded from `peak`, but resident, so it counts towards `rss`
         gc.collect()
@@ -410,7 +419,7 @@ def _isolated_child(queue: Any, action: Action, setup: Action | None, warmup: in
 _HEAVY_PICKLE_WARN_BYTES = 1024 * 1024
 
 
-def _isolated_run(action: Action, setup: Action | None, warmup: int) -> Measurement:
+def _isolated_run(action: Action, setup: Action | None) -> Measurement:
     """One measured pass in a **fresh** spawned process, so the heap is cold and ``ru_maxrss``
     is attributable to the action. Returns the child's :class:`Measurement` incl. ``rss_bytes``.
 
@@ -445,7 +454,7 @@ def _isolated_run(action: Action, setup: Action | None, warmup: int) -> Measurem
 
     ctx = multiprocessing.get_context("spawn")
     queue = ctx.SimpleQueue()
-    proc = ctx.Process(target=_isolated_child, args=(queue, action, setup, warmup))
+    proc = ctx.Process(target=_isolated_child, args=(queue, action, setup))
     proc.start()
     proc.join()
     if queue.empty():  # nothing was put → the child died before returning a result

@@ -9,7 +9,7 @@ whole-process *physical* peak. Pick by the question you're asking:
 | `peak` | high-water of *live* bytes — the most held at once | headline footprint; "how big did it get?" |
 | `allocated` | sum of *every* allocation over the run | churn / temporary spikes `peak` smooths over |
 | `allocations` | count of allocation calls | a near-deterministic, low-noise CI tripwire |
-| `rss` *(opt-in)* | whole-process resident high-water, OS-level — interpreter baseline included | "will it fit in RAM?" — OOM/capacity headroom, the *physical* number a logical heap can't give |
+| `rss` *(opt-in)* | whole-process resident high-water of **one cold call**, OS-level — interpreter and memray baseline included | "will it fit in RAM?" — OOM/capacity headroom, the *physical* number a logical heap can't give |
 
 The first three come from **one memray pass** — your code's allocator *demand*, in-process and
 byte-exact, so they see native (numpy / C-extension) allocations, not just Python objects.
@@ -18,6 +18,10 @@ extensions), the figure the OOM killer actually watches. It rides a *separate is
 and is **opt-in per test** — mark the build-plus-operate benchmarks you want it on with
 `@pytest.mark.benchmem(isolate=True)` (there's deliberately no suite-wide flag; see the
 [marker reference](reference.md#the-benchmem-marker) for the picklable-callable rule).
+
+An isolated pass runs the action **exactly once** in a fresh process, so `warmup` doesn't apply
+there — everything below about warmup and the cold→warm plateau is about the **in-process**
+metrics.
 
 ## Three readings of one run
 
@@ -109,7 +113,8 @@ In practice: **deterministic code settles in ~3 passes**; **noisy code runs more
 — exactly where extra passes pay off.
 
 The warmup defaults to one run; tune it suite-wide with `--benchmark-memory-warmup=N` (or per
-test with `@pytest.mark.benchmem(warmup=N)`), and set `0` to disable it.
+test with `@pytest.mark.benchmem(warmup=N)`), and set `0` to disable it. It applies to
+**in-process** passes only — isolated (`rss`) passes are one cold call each, by design.
 
 !!! note "Adaptive sampling, not calibration"
     The UX echoes pytest-benchmark — you don't pick a count — but the mechanism is different, so
