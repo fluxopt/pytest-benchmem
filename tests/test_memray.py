@@ -253,6 +253,25 @@ def _consume(buf: bytes) -> int:
     return len(buf)  # module-level so the partial is picklable
 
 
+def test_isolated_rss_is_not_inherited_from_the_parent():
+    """The child's rss must measure the *child*, not whatever the parent had already touched.
+
+    Linux's ``getrusage`` ``ru_maxrss`` reads ``signal->maxrss``, which survives ``execve`` — so
+    a spawned child inherited the parent's watermark and every isolated pass reported the pytest
+    process's footprint (a constant, unrelated to the action). Raise the parent's high-water well
+    above the child's real cost and check the reading doesn't follow it.
+    """
+    ballast = bytearray(300 * 1024 * 1024)  # parent watermark → ≥300 MiB
+    for i in range(0, len(ballast), 4096):
+        ballast[i] = 1  # fault the pages in; an untouched mapping is not resident
+    del ballast
+
+    res = measure_memory(_alloc_for_isolation, repeats=1, warmup=0, isolate=True)
+    assert res.rss_bytes is not None
+    # the child is a fresh interpreter + memray + a ~2 MiB action — far below the parent's 300 MiB
+    assert res.rss_bytes < 150 * 1024 * 1024
+
+
 _ISOLATED_KEPT: list[bytearray] = []
 
 
