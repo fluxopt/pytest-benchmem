@@ -30,8 +30,8 @@ def test_build(benchmark_memory):
 | Kwarg | Default | What |
 |---|---|---|
 | `repeats` | *auto* | force a fixed `N` memray passes for this test (default: adaptive — see below). **Every** pass is kept (the blob stores the whole series); the headline `peak` is the *minimum* across them, and `--stat` reports any other. Overrides the suite-wide `--benchmark-memory-repeats`. |
-| `warmup` | `1` | untracked dry-runs of the action before measuring, to shed one-time costs (lazy imports, first-touch caches). `0` disables. Overrides the suite-wide `--benchmark-memory-warmup`. |
-| `isolate` | `False` | run each memray pass in a **fresh process** and also record whole-process resident memory as the `rss` metric — the physical/OOM-relevant peak memray's logical heap can't give. **Per-test only** (no suite-wide flag): `rss` is a whole-job capacity number, meaningful only for build+operate benchmarks, so you mark the specific ones. Needs a **top-level, picklable** benchmarked function (see the whole-job warning below). |
+| `warmup` | `1` | untracked dry-runs of the action before measuring, to shed one-time costs (lazy imports, first-touch caches). `0` disables. **Ignored under `isolate=True`** — see the note below. Overrides the suite-wide `--benchmark-memory-warmup`. |
+| `isolate` | `False` | run each memray pass in a **fresh process** that calls the action **once**, and also record whole-process resident memory as the `rss` metric — the physical/OOM-relevant peak memray's logical heap can't give. **Per-test only** (no suite-wide flag): `rss` is a whole-job capacity number, meaningful only for build+operate benchmarks, so you mark the specific ones. Needs a **top-level, picklable** benchmarked function (see the whole-job warning below). |
 | `profile_native` | `False` | on the `--benchmark-memory-profile` path, capture **native** (C/C++/Rust) stacks in the kept `.bin`, so a flamegraph attributes extension-code memory (polars/numpy/solver bindings) instead of one opaque `??? at ???` bucket. Opt-in (slower, bigger `.bin`). Overrides the suite-wide `--benchmark-memory-profile-native`. |
 | `max_peak` | — | fail the test if the headline `peak` exceeds this **absolute** ceiling. A size string (`"100MiB"`, units `B`/`KiB`/`MiB`/`GiB`) or a bare int (bytes). |
 | `max_allocated` | — | as `max_peak`, on `allocated` (total bytes). |
@@ -64,6 +64,17 @@ def test_build(benchmark_memory):
     figure (e.g. *write-only*). For per-phase memory, use the in-process `peak` metric, which
     *can* measure a write given an already-built model. So the rule is two-part: **use a
     top-level function (no lambdas), and don't pass heavy pre-built state — build it inside.**
+
+!!! note "`warmup` doesn't apply to isolated passes — they're one cold call each"
+    An isolated pass is a fresh process that calls the action **exactly once**; both its `peak`
+    and its `rss` describe that call. `warmup` is an in-process knob only — `ru_maxrss` is a
+    monotonic whole-process high-water that can't be reset, so a warmup call inside the child
+    would fold its own peak into `rss`. (`repeats` still applies: N repeats = N fresh processes.)
+
+    So isolated `peak` is a **cold first-call** number — one-time costs inside the action land in
+    it — and `rss` carries the child's interpreter + memray floor (~25-40 MiB) plus any `setup`
+    state. Both are capacity figures; compare them across runs of the same harness, not against
+    the in-process `peak` for the same test.
 
 ### Absolute ceilings — `max_peak` / `max_allocated` / `max_allocations`
 
@@ -160,7 +171,7 @@ min, any `--stat`) derives from these on read:
 | `peak_bytes` | per-repeat high-water of live bytes — the `peak` metric (headline = min) |
 | `allocations` | per-repeat allocation count — the `allocations` metric |
 | `total_bytes` | per-repeat total bytes allocated — the `allocated` metric (churn `peak` hides) |
-| `rss_bytes` | per-repeat whole-process resident high-water (`ru_maxrss`) — the `rss` metric. **Only present under `isolate=True`** (each pass in a fresh process); absent otherwise. |
+| `rss_bytes` | per-repeat whole-process resident high-water (`ru_maxrss`) — the `rss` metric. **Only present under `isolate=True`** (each pass a fresh process making one cold call); absent otherwise. Includes the child's interpreter + memray floor, so it's a capacity figure, not a delta. |
 
 ```json
 {"peak_bytes": [800000, 805000], "allocations": [12, 12], "total_bytes": [800000, 805000]}
