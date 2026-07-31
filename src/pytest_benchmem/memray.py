@@ -49,11 +49,12 @@ class Measurement:
     allocated (cumulative churn, incl. temporaries GC later frees), plus an optional
     whole-process resident high-water.
 
-    ``rss_bytes`` is ``getrusage``'s ``ru_maxrss`` from an **isolated** pass (a fresh child
-    process that calls the action once); ``None`` in-process, where a process-global RSS isn't
-    attributable to the action. Being a whole-process high-water it also carries the child's
-    fixed floor — interpreter, the ``memray`` import and tracker (~25-40 MiB together, varying
-    with the harness) — plus any ``setup`` state, so it's a capacity figure, not a delta.
+    ``rss_bytes`` is the whole-process resident high-water of an **isolated** pass (a fresh child
+    process that calls the action once) — see :func:`_peak_rss_bytes`; ``None`` in-process, where
+    a process-global RSS isn't attributable to the action. Being a whole-process high-water it
+    also carries the child's fixed floor — interpreter, the ``memray`` import and tracker (~25-40
+    MiB together, varying with the harness) — plus any ``setup`` state, so it's a capacity figure,
+    not a delta.
     """
 
     peak_bytes: int
@@ -111,7 +112,7 @@ class MemoryResult:
 
     @property
     def rss_bytes(self) -> int | None:
-        """Headline whole-process RSS — the **minimum** ``ru_maxrss`` across isolated passes
+        """Headline whole-process RSS — the **minimum** resident high-water across isolated passes
         (the cold floor, like :attr:`peak_bytes`), or ``None`` if memory wasn't measured in
         isolation (in-process has no attributable process-global RSS).
         """
@@ -276,10 +277,11 @@ def measure_memory(
     every pass's :class:`Measurement` is kept for spread stats.
 
     With ``isolate=True`` each measured pass runs in a **fresh spawned process** that calls the
-    action **exactly once**, and that child's whole-process resident high-water (``ru_maxrss``)
-    is recorded as :attr:`Measurement.rss_bytes` — a physical-memory reading attributable to the
-    action, which an in-process pass can't give. ``warmup`` does not apply (see below), and the
-    action (and ``setup``) must be **picklable** (a top-level callable, not a lambda/closure);
+    action **exactly once**, and that child's whole-process resident high-water (see
+    :func:`_peak_rss_bytes`) is recorded as :attr:`Measurement.rss_bytes` — a physical-memory
+    reading attributable to the action, which an in-process pass can't give. ``warmup`` does not
+    apply (see below), and the action (and ``setup``) must be **picklable** (a top-level
+    callable, not a lambda/closure);
     ``keep_bin`` is ignored in this mode.
 
     Two modes, by ``repeats``:
@@ -296,12 +298,12 @@ def measure_memory(
         repeats: Fixed pass count, or ``None`` to sample adaptively.
         warmup: Untracked dry-runs (``setup`` + ``action``) before measuring; ``0`` disables.
             **Ignored when** ``isolate=True`` — every isolated pass is already a cold, fresh
-            process, and a second call in it would inflate that child's ``ru_maxrss`` (a
-            monotonic high-water that can't be reset), tying ``rss`` to the warmup count.
+            process, and a second call in it would inflate that child's resident high-water (a
+            monotonic figure that can't be reset), tying ``rss`` to the warmup count.
         isolate: Run each pass in a fresh spawned process that calls the action once, and record
-            that child's ``ru_maxrss`` as :attr:`Measurement.rss_bytes`. Requires a picklable
-            ``action``/``setup``; makes ``peak`` a cold first-call number rather than the warm
-            steady state.
+            that child's resident high-water as :attr:`Measurement.rss_bytes`. Requires a
+            picklable ``action``/``setup``; makes ``peak`` a cold first-call number rather than
+            the warm steady state.
         max_time: Wall-clock budget (seconds) for adaptive sampling; ``None`` = no time bound.
         min_passes: Minimum passes when sampling adaptively.
         max_passes: Hard ceiling on passes when sampling adaptively.
@@ -377,12 +379,46 @@ def _run_pass(
     return sample
 
 
-def _ru_maxrss_bytes() -> int:
-    """Whole-process resident high-water (``getrusage`` ``ru_maxrss``), normalized to **bytes**.
+#: ``/proc/self/status`` field holding this process's resident high-water, in kB.
+_VM_HWM = "VmHWM:"
 
-    ``ru_maxrss`` is reported in **KiB on Linux, bytes on macOS** — normalize so callers always
-    get bytes (matching every other field).
+
+def _vm_hwm_bytes() -> int | None:
+    """Linux resident high-water from ``/proc/self/status``' ``VmHWM``, in **bytes**.
+
+    ``None`` if the field isn't there — it needs ``CONFIG_PROC_FS`` and is absent under a few
+    hardened/sandboxed configurations, where the caller falls back to ``getrusage``.
     """
+    try:
+        status = Path("/proc/self/status").read_text()
+    except OSError:
+        return None
+    for line in status.splitlines():
+        if line.startswith(_VM_HWM):
+            return int(line.split()[1]) * 1024  # reported in kB
+    return None
+
+
+def _peak_rss_bytes() -> int:
+    """Whole-process resident high-water, in **bytes**.
+
+    Source differs by platform, because ``getrusage``'s ``ru_maxrss`` is **not usable on Linux
+    for this**: it reads ``signal->maxrss``, which survives ``execve``. A ``spawn``ed child
+    therefore starts with its *parent's* watermark already banked, so an isolated pass reported
+    the pytest process's footprint instead of its own — a constant, unrelated to the action.
+
+    ``VmHWM`` comes from the ``mm``, and ``execve`` installs a fresh one, so it starts clean in
+    the child and measures only that process. macOS has no ``/proc`` but doesn't share the bug:
+    its ``ru_maxrss`` is per-process (and already in bytes, where Linux reports KiB).
+
+    Only Linux and macOS reach this — :func:`_require_memray` rejects every other platform before
+    any measurement starts, which is also why ``resource`` (Unix-only) is imported lazily.
+    """
+    if platform.system() == "Linux":
+        hwm = _vm_hwm_bytes()
+        if hwm is not None:
+            return hwm
+
     import resource
 
     raw = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
@@ -391,10 +427,10 @@ def _ru_maxrss_bytes() -> int:
 
 def _isolated_child(queue: Any, action: Action, setup: Action | None) -> None:
     """Body of an isolated pass, run in a fresh spawned process: optional untracked ``setup``,
-    one tracked call, read ``ru_maxrss``; put the :class:`Measurement` (or the raised exception)
-    on ``queue``.
+    one tracked call, read the resident high-water; put the :class:`Measurement` (or the raised
+    exception) on ``queue``.
 
-    The action is called **exactly once** — no warmup. ``ru_maxrss`` is a monotonic high-water
+    The action is called **exactly once** — no warmup. The resident high-water is monotonic
     over the whole process, so it can't be reset between calls: any extra call would fold its
     own high-water into the reading, making ``rss`` a function of the warmup count rather than
     of the workload. One cold call keeps ``rss`` and ``peak`` describing the same execution, and
@@ -407,7 +443,7 @@ def _isolated_child(queue: Any, action: Action, setup: Action | None) -> None:
         gc.collect()
         m = _track_once(action)
         queue.put(
-            Measurement(m.peak_bytes, m.allocations, m.total_bytes, rss_bytes=_ru_maxrss_bytes())
+            Measurement(m.peak_bytes, m.allocations, m.total_bytes, rss_bytes=_peak_rss_bytes())
         )
     except BaseException as exc:  # noqa: BLE001 — ship any failure back, don't die silently
         queue.put(exc)
@@ -420,8 +456,9 @@ _HEAVY_PICKLE_WARN_BYTES = 1024 * 1024
 
 
 def _isolated_run(action: Action, setup: Action | None) -> Measurement:
-    """One measured pass in a **fresh** spawned process, so the heap is cold and ``ru_maxrss``
-    is attributable to the action. Returns the child's :class:`Measurement` incl. ``rss_bytes``.
+    """One measured pass in a **fresh** spawned process, so the heap is cold and the resident
+    high-water is attributable to the action. Returns the child's :class:`Measurement`, incl.
+    ``rss_bytes``.
 
     The action (and ``setup``) must be picklable for ``spawn`` — a top-level callable, not a
     lambda/closure. A non-picklable target, or a child that dies (segfault/OOM), raises an

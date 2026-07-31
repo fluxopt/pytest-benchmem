@@ -171,7 +171,7 @@ min, any `--stat`) derives from these on read:
 | `peak_bytes` | per-repeat high-water of live bytes — the `peak` metric (headline = min) |
 | `allocations` | per-repeat allocation count — the `allocations` metric |
 | `total_bytes` | per-repeat total bytes allocated — the `allocated` metric (churn `peak` hides) |
-| `rss_bytes` | per-repeat whole-process resident high-water (`ru_maxrss`) — the `rss` metric. **Only present under `isolate=True`** (each pass a fresh process making one cold call); absent otherwise. Includes the child's interpreter + memray floor, so it's a capacity figure, not a delta. |
+| `rss_bytes` | per-repeat whole-process resident high-water (`VmHWM` on Linux, `ru_maxrss` on macOS) — the `rss` metric. **Only present under `isolate=True`** (each pass a fresh process making one cold call); absent otherwise. Includes the child's interpreter + memray floor, so it's a capacity figure, not a delta. |
 
 ```json
 {"peak_bytes": [800000, 805000], "allocations": [12, 12], "total_bytes": [800000, 805000]}
