@@ -712,7 +712,8 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         action="append",
         metavar="FIELD:THRESHOLD",
         help="Fail the session on a memory regression, e.g. peak:10%, peak:5MiB, "
-        "allocations:5% (repeatable). Fields: peak, allocated, allocations, rss "
+        "allocations:5%, or peak:20%+8MiB to require growth past both the percent and "
+        "an absolute floor (repeatable). Fields: peak, allocated, allocations, rss "
         "(rss needs isolated runs). Implies --benchmark-memory-compare.",
     )
     group.addoption(

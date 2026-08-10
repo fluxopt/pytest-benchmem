@@ -374,7 +374,9 @@ def compare(
             "--fail-on",
             help="Exit non-zero on a regression of the first run vs the last (or, with --pivot, "
             "the first dim value vs the last). FIELD:THRESHOLD, repeatable — e.g. --fail-on "
-            "peak:10% --fail-on peak:5MiB --fail-on rss:10% (rss gates only isolated runs).",
+            "peak:10% --fail-on peak:5MiB --fail-on rss:10% (rss gates only isolated runs). "
+            "Repeated rules OR together; PCT%+ABS ANDs an absolute floor into one rule — "
+            "peak:20%+8MiB fires only when growth clears both.",
         ),
     ] = None,
 ) -> None:
