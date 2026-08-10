@@ -472,6 +472,16 @@ def test_parse_threshold_percent_and_absolute():
     assert absolute.limit == 5 * 1024**2
     assert parse_threshold("time:1ms").limit == pytest.approx(1e-3)
     assert parse_threshold("allocations:100").limit == 100.0
+    assert pct.min_abs is None
+    assert absolute.min_abs is None
+
+
+def test_parse_threshold_combined():
+    th = parse_threshold("peak:20%+8MiB")
+    assert (th.field, th.limit, th.is_pct) == ("peak", 20.0, True)
+    assert th.min_abs == 8 * 1024**2
+    assert parse_threshold("allocations:10%+50").min_abs == 50.0
+    assert parse_threshold("time:5%+1ms").min_abs == pytest.approx(1e-3)
 
 
 @pytest.mark.parametrize(
@@ -482,6 +492,10 @@ def test_parse_threshold_percent_and_absolute():
         ("allocations:5MiB", "is a count"),
         ("peak:5PiB", "unknown unit"),
         ("peak:abc", "not a number"),
+        ("peak:5MiB+10%", "PCT%\\+ABS"),  # combined form is percent first, floor second
+        ("peak:10%+5%", "PCT%\\+ABS"),  # two percents make no AND
+        ("peak:10%+", "PCT%\\+ABS"),  # dangling +
+        ("allocations:10%+5MiB", "is a count"),  # floor unit still field-checked
     ],
 )
 def test_parse_threshold_rejects_bad_input(expr, needle):
@@ -502,6 +516,31 @@ def test_find_regressions_absolute_bytes(tmp_path):
     b = write_run(tmp_path / "head.json", [bm("x", peak=1024**2 + 2 * 1024**2)])  # +2 MiB
     assert find_regressions(a, b, [parse_threshold("peak:1MiB")])  # grew 2 MiB > 1 MiB
     assert not find_regressions(a, b, [parse_threshold("peak:3MiB")])  # under 3 MiB
+
+
+def test_find_regressions_combined_requires_both(tmp_path):
+    # issue #192: a KiB-scale shift on a small benchmark is a huge percentage but noise in
+    # absolute terms — the floor keeps it quiet; only clearing percent AND floor fires.
+    a = write_run(
+        tmp_path / "base.json",
+        [
+            bm("small", peak=70 * 1024),
+            bm("big", peak=100 * 1024**2),
+            bm("steady", peak=100 * 1024**2),
+        ],
+    )
+    b = write_run(
+        tmp_path / "head.json",
+        [
+            bm("small", peak=160 * 1024),  # +128%, but only +90 KiB — under the floor
+            bm("big", peak=140 * 1024**2),  # +40% and +40 MiB — past both
+            bm("steady", peak=112 * 1024**2),  # +12 MiB, but only +12% — under the percent
+        ],
+    )
+    regs = find_regressions(a, b, [parse_threshold("peak:20%+8MiB")])
+    assert [r.id for r in regs] == ["big"]
+    # without the floor, the plain percent rule also flags the small benchmark
+    assert len(find_regressions(a, b, [parse_threshold("peak:20%")])) == 2
 
 
 def test_find_regressions_allocations(tmp_path):
