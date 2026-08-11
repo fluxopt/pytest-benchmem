@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.1](https://github.com/fluxopt/pytest-benchmem/compare/v0.5.0...v0.5.1) (2026-08-11)
+
+
+### Features
+
+* **compare:** absolute floor under a percent --fail-on rule (peak:20%+8MiB) ([#193](https://github.com/fluxopt/pytest-benchmem/issues/193)) ([24e31dd](https://github.com/fluxopt/pytest-benchmem/commit/24e31dda12a77aedfd1720e687d4e78e9427faf4)), closes [#192](https://github.com/fluxopt/pytest-benchmem/issues/192)
+
+
+### Bug Fixes
+
+* escape literal % in argparse help so pytest --help doesn't crash ([#195](https://github.com/fluxopt/pytest-benchmem/issues/195)) ([6ed9ab7](https://github.com/fluxopt/pytest-benchmem/commit/6ed9ab7a0f339b5ddbebc91d9d3448f879122fa8))
+
 ## [0.5.0](https://github.com/fluxopt/pytest-benchmem/compare/v0.4.12...v0.5.0) (2026-07-31)
 
 
