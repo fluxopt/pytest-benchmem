@@ -36,6 +36,7 @@ def test_churn(benchmark):
         for _ in range(200):
             total += sum([i * i for i in range(20_000)])
         return total
+
     benchmark(work)
 ```
 
@@ -137,9 +138,8 @@ pytest --benchmark-memory --benchmark-memory-repeats=5     # suite-wide, exactly
 ```
 
 ```python
-@pytest.mark.benchmem(repeats=5)        # per test; overrides the suite-wide flag
-def test_build(benchmark_memory):
-    ...
+@pytest.mark.benchmem(repeats=5)  # per test; overrides the suite-wide flag
+def test_build(benchmark_memory): ...
 ```
 
 An explicit count runs *exactly* that many passes — no adaptation, no cap, no time budget.

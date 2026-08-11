@@ -12,6 +12,7 @@ common case needs zero work: your `@pytest.mark.parametrize` params *are* your d
 # test_params.py
 import pytest
 
+
 @pytest.mark.parametrize("n", [10_000, 100_000])
 def test_sort(benchmark, n):
     benchmark(sorted, list(range(n, 0, -1)))
@@ -49,7 +50,7 @@ the drop-in flag this is `benchmark.extra_info`; with the fixture, `benchmark_me
 # An operation/phase axis, when you have one test function per operation.
 # (params can't carry it — it lives in the function name, which dims never parse.)
 def test_to_lp(benchmark):
-    benchmark.extra_info["phase"] = "to_lp"   # → a dim named "phase"
+    benchmark.extra_info["phase"] = "to_lp"  # → a dim named "phase"
     benchmark(model.to_lp, path)
 ```
 
@@ -73,8 +74,8 @@ string and gets dropped. Pass a *meaningful scalar* derived from it instead:
 ```python
 @pytest.mark.parametrize("spec", [BenchSpec("basic", n=10), BenchSpec("dense", n=250)])
 def test_solve(benchmark, spec):
-    benchmark.extra_info["case"] = spec.name   # "basic" / "dense" — a clean label axis
-    benchmark.extra_info["n"] = spec.n          # numeric → usable as a scaling x axis
+    benchmark.extra_info["case"] = spec.name  # "basic" / "dense" — a clean label axis
+    benchmark.extra_info["n"] = spec.n  # numeric → usable as a scaling x axis
     # no obvious field? fall back to a stable scalar: str(spec) / a short id / a hash
     benchmark(solve, spec)
 ```

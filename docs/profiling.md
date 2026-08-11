@@ -65,7 +65,7 @@ def build_kdtree_naive(points, depth=0):
         return None
     ordered = sorted(points, key=lambda p: p[depth % 2])
     mid = len(ordered) // 2
-    node = RegionNode(ordered[mid], ordered)   # ← the leak: keeps the whole sublist alive
+    node = RegionNode(ordered[mid], ordered)  # ← the leak: keeps the whole sublist alive
     node.left = build_kdtree_naive(ordered[:mid], depth + 1)
     node.right = build_kdtree_naive(ordered[mid + 1 :], depth + 1)
     return node
