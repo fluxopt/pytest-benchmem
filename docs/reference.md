@@ -23,8 +23,7 @@ nothing and passes. See [Gating without separate files](catch-regressions.md#gat
 
 ```python
 @pytest.mark.benchmem(repeats=3)
-def test_build(benchmark_memory):
-    ...
+def test_build(benchmark_memory): ...
 ```
 
 | Kwarg | Default | What |
@@ -165,8 +164,9 @@ pass, then times via pytest-benchmark.
     Explicit control, like pytest-benchmark's `pedantic` plus a memory pass:
 
     ```python
-    benchmark_memory.pedantic(target, args=(), kwargs=None, setup=None,
-                              rounds=1, warmup_rounds=0, iterations=1)
+    benchmark_memory.pedantic(
+        target, args=(), kwargs=None, setup=None, rounds=1, warmup_rounds=0, iterations=1
+    )
     ```
 
     - `setup` — a callable run *untracked* before each measured call; if it returns

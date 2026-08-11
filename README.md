@@ -25,6 +25,7 @@ Take an existing pytest-benchmark test. You don't change it:
 ```python
 import pytest
 
+
 @pytest.mark.parametrize("n", [10_000, 100_000, 1_000_000])
 def test_sort(benchmark, n):
     benchmark(sorted, list(range(n, 0, -1)))

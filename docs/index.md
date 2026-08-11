@@ -10,7 +10,7 @@ test — you don't change it:
 
 ```python
 @pytest.mark.parametrize("n", [10_000, 100_000, 1_000_000])
-def test_sort(benchmark, n):          # your existing pytest-benchmark test, unchanged
+def test_sort(benchmark, n):  # your existing pytest-benchmark test, unchanged
     benchmark(sorted, list(range(n, 0, -1)))
 ```
 
