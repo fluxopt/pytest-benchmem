@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.2](https://github.com/fluxopt/pytest-benchmem/compare/v0.5.1...v0.5.2) (2026-08-11)
+
+
+### Bug Fixes
+
+* **compare:** rss absolute thresholds take byte units, not time units ([#194](https://github.com/fluxopt/pytest-benchmem/issues/194)) ([3502698](https://github.com/fluxopt/pytest-benchmem/commit/350269872dcf4d34d33dcace88e7ee7b694e30fe))
+
 ## [0.5.1](https://github.com/fluxopt/pytest-benchmem/compare/v0.5.0...v0.5.1) (2026-08-11)
 
 
