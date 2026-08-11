@@ -13,7 +13,11 @@ def define_env(env):
 
     @env.macro
     def pytest_flags_table() -> str:
-        """Render the pytest-benchmem CLI flags table from ``pytest_addoption``'s help text."""
+        """Render the pytest-benchmem CLI flags table from ``pytest_addoption``'s help text.
+
+        Help strings are argparse-format strings, so literal percents arrive ``%%``-escaped;
+        unescape them for display, as argparse's own formatter would.
+        """
         from pytest_benchmem.pytest_plugin import pytest_addoption
 
         rows: list[tuple[tuple, dict]] = []
@@ -39,6 +43,6 @@ def define_env(env):
                 shown_default = "—"
             else:
                 shown_default = f"`{default}`"
-            help_text = " ".join((kwargs.get("help") or "").split())
+            help_text = " ".join((kwargs.get("help") or "").split()).replace("%%", "%")
             lines.append(f"| `{display}` | {shown_default} | {help_text} |")
         return "\n".join(lines)
