@@ -566,6 +566,15 @@ def test_find_regressions_rss_detects_growth(tmp_path):
     assert not find_regressions(a, b, [parse_threshold("rss:30%")])
 
 
+def test_rss_absolute_threshold_takes_byte_units(tmp_path):
+    # rss is a byte field: "rss:8MiB" used to be rejected with "unknown unit (use s, ms, …)"
+    assert parse_threshold("rss:8MiB").limit == 8 * 1024**2
+    a = write_run(tmp_path / "base.json", [bm("x", peak=10, rss=100 * 1024**2)])
+    b = write_run(tmp_path / "head.json", [bm("x", peak=10, rss=110 * 1024**2)])  # +10 MiB
+    assert find_regressions(a, b, [parse_threshold("rss:8MiB")])
+    assert not find_regressions(a, b, [parse_threshold("rss:16MiB")])
+
+
 def test_rss_gate_without_isolated_data_is_loud(tmp_path):
     # rss exists only for isolated runs; gating it against ordinary runs must ERROR, not
     # silently pass — a gate that can never fire is worse than one that fails (review #2).

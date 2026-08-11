@@ -105,7 +105,8 @@ def _parse_abs(field: str, raw: str, expr: str) -> float:
         if suffix:
             raise ValueError(f"bad --fail-on {expr!r}: allocations is a count, drop {suffix!r}")
         return num
-    units = _BYTE_UNITS if field in ("peak", "allocated") else _TIME_UNITS
+    _kind, _key, display_unit = _FIELD[field]
+    units = _BYTE_UNITS if display_unit == "B" else _TIME_UNITS
     if suffix not in units:
         known = ", ".join(k for k in units if k)
         raise ValueError(f"bad --fail-on {expr!r}: unknown unit {suffix!r} (use {known})")
