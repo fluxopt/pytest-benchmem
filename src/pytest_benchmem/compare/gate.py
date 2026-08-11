@@ -1,8 +1,9 @@
 """The regression gate behind ``benchmem compare --fail-on`` (and the inline memory gate).
 
-Parse a threshold like ``peak:10%`` / ``peak:5MiB`` / ``allocations:5%`` / ``time:5%``, find the
-ids whose chosen field grew past it, and hand them back so the CLI can exit non-zero in CI —
-mirroring pytest-benchmark's ``--benchmark-compare-fail=min:5%`` grammar, for memory.
+Parse a threshold like ``peak:10%`` / ``peak:5MiB`` / ``allocations:5%`` / ``time:5%`` (or the
+combined ``peak:20%+8MiB``), find the ids whose chosen field grew past it, and hand them back so
+the CLI can exit non-zero in CI — mirroring pytest-benchmark's ``--benchmark-compare-fail=min:5%``
+grammar, for memory.
 """
 
 from __future__ import annotations
@@ -24,11 +25,17 @@ from pytest_benchmem.snapshot import (
 
 @dataclass(frozen=True)
 class Threshold:
-    """A parsed ``--fail-on`` rule: a ``field`` may grow by at most ``limit``."""
+    """A parsed ``--fail-on`` rule: a ``field`` may grow by at most ``limit``.
+
+    The combined ``PCT%+ABS`` form sets ``min_abs``, an absolute floor under the percent
+    rule: growth must exceed *both* to fire, so a relative gate stays quiet on benchmarks
+    whose footprint is small enough that a few KiB reads as a huge percentage.
+    """
 
     field: str
     limit: float  # percent if is_pct, else absolute in the field's base unit
     is_pct: bool
+    min_abs: float | None = None  # only with is_pct: growth must also exceed this
 
 
 @dataclass(frozen=True)
@@ -56,7 +63,10 @@ class Regression:
 
 
 def parse_threshold(expr: str) -> Threshold:
-    """Parse ``FIELD:THRESHOLD`` → :class:`Threshold` (``peak:10%``, ``peak:5MiB``)."""
+    """Parse ``FIELD:THRESHOLD`` → :class:`Threshold`.
+
+    ``peak:10%``, ``peak:5MiB``, or the combined ``peak:20%+8MiB`` (percent AND floor).
+    """
     field, sep, raw = expr.partition(":")
     field, raw = field.strip().lower(), raw.strip()
     if not sep or not raw:
@@ -65,6 +75,14 @@ def parse_threshold(expr: str) -> Threshold:
         raise ValueError(
             f"bad --fail-on {expr!r}: unknown field {field!r} (use {', '.join(_FIELD)})"
         )
+    pct_part, plus, abs_part = (p.strip() for p in raw.partition("+"))
+    if plus:
+        if not pct_part.endswith("%") or not abs_part or abs_part.endswith("%"):
+            raise ValueError(
+                f"bad --fail-on {expr!r}: a combined threshold is PCT%+ABS, e.g. peak:20%+8MiB"
+            )
+        pct = _to_float(pct_part[:-1], expr)
+        return Threshold(field, pct, is_pct=True, min_abs=_parse_abs(field, abs_part, expr))
     if raw.endswith("%"):
         return Threshold(field, _to_float(raw[:-1], expr), is_pct=True)
     return Threshold(field, _parse_abs(field, raw, expr), is_pct=False)
@@ -87,7 +105,8 @@ def _parse_abs(field: str, raw: str, expr: str) -> float:
         if suffix:
             raise ValueError(f"bad --fail-on {expr!r}: allocations is a count, drop {suffix!r}")
         return num
-    units = _BYTE_UNITS if field in ("peak", "allocated") else _TIME_UNITS
+    _kind, _key, display_unit = _FIELD[field]
+    units = _BYTE_UNITS if display_unit == "B" else _TIME_UNITS
     if suffix not in units:
         known = ", ".join(k for k in units if k)
         raise ValueError(f"bad --fail-on {expr!r}: unknown unit {suffix!r} (use {known})")
@@ -115,6 +134,7 @@ def _regressions_for(
         if grew <= 0:
             continue
         over = (vb > 0 and grew / vb * 100 > th.limit) if th.is_pct else grew > th.limit
+        over = over and (th.min_abs is None or grew > th.min_abs)
         if over:
             out.append(Regression(th.field, test_id, vb, vh))
     return out

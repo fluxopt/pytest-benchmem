@@ -36,8 +36,8 @@ Run each on its branch and save the `--benchmark-json` — here `baseline.json` 
 ## The gate — `--fail-on`
 
 `benchmem compare --fail-on` exits non-zero past a threshold — drop it into CI after the run.
-Thresholds are percent (`peak:10%`) or absolute (`peak:5MiB`), on `peak`, `allocated`, or
-`allocations`, and it's repeatable:
+Thresholds are percent (`peak:10%`), absolute (`peak:5MiB`), or [both at once](#an-absolute-floor-under-a-percent-rule-pctabs)
+(`peak:20%+8MiB`), on `peak`, `allocated`, or `allocations`, and it's repeatable:
 
 ```bash
 # on the PR branch, against a baseline saved from main:
@@ -62,6 +62,22 @@ The dict rows blow past the threshold on every size, so the offending ids print 
 
 `allocations` is usually the steadiest tripwire — see [Choosing a metric](metrics.md). To see the
 full before/after table (not just the failures), read [Compare two runs](compare-runs.md).
+
+### An absolute floor under a percent rule — `PCT%+ABS`
+
+Repeated `--fail-on` rules **OR** together — any one of them tripping fails the job. That means a
+percent rule alone can be noisy on benchmarks with a tiny footprint, where a few KiB of growth
+reads as a huge percentage. The combined form puts an absolute floor *inside* one rule: growth
+must clear **both** the percent and the floor to fire.
+
+```bash
+# fail on ≥20% growth, but only when it's also at least 8 MiB of real memory:
+benchmem compare baseline.json pr.json --fail-on peak:20%+8MiB
+```
+
+With this gate, a 70 KiB → 160 KiB shift (+128%, but well under 8 MiB) passes, while a
+100 MiB → 140 MiB regression (+40% *and* +40 MiB) still fails. The floor takes the same units as
+the absolute form (`8MiB`, `allocations:10%+50`, `time:5%+1ms`).
 
 ## In GitHub Actions
 

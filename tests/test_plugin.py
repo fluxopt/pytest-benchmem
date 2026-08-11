@@ -91,6 +91,13 @@ def _run_suite(pytester):
     return out, json.loads(out.read_text())
 
 
+def test_pytest_help_renders_with_plugin(pytester):
+    """argparse %-expands help text — an unescaped literal % crashed `pytest --help`."""
+    result = pytester.runpytest_subprocess("--help", "-p", "no:cacheprovider")
+    assert result.ret == 0
+    assert "peak:10%," in result.stdout.str()  # rendered single-%, not the %%-escaped source
+
+
 def test_combined_table_is_default(pytester):
     """By default a memory run prints ONE table: timing columns + peak only, no native table."""
     pytester.makepyfile(SUITE)
