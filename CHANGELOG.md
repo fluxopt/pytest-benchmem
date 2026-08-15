@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.3](https://github.com/fluxopt/pytest-benchmem/compare/v0.5.2...v0.5.3) (2026-08-15)
+
+
+### Bug Fixes
+
+* **compare:** report sample stddev, matching the pytest table and pytest-benchmark ([#200](https://github.com/fluxopt/pytest-benchmem/issues/200)) ([9f94126](https://github.com/fluxopt/pytest-benchmem/commit/9f941269296518d31c92d32b8df7f3e5b296c221))
+
 ## [0.5.2](https://github.com/fluxopt/pytest-benchmem/compare/v0.5.1...v0.5.2) (2026-08-11)
 
 
