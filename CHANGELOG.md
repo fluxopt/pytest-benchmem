@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.4](https://github.com/fluxopt/pytest-benchmem/compare/v0.5.3...v0.5.4) (2026-08-15)
+
+
+### Features
+
+* **compare:** add iqr as a timing-only --stat, make --stat comma-composable ([#199](https://github.com/fluxopt/pytest-benchmem/issues/199)) ([2171346](https://github.com/fluxopt/pytest-benchmem/commit/217134668edf81ca21f047ebe21868c45a8516f3))
+
 ## [0.5.3](https://github.com/fluxopt/pytest-benchmem/compare/v0.5.2...v0.5.3) (2026-08-15)
 
 
