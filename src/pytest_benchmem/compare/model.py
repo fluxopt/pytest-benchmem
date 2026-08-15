@@ -15,7 +15,13 @@ from pathlib import Path
 from typing import Any
 
 from pytest_benchmem.format import fmt_label
-from pytest_benchmem.snapshot import RESERVED_COLUMNS, Metric, _human_bytes, load_long_df
+from pytest_benchmem.snapshot import (
+    RESERVED_COLUMNS,
+    STATS,
+    Metric,
+    _human_bytes,
+    load_long_df,
+)
 
 #: fail-on field → (reader kind, reader field/stat, display unit).
 _FIELD = {
@@ -75,9 +81,24 @@ def _col_id(metric: str, stat: str) -> str:
 #: Valid ``--sort`` keys for the comparison table.
 _SORTS = ("name", "value", "change")
 
-#: Distribution stats shown per metric, in canonical (pytest-benchmark) order. ``--stat``
-#: picks one; ``all`` (the default) shows them all, so no single statistic is privileged.
-_STATS: tuple[str, ...] = ("min", "max", "mean", "median", "stddev")
+#: Distribution stats a *memory* metric spreads into — the reducers :data:`snapshot.STATS`
+#: applies to a per-repeat series, already in canonical (pytest-benchmark) order. Read off
+#: that dict rather than restated, so a reducer added there can't go missing here.
+_MEM_STATS: tuple[str, ...] = tuple(STATS)
+
+#: Distribution stats a *timing* metric spreads into: the memory five plus ``iqr``, which
+#: pytest-benchmark computes over its rounds and stores in the run file. Timing-only by
+#: construction — see :func:`_stats_for` for why memory can't have it.
+_TIME_STATS: tuple[str, ...] = ("min", "max", "mean", "median", "iqr", "stddev")
+
+#: Every stat ``--stat`` accepts, canonical order. ``all`` (the default) expands each metric
+#: into *its* stats, so no single statistic is privileged; a stat a metric doesn't support is
+#: dropped from that metric rather than faked (:func:`_stats_for`).
+_STATS: tuple[str, ...] = _TIME_STATS
+
+#: Stats valid per metric. Only ``time`` is read from pytest-benchmark's own ``stats`` block;
+#: every memory metric is reduced from the benchmem per-repeat series.
+_METRIC_STATS: dict[str, tuple[str, ...]] = {"time": _TIME_STATS}
 
 #: The default metric columns when ``--columns`` is unset — the two headline metrics
 #: (speed + memory); ``allocated`` / ``allocations`` are opt-in via ``--columns``.
@@ -116,13 +137,55 @@ def _resolve_columns(columns: Sequence[str] | str | None) -> list[str]:
     return cols
 
 
-def _resolve_stats(stat: str | None) -> list[str]:
-    """The stat columns per metric: ``all`` (or unset) → every stat, else just the one named."""
-    if stat in (None, "all"):
+def _stats_for(metric: str, stats: Sequence[str]) -> list[str]:
+    """``stats`` narrowed to those ``metric`` actually carries, order preserved.
+
+    Only ``time`` has the full set: ``iqr`` comes from pytest-benchmark's own ``stats`` block,
+    computed over its rounds. The memory metrics are reduced from the benchmem per-repeat
+    series and have no quartiles — see :func:`_resolve_stats`.
+    """
+    valid = _METRIC_STATS.get(metric, _MEM_STATS)
+    return [s for s in stats if s in valid]
+
+
+def _timing_only(stats: Sequence[str]) -> list[str]:
+    """The named stats that only ``time`` can supply — what a memory column must refuse."""
+    return [s for s in stats if s not in _MEM_STATS]
+
+
+def _resolve_stats(stat: str | None, metrics: Sequence[str]) -> list[str]:
+    """The stat columns to build: ``all`` (or unset) → every stat, else the named comma list.
+
+    ``--stat`` is a comma list like ``--columns`` and ``--group-by`` (``min,iqr,median``), in
+    the order given. Each name must be one this run's ``metrics`` can supply: asking a memory
+    column for a timing-only stat is an error rather than a silently missing column, because a
+    caller who gets a number back reads it as a noise verdict. ``all`` instead expands *per
+    metric* (:func:`_stats_for`) — it means "everything this metric has", not a fixed set — so
+    it stays the no-single-statistic-privileged default without forcing that refusal on anyone.
+    """
+    if stat is None or stat == "all":
         return list(_STATS)
-    if stat not in _STATS:
-        raise ValueError(f"unknown --stat {stat!r}; use one of {', '.join(_STATS)}, or all")
-    return [stat]
+    names = [s.strip() for s in stat.split(",") if s.strip()]
+    if not names:
+        raise ValueError(f"empty --stat {stat!r}; use one of {', '.join(_STATS)}, or all")
+    bad = [s for s in names if s not in _STATS]
+    if bad:
+        raise ValueError(
+            f"unknown --stat {', '.join(repr(s) for s in bad)}; use {', '.join(_STATS)} "
+            f"(comma-composable), or all"
+        )
+    mem_cols = [m for m in metrics if not _is_extra(m) and m not in _METRIC_STATS]
+    if mem_cols and (timing := _timing_only(names)):
+        named, verb = "/".join(mem_cols), "records" if len(mem_cols) == 1 else "record"
+        raise ValueError(
+            f"--stat {', '.join(timing)} is a timing statistic. "
+            f"{named} {verb} one exact value per pass and there are only a handful of them, "
+            f"so a quartile spread over them is arithmetic on 3-10 numbers rather than a "
+            f"noise estimate — use min,max for the range. "
+            f"Drop {named} from --columns, or use --stat all "
+            f"(which gives each metric the stats it has)."
+        )
+    return list(dict.fromkeys(names))
 
 
 def _group_of(test_id: str, dims: dict[str, Any], group_by: str | None) -> tuple[str, ...]:
@@ -225,7 +288,7 @@ def _load_columns(
                     values.setdefault((col_id, test_id, lab), fv)
 
     for metric in metrics:
-        for stat in stats:
+        for stat in _stats_for(metric, stats):
             df, unit = load_long_df(paths, metric=metric, stat=stat, pivot=pivot)
             units[metric] = unit
             if df.empty:  # metric absent from every run (e.g. memory on timing-only files)

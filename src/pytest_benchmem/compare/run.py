@@ -25,6 +25,7 @@ from pytest_benchmem.compare.model import (
     _load_columns,
     _resolve_columns,
     _resolve_stats,
+    _stats_for,
     _write_csv,
 )
 from pytest_benchmem.compare.table import _build_views, _render_markdown, _render_rich
@@ -65,14 +66,21 @@ def compare_runs(
     (one series axis per table).
 
     Every column is a ``metric × stat`` pair. ``columns`` is a comma list of metric names
-    (default ``time,peak``); ``stat`` is one of ``min`` / ``max`` / ``mean`` / ``median`` /
-    ``stddev`` or ``all`` (the default), which expands each metric into its full stat
-    spread — so no single statistic is privileged. A metric absent from every run is
+    (default ``time,peak``); ``stat`` is a comma list too (``min,iqr,median``, in the order
+    given), or ``all`` (the default), which expands each metric into its full stat spread —
+    so no single statistic is privileged. A metric absent from every run is
     dropped rather than shown all dashes (so timing-only runs collapse to just ``time``).
     An ``extra:NAME`` entry adds the numeric ``extra_info`` value ``NAME`` as a plain
     label column — one stat-less readout per ``(benchmark × series)``, with no multiplier
     or ranking colour (a label describes the benchmark, it doesn't compete); like a
     metric, one absent from every run is dropped.
+
+    ``iqr`` is a **timing-only** stat: pytest-benchmark computes it over its rounds, while the
+    memory metrics reduce a per-repeat series of a handful of exact values, where a quartile
+    spread is arithmetic rather than a noise estimate. Naming it alongside a memory column is
+    an error (a returned number would be read as a noise verdict); ``all`` expands per metric,
+    so it gives ``time`` six stats and each memory metric five.
+
     ``sort`` orders rows within a group: ``name``, ``value`` (largest in the last series), or
     ``change`` (biggest growth first). ``out_format`` picks the rendering — ``table`` (the rich
     terminal default) or ``md`` (GitHub-flavored markdown to ``out``, for a PR comment or
@@ -98,7 +106,7 @@ def compare_runs(
     cols_spec = _resolve_columns(columns)  # metric names validated there
     metrics = cast("list[Metric]", [c for c in cols_spec if not _is_extra(c)])
     extras = [_display_metric(c) for c in cols_spec if _is_extra(c)]
-    stats = _resolve_stats("min" if diff and stat is None else stat)
+    stats = _resolve_stats("min" if diff and stat is None else stat, metrics)
     labels, values, units, dims = _load_columns(runs, metrics, stats, pivot, extras=extras)
     if not labels:
         raise ValueError("no benchmarks found in the given run(s)")
@@ -116,7 +124,7 @@ def compare_runs(
     # the best/worst colour are meaningless (best == worst == the value), so they're dropped.
     single = len(labels) == 1
     with_data = {col_id for col_id, _i, _lab in values}
-    all_cols = [(c, s) for c in cols_spec for s in ([""] if _is_extra(c) else stats)]
+    all_cols = [(c, s) for c in cols_spec for s in ([""] if _is_extra(c) else _stats_for(c, stats))]
     cols = [(m, s) for m, s in all_cols if _col_id(m, s) in with_data] or all_cols  # drop empties
     ids = sorted({test_id for _c, test_id, _lab in values})
     if csv is not None:

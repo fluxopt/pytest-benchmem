@@ -16,7 +16,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-_STATS = ("min", "max", "mean", "median", "stddev")
+#: The timing stats a real pytest-benchmark file carries, matching ``compare.model._TIME_STATS``
+#: — ``iqr`` included, since it's computed over the rounds and readable as a ``--stat``.
+_STATS = ("min", "max", "mean", "median", "iqr", "stddev")
 
 
 def _series(value, length):
