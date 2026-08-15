@@ -192,18 +192,25 @@ def from_pytest_benchmark(
     Dims come from each benchmark's parametrize ``params`` and ``extra_info``, plus
     the structural ``node.*`` dims (see :func:`_node_dims`).
 
+    ``metric`` is a key into pytest-benchmark's own ``stats`` block, so it reaches every
+    statistic that computed there — including ones with no memory counterpart, like ``iqr``.
+    Benchmarks whose ``stats`` lack the key are skipped rather than raising, mirroring
+    :func:`memory_from_pytest_benchmark` on an absent field: a stat missing from every
+    benchmark reads as an empty run, which the callers already drop as an absent column.
+
     Args:
         path: A pytest-benchmark JSON file.
-        metric: Which pytest-benchmark stat to read (``min`` / ``median`` / …).
+        metric: Which pytest-benchmark stat to read (``min`` / ``median`` / ``iqr`` / …).
 
     Returns:
-        ``(label, samples, unit)`` — the run label, one :class:`Sample` per benchmark,
-        and the unit (``"s"``).
+        ``(label, samples, unit)`` — the run label, one :class:`Sample` per benchmark
+        carrying the stat, and the unit (``"s"``).
     """
     p, benchmarks = _read_benchmarks(path)
     samples = [
         Sample(id=bm["fullname"], value=bm["stats"][metric], dims=_all_dims(bm))
         for bm in benchmarks
+        if metric in bm["stats"]
     ]
     return p.stem, samples, "s"
 

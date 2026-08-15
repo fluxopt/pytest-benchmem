@@ -328,8 +328,10 @@ def compare(
     stat: Annotated[
         str | None,
         typer.Option(
-            help="Which stat column(s) per metric: min | max | mean | median | stddev, or "
-            "all (the default) for the full spread side by side.",
+            help="Which stat column(s) per metric, comma-composable: min | max | mean | "
+            "median | iqr | stddev, or all (the default) for the full spread side by side. "
+            "iqr is timing-only — pytest-benchmark computes it over rounds, the memory "
+            "metrics have no distribution to take quartiles of.",
         ),
     ] = None,
     sort: Annotated[

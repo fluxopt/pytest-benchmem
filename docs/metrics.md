@@ -178,8 +178,13 @@ benchmem compare base.json head.json --columns peak --stat stddev   # how noisy 
 benchmem compare v1.json v2.json --columns allocated --stat mean
 ```
 
-`--stat` takes `min` / `max` / `mean` / `median` / `stddev` and applies to any metric. Peak is
-the noisy one (GC timing, page cache); `stddev` tells you how much.
+`--stat` takes a comma list of `min` / `max` / `mean` / `median` / `stddev` and applies to any
+metric. Peak is the noisy one (GC timing, page cache); `stddev` tells you how much.
+
+There's a sixth stat, `iqr`, but it's **timing-only** — pytest-benchmark computes it over its
+rounds, while a memory metric has only its handful of exact per-pass values, too few for quartiles
+to mean anything. Asking for it on a memory column is an error; see
+[Comparing runs](compare-runs.md).
 
 The terminal table shows the spread too: when a benchmark ran more than once, every shown metric
 expands into `min` / `mean` / `max` columns (`peak·min`, `peak·mean`, `peak·max`) — always, so the

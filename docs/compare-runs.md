@@ -34,9 +34,32 @@ Each cell carries a relative `(N.NN)` multiplier vs the column's best run — `(
 larger is worse (in the terminal, best is green and worst red). Rows are grouped into sub-tables by
 `--group-by` (default `fullname`, so each benchmark's runs sit together and the multiplier reads as
 the cross-run ratio). `--columns` is a comma list of `time` / `peak` / `allocated` / `allocations`
-(a metric absent from every run is dropped); `--stat` is one of `min` / `max` / `mean` / `median` /
-`stddev`, or `all`. `--group-by` follows pytest-benchmark's grammar (`fullname` | `name` | `func` |
-`group` | `module` | `class` | `param:NAME`, comma-composable).
+(a metric absent from every run is dropped); `--stat` is a comma list of `min` / `max` / `mean` /
+`median` / `iqr` / `stddev` in the order given, or `all`. `--group-by` follows pytest-benchmark's
+grammar (`fullname` | `name` | `func` | `group` | `module` | `class` | `param:NAME`,
+comma-composable).
+
+`iqr` is **timing-only**. pytest-benchmark computes it over its rounds (tens to hundreds of them)
+and stores it in the run file, so reading it costs nothing:
+
+```bash
+benchmem compare run.json --columns time --stat min,iqr,median --csv spread.csv
+# → id,time:min:run,time:iqr:run,time:median:run
+```
+
+The memory metrics record one exact value per pass and there are only a handful of passes (3–10),
+so a quartile spread over them is arithmetic on a few numbers rather than a noise estimate — asking
+for it is an error rather than a number you'd misread as a noise verdict:
+
+```console
+$ benchmem compare run.json --columns peak --stat iqr
+--stat iqr is a timing statistic. peak records one exact value per pass and there are only a
+handful of them, so a quartile spread over them is arithmetic on 3-10 numbers rather than a
+noise estimate — use min,max for the range. …
+```
+
+`--stat all` expands *per metric* — six stat columns for `time`, five for each memory metric — so
+the default table never has to make that refusal.
 
 `--columns` also accepts `extra:NAME`, which shows the numeric `extra_info` value `NAME` as a plain
 stat-less **label column** — one readout per benchmark and series, with no multiplier or ranking

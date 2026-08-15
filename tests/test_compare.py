@@ -22,6 +22,19 @@ def render(runs, **kwargs):
     return out.getvalue()
 
 
+def _columns_of(text):
+    """The stat names in the first group's header, in render order.
+
+    The table heads each column with a metric+unit line above a stat line; the stat line is
+    the one starting with ``name``. The ``│`` timing/memory divider isn't a column.
+    """
+    for line in text.splitlines():
+        parts = line.split()
+        if parts and parts[0] == "name":
+            return [p for p in parts[1:] if p != "│"]
+    return []
+
+
 def _lines(text, needle):
     """The block for ``needle``'s benchmark: its bold header line plus the rows under it.
 
@@ -253,6 +266,65 @@ def test_stat_selects_the_time_distribution(tmp_path):
     pa, pb = write_run(tmp_path / "a.json", [_t(3.0)]), write_run(tmp_path / "b.json", [_t(9.0)])
     text = render([pa, pb], columns="time", stat="max")
     assert "9" in text  # head's max (9), not its min (1.0)
+
+
+def test_stat_reads_iqr_for_timing(tmp_path):
+    # iqr comes straight out of pytest-benchmark's stats block — nothing is computed here
+    a = write_run(tmp_path / "a.json", [bm("test_x", t=1.0)])
+    b = write_run(tmp_path / "b.json", [bm("test_x", t=2.0)])
+    text = render([a, b], columns="time", stat="iqr")
+    assert "iqr" in text
+    assert "median" not in text and "stddev" not in text  # only the asked-for column
+
+
+def test_stat_iqr_is_refused_for_memory_columns(tmp_path):
+    # a memory IQR would be read as a noise verdict, so it errors rather than returning a
+    # number over a 3-sample series — and the message carries the reason, not just the refusal
+    a = write_run(tmp_path / "a.json", [bm("test_x", peak=2048)])
+    b = write_run(tmp_path / "b.json", [bm("test_x", peak=4096)])
+    with pytest.raises(ValueError, match="timing statistic") as exc:
+        render([a, b], columns="peak", stat="iqr")
+    assert "peak records one exact value per pass" in str(exc.value)
+    # naming it alongside a valid stat is refused just the same — the memory column is the ask
+    with pytest.raises(ValueError, match="timing statistic"):
+        render([a, b], columns="time,peak", stat="min,iqr")
+
+
+def test_stat_all_expands_per_metric(tmp_path):
+    # ``all`` means "every stat this metric has", so time gets iqr and peak doesn't --
+    # a memory column is never silently given a quartile
+    a = write_run(tmp_path / "a.json", [bm("test_x", t=1.0, peak=2048)])
+    b = write_run(tmp_path / "b.json", [bm("test_x", t=2.0, peak=4096)])
+    cols = _columns_of(render([a, b], columns="time,peak", stat="all"))
+    assert cols.count("iqr") == 1  # time's, not peak's
+    assert cols.count("median") == 2  # a stat both metrics carry appears for each  # noqa: PLR2004
+
+
+def test_stat_takes_a_comma_list(tmp_path):
+    # --stat is comma-composable like --columns/--group-by, in the order given
+    a = write_run(tmp_path / "a.json", [bm("test_x", t=1.0)])
+    b = write_run(tmp_path / "b.json", [bm("test_x", t=2.0)])
+    cols = _columns_of(render([a, b], columns="time", stat="min,iqr,median"))
+    assert cols == ["min", "iqr", "median"]  # order preserved, nothing else added
+
+
+def test_unknown_stat_names_the_offender(tmp_path):
+    a = write_run(tmp_path / "a.json", [bm("test_x", t=1.0)])
+    b = write_run(tmp_path / "b.json", [bm("test_x", t=2.0)])
+    with pytest.raises(ValueError, match="unknown --stat 'nope'"):
+        render([a, b], columns="time", stat="min,nope")
+
+
+def test_timing_stat_missing_from_the_file_drops_its_column(tmp_path):
+    # a run written without iqr (an older pytest-benchmark) reads as an absent column
+    # rather than a KeyError, matching how an absent memory metric behaves
+    def _no_iqr(t):
+        return {"fullname": "test_x", "stats": {"min": t, "max": t, "mean": t, "median": t}}
+
+    a = write_run(tmp_path / "a.json", [_no_iqr(1.0)])
+    b = write_run(tmp_path / "b.json", [_no_iqr(2.0)])
+    text = render([a, b], columns="time", stat="all")
+    assert "min" in text and "iqr" not in text
 
 
 def test_three_runs_stack_as_rows_with_multipliers(tmp_path):
