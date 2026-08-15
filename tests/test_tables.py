@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import statistics
 from io import StringIO
 
 from rich.console import Console
@@ -174,6 +175,29 @@ def test_mem_columns_stat_selection_adds_stddev_median():
     assert set(cols) == {"peak·median (B)", "peak·stddev"}
     assert cols["peak·median (B)"](res) == "200"  # median of 100/200/300
     assert cols["peak·stddev"](res) == "100"  # sample stdev of the three
+
+
+def test_stddev_is_one_estimator_across_both_surfaces():
+    # The pytest table and `benchmem compare --stat stddev` reduce a series with the *same*
+    # function, and it's the one pytest-benchmark uses for the timing column rendered beside
+    # it — otherwise the same three samples read two different ways in one table. Cross-checked
+    # against upstream rather than restating the formula, so a change there surfaces here.
+    from pytest_benchmark.stats import Stats
+
+    from pytest_benchmem.snapshot import STATS
+    from pytest_benchmem.tables import _STAT_FNS
+
+    assert _STAT_FNS is STATS  # one definition, not two that happen to agree today
+
+    series = [244682703.0, 252989391.0, 252596239.0]  # a real 3-pass peak_bytes spread
+    upstream = Stats()
+    for v in series:
+        upstream.update(v)
+    assert STATS["stddev"](series) == upstream.stddev
+
+    # the population form would read ~18% low at this sample size — the bug this pins
+    assert STATS["stddev"](series) > statistics.pstdev(series)
+    assert STATS["stddev"]([5.0]) == 0.0  # single pass reads 0 rather than raising
 
 
 def test_parse_metrics_and_stats_reject_unknown():
