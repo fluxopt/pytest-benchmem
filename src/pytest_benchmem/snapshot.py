@@ -46,14 +46,29 @@ _METRIC_FIELD = {
     "rss": "rss_bytes",
 }
 
-#: ``--stat`` choices → reducer over a per-repeat series. ``pstdev`` (population) so a
-#: single repeat reads as ``0`` rather than raising.
-STATS: dict[str, Callable[[list[float]], float]] = {
+
+def sample_stdev(values: Sequence[float]) -> float:
+    """Sample standard deviation (Bessel-corrected), or ``0.0`` for fewer than two values.
+
+    Matches ``pytest_benchmark.stats.Stats.stddev`` exactly, guard included, so a memory
+    column and the timing column beside it in the same table mean the same thing by the same
+    estimator. The passes are a *sample* of the runs the code could have had, not the whole
+    population, which is what the correction is for — and it matters most at the pass counts
+    this plugin produces: at three passes the population form reads 18% low.
+    """
+    return statistics.stdev(values) if len(values) > 1 else 0.0
+
+
+#: ``--stat`` choices → reducer over a per-repeat series. The single source for every stat
+#: name the analysis surfaces read (``benchmem compare``) *and* the pytest terminal table
+#: builds its columns from (:data:`pytest_benchmem.tables._STAT_FNS`) — one definition, so the
+#: two can't disagree about what a stat means.
+STATS: dict[str, Callable[[Sequence[float]], float]] = {
     "min": min,
     "max": max,
     "mean": statistics.fmean,
     "median": statistics.median,
-    "stddev": statistics.pstdev,
+    "stddev": sample_stdev,
 }
 
 #: Key under which ``benchmark_memory`` stores its memory blob in ``extra_info``.

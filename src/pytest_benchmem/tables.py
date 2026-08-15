@@ -18,11 +18,11 @@ deterministic allocation count) stays a single column. The column logic
 
 from __future__ import annotations
 
-import statistics
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from pytest_benchmem.format import byte_unit, fmt_bytes, fmt_count, growth
+from pytest_benchmem.snapshot import STATS
 
 if TYPE_CHECKING:
     from rich.table import Table
@@ -60,14 +60,10 @@ ALL_METRICS: tuple[str, ...] = tuple(_METRIC_SPEC)
 #: :func:`mem_columns` drops it for in-process runs (no values), leaving the table unchanged
 #: there. ``allocated`` / ``allocations`` stay opt-in.
 DEFAULT_METRICS: tuple[str, ...] = ("peak", "rss")
-#: The distribution stats a multi-repeat metric can spread into.
-_STAT_FNS: dict[str, Callable[[Sequence[float]], float]] = {
-    "min": min,
-    "mean": statistics.fmean,
-    "max": max,
-    "median": statistics.median,
-    "stddev": lambda xs: statistics.stdev(xs) if len(xs) > 1 else 0.0,
-}
+#: The distribution stats a multi-repeat metric can spread into — :data:`snapshot.STATS`
+#: itself, so this table and ``benchmem compare`` reduce a series identically. Defining the
+#: reducers here as well is how the two came to disagree about ``stddev``.
+_STAT_FNS: dict[str, Callable[[Sequence[float]], float]] = STATS
 #: Default spread stats shown when a benchmark was measured more than once.
 DEFAULT_STATS: tuple[str, ...] = ("min", "mean", "max")
 
