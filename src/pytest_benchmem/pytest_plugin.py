@@ -322,13 +322,6 @@ def _record_memory(
     and ``max_time`` pass through too. Any ``max_*`` ``limits`` are enforced on the result
     (freshly measured or reused), so a breach fails once.
     """
-    if isolate and setup is not None:
-        # pedantic `setup` rebuilds per-sample state via a closure that can't cross the spawn
-        # boundary — and "make it a top-level function" (the generic pickling error) won't help.
-        raise ValueError(
-            "isolate=True can't carry per-sample `setup` state across the process boundary. "
-            "Drop `setup`, or drop isolation for this benchmark."
-        )
     existing = benchmark.extra_info.get(BENCHMEM_KEY)
     if isinstance(existing, Mapping):
         result = MemoryResult.from_blob(existing)
@@ -466,25 +459,41 @@ def _pedantic_action(
     counted, and a stateful ``target`` (one that caches on / mutates a carried-over object)
     gets fresh state per sample instead of a decaying or accumulating peak series. If ``setup``
     returns ``(args, kwargs)`` those feed the tracked ``target``, matching pytest-benchmark.
-    Returns ``None`` for the setup when the caller passed none (the action just re-runs); in
-    that case the tracked action is a :func:`functools.partial`, so it stays picklable for
-    ``isolate=True`` (a ``setup`` that mutates carried-over state is a closure and can't be
-    isolated — that path raises the actionable picklability error).
+    Returns ``None`` for the setup when the caller passed none (the action just re-runs).
+
+    Both halves are plain objects rather than closures so that ``isolate=True`` can ship them
+    to its spawned child: they pickle whenever ``target`` and ``setup`` do, and they travel in
+    one payload, so the sample the setup feeds is the sample the child tracks.
     """
     if setup is None:
         return None, partial(target, *args, **kwargs)
+    sample = _Sample(target, args, dict(kwargs))
+    return _Rebuild(setup, sample), sample
 
-    state: dict[str, Any] = {"args": args, "kwargs": dict(kwargs)}
 
-    def tracked() -> Any:
-        return target(*state["args"], **state["kwargs"])
+@dataclass
+class _Sample:
+    """The tracked half of a pedantic call: ``target`` over whatever the last setup produced."""
 
-    def untracked_setup() -> None:
-        produced = setup()
+    target: Callable[..., Any]
+    args: tuple[Any, ...]
+    kwargs: dict[str, Any]
+
+    def __call__(self) -> Any:
+        return self.target(*self.args, **self.kwargs)
+
+
+@dataclass
+class _Rebuild:
+    """The untracked half: run ``setup``, and hand what it returns to the sample."""
+
+    setup: Callable[[], Any]
+    sample: _Sample
+
+    def __call__(self) -> None:
+        produced = self.setup()
         if produced is not None:
-            state["args"], state["kwargs"] = produced
-
-    return untracked_setup, tracked
+            self.sample.args, self.sample.kwargs = produced
 
 
 @pytest.fixture

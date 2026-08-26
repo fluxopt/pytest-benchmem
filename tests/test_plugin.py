@@ -13,7 +13,7 @@ import platform
 import pytest
 
 import pytest_benchmem.pytest_plugin as plugin
-from pytest_benchmem.memray import Measurement, MemoryResult
+from pytest_benchmem.memray import Measurement, MemoryResult, measure_memory
 from pytest_benchmem.snapshot import from_pytest_benchmark, memory_from_pytest_benchmark
 
 pytest.importorskip("memray")
@@ -484,16 +484,48 @@ def test_isolate_from_node_marker_wins_else_default():
     assert plugin._isolate_from_node(_FakeNode(None)) is False
 
 
-def test_isolate_with_setup_is_rejected_with_specific_message():
-    """isolate + per-sample setup (a pedantic state closure) fails with a targeted message —
-    'make it top-level' (the generic pickling error) wouldn't help here."""
+def test_isolate_with_a_closure_setup_names_the_pickling_rule():
+    """isolate + a setup that can't be pickled fails with the same actionable message the action
+    gets — a top-level function is the fix, and the message says so."""
 
     class _Bench:
         extra_info: dict[str, object] = {}
         fullname = "t"
 
-    with pytest.raises(ValueError, match="per-sample"):
-        plugin._record_memory(_Bench(), lambda: None, setup=lambda: None, isolate=True)  # type: ignore[arg-type]
+    with pytest.raises(RuntimeError, match="picklable"):
+        plugin._record_memory(_Bench(), _no_op, setup=lambda: None, isolate=True)  # type: ignore[arg-type]
+
+
+def _no_op() -> None:
+    pass
+
+
+_PEDANTIC_SETUPS: list[int] = []
+
+
+def _pedantic_setup() -> tuple[tuple[int], dict[str, object]]:
+    """Top-level, so it pickles: hands the sample fresh args, and records that it ran here."""
+    _PEDANTIC_SETUPS.append(len(_PEDANTIC_SETUPS))
+    return (3,), {}
+
+
+def _pedantic_target(n: int) -> int:
+    """Fails unless ``setup`` ran in this process and fed it ``n``."""
+    assert _PEDANTIC_SETUPS, "setup did not run in the child"
+    return len(bytearray(n * 1024 * 1024))
+
+
+def test_isolate_ships_a_pedantic_setup_to_the_child():
+    """A pedantic ``setup`` reaches the isolated child and feeds the tracked sample.
+
+    It used to be refused outright under ``isolate=True``, because the split into setup and
+    sample was two closures sharing a dict; the child then had no setup and a stateful sample
+    saw state it never built. Now both halves pickle whenever the user's callables do.
+    """
+    untracked, tracked = plugin._pedantic_action(_pedantic_target, (), {}, _pedantic_setup)
+    res = measure_memory(tracked, setup=untracked, repeats=1, warmup=0, isolate=True)
+    assert res.peak_bytes > 2 * 1024**2, "the sample ran over the args the setup returned"
+    assert not _PEDANTIC_SETUPS, "setup ran in the child, not in this process"
 
 
 def _result(peak: int, allocs: int = 1, total: int = 1) -> MemoryResult:
