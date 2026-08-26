@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.5](https://github.com/fluxopt/pytest-benchmem/compare/v0.5.4...v0.5.5) (2026-08-26)
+
+
+### Bug Fixes
+
+* **plugin:** an isolated memory pass takes a pedantic setup ([#204](https://github.com/fluxopt/pytest-benchmem/issues/204)) ([a10b460](https://github.com/fluxopt/pytest-benchmem/commit/a10b460a34fbca248563174ef74c7a5b645109a6))
+
 ## [0.5.4](https://github.com/fluxopt/pytest-benchmem/compare/v0.5.3...v0.5.4) (2026-08-15)
 
 
