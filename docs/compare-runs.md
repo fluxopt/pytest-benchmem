@@ -44,8 +44,10 @@ and stores it in the run file, so reading it costs nothing:
 
 ```bash
 benchmem compare run.json --columns time --stat min,iqr,median --csv spread.csv
-# → id,time:min:run,time:iqr:run,time:median:run
+# → id,<dims…>,time:min:run,time:iqr:run,time:median:run
 ```
+
+(the `<dims…>` are the benchmark's params — see [Order and export](#order-and-export).)
 
 The memory metrics record one exact value per pass and there are only a handful of passes (3–10),
 so a quartile spread over them is arithmetic on a few numbers rather than a noise estimate — asking
@@ -152,6 +154,35 @@ first), and write raw numbers for another tool with `--csv`:
 ```bash
 benchmem compare baseline.json candidate.json --columns peak --sort value --csv peak.csv
 ```
+
+The CSV is a **tidy table**: identity columns first (`id`, then one per analysis dim), then one
+value column per `metric:stat:series`. So you join on the dims rather than parsing them back out
+of the id:
+
+```bash
+benchmem compare latest.json --pivot param:arm \
+    --columns time,rss,extra:live_fraction --stat median --csv spread.csv
+```
+
+```
+id,case_name,size,sink,time:median:lpspec,time:median:linopy,rss:median:lpspec,…
+bench/test_ladder.py::test_emit[dispatch-l-gurobi],dispatch,l,gurobi,0.525,0.6825,…
+```
+
+Three rules decide what becomes an identity column:
+
+- **Params and scalar `extra_info` become columns**, with raw values (`dispatch`, not
+  `case_name=dispatch`, which is the table's sub-header form). `--group-by` doesn't affect the
+  file — it lays out the terminal table, while every dim lands here regardless, so an export
+  never depends on how the table happened to be grouped.
+- **A `--pivot`ed dim doesn't**, because pivoting makes its values the series axis: they're
+  already in the value-column suffixes (`time:median:lpspec`), and one cell couldn't hold them.
+- **A dim that differs between a row's series doesn't either.** Only one of its values could go
+  in the cell, so joining on it would silently attach one series' value to all of them.
+  `extra_info` varies this way by design — read it per series with `--columns extra:NAME` (above)
+  — while a param can't, since params are part of the id that pairs the rows.
+
+The structural `node.*` dims are omitted throughout: `id` already carries them.
 
 ## Sharing the table
 
