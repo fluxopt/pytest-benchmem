@@ -214,6 +214,83 @@ def test_csv_writes_raw_values_per_metric_run(tmp_path):
     assert "10485760" in text and "12582912" in text  # raw bytes, not unit-scaled
 
 
+def _header(csv):
+    """The CSV header row, split into field names."""
+    return csv.read_text().splitlines()[0].split(",")
+
+
+def test_csv_carries_params_as_identity_columns(tmp_path):
+    # the file is a tidy table you can join on, not an opaque id plus numbers: every param
+    # lands as its own column, so a consumer never parses `test_x[dispatch-l]` back apart
+    def _p(case, size, peak):
+        return bm("t.py::test_x", peak=peak, params={"case_name": case, "size": size})
+
+    a = write_run(tmp_path / "a.json", [_p("dispatch", "l", 1024)])
+    b = write_run(tmp_path / "b.json", [_p("dispatch", "l", 2048)])
+    csv = tmp_path / "out.csv"
+    render([a, b], columns="peak", stat="min", csv=csv)
+    header = _header(csv)
+    assert header[:3] == ["id", "case_name", "size"]  # identity columns lead, in param order
+    assert "dispatch,l" in csv.read_text()  # raw values, not "case_name=dispatch"
+    assert "peak:min:a" in header and "peak:min:b" in header  # value columns still follow
+
+
+def test_csv_omits_node_dims_already_in_the_id(tmp_path):
+    a = write_run(tmp_path / "a.json", [bm("t.py::test_x", peak=1024)])
+    b = write_run(tmp_path / "b.json", [bm("t.py::test_x", peak=2048)])
+    csv = tmp_path / "out.csv"
+    render([a, b], columns="peak", stat="min", csv=csv)
+    assert not [c for c in _header(csv) if c.startswith("node.")]  # id already carries them
+
+
+def test_csv_omits_a_dim_that_differs_between_series(tmp_path):
+    # a dim whose value moves per series can't honestly sit in one identity cell -- a consumer
+    # joining on it would attach run a's value to run b's row. It stays available per series
+    # through --columns extra:NAME, which is what that flag is for.
+    a = write_run(tmp_path / "a.json", [_bm_labeled("test_x", peak=1024, flows=204)])
+    b = write_run(tmp_path / "b.json", [_bm_labeled("test_x", peak=2048, flows=210)])
+    csv = tmp_path / "out.csv"
+    render([a, b], columns="peak,extra:flows", stat="min", csv=csv)
+    header = _header(csv)
+    assert "flows" not in header  # not as a single identity column...
+    assert "extra:flows:a" in header and "extra:flows:b" in header  # ...but per series
+
+
+def test_csv_keeps_a_dim_that_holds_across_series(tmp_path):
+    # the same shape as the test above, but the label doesn't move -- so it *is* an identity
+    # column, and the row can be joined on it
+    a = write_run(tmp_path / "a.json", [_bm_labeled("test_x", peak=1024, flows=204)])
+    b = write_run(tmp_path / "b.json", [_bm_labeled("test_x", peak=2048, flows=204)])
+    csv = tmp_path / "out.csv"
+    render([a, b], columns="peak", stat="min", csv=csv)
+    assert "flows" in _header(csv)
+
+
+def test_csv_pivot_dim_rides_in_the_column_suffix_not_a_row_column(tmp_path):
+    # --pivot makes a dim the series axis, so its values are already the column suffixes;
+    # repeating it as a row column would be both redundant and impossible (one cell, N values)
+    runs = [
+        bm("t.py::test_x[lpspec]", peak=1024, params={"arm": "lpspec", "case_name": "dispatch"}),
+        bm("t.py::test_x[linopy]", peak=2048, params={"arm": "linopy", "case_name": "dispatch"}),
+    ]
+    a = write_run(tmp_path / "a.json", runs)
+    csv = tmp_path / "out.csv"
+    render([a], columns="peak", stat="min", pivot="param:arm", csv=csv)
+    header = _header(csv)
+    assert "arm" not in header  # lifted onto the series axis
+    assert "peak:min:lpspec" in header and "peak:min:linopy" in header  # ...as the suffixes
+    assert "case_name" in header  # the dims that stayed on the row are still columns
+
+
+def test_csv_is_unchanged_when_the_runs_carry_no_dims(tmp_path):
+    # no params, no extra_info → the file keeps exactly its old shape
+    a = write_run(tmp_path / "a.json", [bm("test_x", peak=1024)])
+    b = write_run(tmp_path / "b.json", [bm("test_x", peak=2048)])
+    csv = tmp_path / "out.csv"
+    render([a, b], columns="peak", stat="min", csv=csv)
+    assert _header(csv) == ["id", "peak:min:a", "peak:min:b"]
+
+
 def test_sort_value_orders_rows_in_a_single_table(tmp_path):
     a = write_run(tmp_path / "a.json", [bm("small", peak=1024), bm("big", peak=10 * 1024**2)])
     b = write_run(tmp_path / "b.json", [bm("small", peak=1024), bm("big", peak=10 * 1024**2)])
