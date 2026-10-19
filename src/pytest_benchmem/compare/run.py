@@ -1,7 +1,7 @@
 """``compare_runs`` — the dispatcher that loads the columns once and fans out to a view.
 
 It resolves ``--columns`` / ``--stat`` / ``--group-by`` / ``--sort``, loads the shared
-``(labels, values, units, dims)`` model, then renders it as the multiplier table (:mod:`.table`)
+:data:`~.model._Loaded` model, then renders it as the multiplier table (:mod:`.table`)
 or, under ``diff=True``, the baseline diff (:mod:`.diff`) — in ``table`` or ``md`` form.
 """
 
@@ -19,6 +19,8 @@ from pytest_benchmem.compare.diff import (
 from pytest_benchmem.compare.model import (
     _SORTS,
     _col_id,
+    _CsvTable,
+    _dim_columns,
     _display_metric,
     _group_of,
     _is_extra,
@@ -107,7 +109,9 @@ def compare_runs(
     metrics = cast("list[Metric]", [c for c in cols_spec if not _is_extra(c)])
     extras = [_display_metric(c) for c in cols_spec if _is_extra(c)]
     stats = _resolve_stats("min" if diff and stat is None else stat, metrics)
-    labels, values, units, dims = _load_columns(runs, metrics, stats, pivot, extras=extras)
+    labels, values, units, dims, per_series = _load_columns(
+        runs, metrics, stats, pivot, extras=extras
+    )
     if not labels:
         raise ValueError("no benchmarks found in the given run(s)")
     if len(labels) < 2 and len(runs) > 1:  # noqa: PLR2004 — distinct paths collapsed to one series
@@ -128,7 +132,17 @@ def compare_runs(
     cols = [(m, s) for m, s in all_cols if _col_id(m, s) in with_data] or all_cols  # drop empties
     ids = sorted({test_id for _c, test_id, _lab in values})
     if csv is not None:
-        _write_csv(values, [_col_id(m, s) for m, s in cols], ids, labels, csv)
+        _write_csv(
+            _CsvTable(
+                ids=ids,
+                dim_columns=_dim_columns(ids, dims, per_series),
+                dims=dims,
+                value_columns=[_col_id(m, s) for m, s in cols],
+                labels=labels,
+                values=values,
+            ),
+            csv,
+        )
 
     groups: dict[tuple[str, ...], list[str]] = {}
     for test_id in ids:

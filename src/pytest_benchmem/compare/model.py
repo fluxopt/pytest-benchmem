@@ -1,8 +1,8 @@
 """Shared substrate for the ``compare`` views — loading and the renderer-agnostic helpers.
 
 Both the multiplier table (:mod:`.table`) and the diff view (:mod:`.diff`) build on this:
-:func:`_load_columns` turns pytest-benchmark JSON into the ``(labels, values, units, dims)``
-tuple every renderer reads, and the small helpers here (``--columns`` / ``--stat`` / ``--group-by``
+:func:`_load_columns` turns pytest-benchmark JSON into the :data:`_Loaded` tuple every
+renderer reads, and the small helpers here (``--columns`` / ``--stat`` / ``--group-by``
 parsing, row ordering, id shortening, value formatting) are format-agnostic. The regression gate
 (:mod:`.gate`) reuses only the field table and unit maps.
 """
@@ -10,12 +10,14 @@ parsing, row ordering, id shortening, value formatting) are format-agnostic. The
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Collection, Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from pytest_benchmem.format import fmt_label
 from pytest_benchmem.snapshot import (
+    NODE_DIM_PREFIX,
     RESERVED_COLUMNS,
     STATS,
     Metric,
@@ -239,14 +241,24 @@ def _md_escape(text: str) -> str:
     return text.replace("|", "\\|")
 
 
+#: What :func:`_load_columns` hands back, slot by slot — named because it's five wide.
+_Loaded = tuple[
+    list[str],  # series labels, in natural order (file order, or pivot dim-value order)
+    dict[tuple[str, str, str], float],  # (col_id, id, series) → value
+    dict[str, str],  # metric → display unit
+    dict[str, dict[str, Any]],  # id → its dims (first series to carry the id wins)
+    set[str],  # dims that differ between the series of some id — see :func:`_dim_columns`
+]
+
+
 def _load_columns(
     runs: Sequence[str | Path],
     metrics: Sequence[Metric],
     stats: Sequence[str],
     pivot: str | None = None,
     extras: Sequence[str] = (),
-) -> tuple[list[str], dict[tuple[str, str, str], float], dict[str, str], dict[str, dict[str, Any]]]:
-    """Load each ``metric × stat`` column into ``(labels, values, units, dims)``.
+) -> _Loaded:
+    """Load each ``metric × stat`` column into :data:`_Loaded`.
 
     Columns are keyed by a ``"metric:stat"`` id; ``values`` maps ``(col_id, id, series) →
     value``, ``units`` maps ``metric → unit``. The series labels keep their natural order —
@@ -263,6 +275,7 @@ def _load_columns(
     values: dict[tuple[str, str, str], float] = {}
     units: dict[str, str] = {}
     dims: dict[str, dict[str, Any]] = {}
+    per_series: set[str] = set()
 
     def collect(df: Any) -> None:
         """Register the series labels, dims and ``extras`` values one long df carries."""
@@ -271,7 +284,10 @@ def _load_columns(
                 labels.append(lab)
         dim_cols = [c for c in df.columns if c not in RESERVED_COLUMNS]
         for idx, test_id in enumerate(df["id"]):
-            dims.setdefault(test_id, {c: df[c].iloc[idx] for c in dim_cols})
+            row = {c: df[c].iloc[idx] for c in dim_cols}
+            first = dims.setdefault(test_id, row)
+            if first is not row:  # this id again, from another series — note what moved
+                per_series.update(c for c in dim_cols if _dim_differs(first.get(c), row.get(c)))
         for name in extras:
             if name not in df.columns:
                 continue
@@ -303,7 +319,7 @@ def _load_columns(
         df, _unit = load_long_df(paths, metric="time", stat="min", pivot=pivot)
         if not df.empty:
             collect(df)
-    return labels, values, units, dims
+    return labels, values, units, dims, per_series
 
 
 def _ordered_ids(
@@ -333,18 +349,93 @@ def _ordered_ids(
     return sorted(ids, key=lambda i: -growth(i))
 
 
-def _write_csv(
-    values: dict[tuple[str, str, str], float],
-    columns: Sequence[str],
-    ids: list[str],
-    labels: list[str],
-    path: Path,
-) -> None:
-    """Write the raw (unscaled) comparison: one row per id, a column per ``metric:run``."""
+def _dim_differs(a: Any, b: Any) -> bool:
+    """Whether two readings of one dim disagree, treating ``NaN`` as equal to itself.
+
+    A dim absent from a frame comes back as ``NaN``, and ``NaN != NaN``, so a plain ``!=``
+    would call every absent dim per-series and drop it from the export.
+    """
+    a_nan = isinstance(a, float) and math.isnan(a)
+    b_nan = isinstance(b, float) and math.isnan(b)
+    if a_nan or b_nan:
+        return not (a_nan and b_nan)
+    return bool(a != b)
+
+
+def _dim_columns(
+    ids: Sequence[str],
+    dims: Mapping[str, Mapping[str, Any]],
+    per_series: Collection[str] = (),
+) -> list[str]:
+    """The analysis dims to write as CSV identity columns, in first-seen order.
+
+    Every dim the rows carry — their parametrize ``params`` and scalar ``extra_info`` — minus
+    two kinds that would lie in an identity column:
+
+    - the structural ``node.*`` dims, already readable off ``id``;
+    - anything in ``per_series``, i.e. a dim whose value *differs* between the series of one
+      row. Only one of those values could go in a single cell, so a consumer joining on the
+      column would silently attach one series' value to every series. ``extra_info`` varies
+      this way by design (that's what ``--columns extra:NAME`` is for, one column per series);
+      a param cannot, since params are part of the id that pairs the rows.
+
+    First-seen order (not sorted), so the file tracks the run's own param order.
+    """
+    out: list[str] = []
+    for test_id in ids:
+        for key in dims.get(test_id, {}):
+            if key.startswith(NODE_DIM_PREFIX) or key in per_series or key in out:
+                continue
+            out.append(key)
+    return out
+
+
+@dataclass(frozen=True)
+class _CsvTable:
+    """The tidy shape of an exported comparison: identity columns, then value columns.
+
+    Two kinds of column, which is the distinction worth naming. **Identity** columns describe
+    *which* benchmark a row is — ``id`` plus one per dim (:func:`_dim_columns`), written as raw
+    values (``dispatch``, not ``case_name=dispatch``, which is the table's sub-header form) so
+    the file can be joined on them instead of parsed back out of the id. **Value** columns are
+    one per ``metric:stat`` × series, named ``<metric>:<stat>:<series>``.
+
+    A ``--pivot``ed dim is deliberately absent from ``dim_columns``: pivoting makes its values
+    the series axis, so they appear in the value-column suffixes instead
+    (``time:median:lpspec``). ``--group-by`` doesn't affect this file at all — it groups the
+    rendered table, whereas every dim lands here regardless, so an export never depends on how
+    the terminal table happened to be laid out.
+    """
+
+    ids: Sequence[str]
+    dim_columns: Sequence[str]
+    dims: Mapping[str, Mapping[str, Any]]
+    value_columns: Sequence[str]
+    labels: Sequence[str]
+    values: Mapping[tuple[str, str, str], float]
+
+    def rows(self) -> list[dict[str, Any]]:
+        """One row per id: ``id``, its dim values, then a value per ``column × series``.
+
+        A dim a row doesn't carry, and a column that benchmark has no measurement for, are
+        both left as ``None`` — pandas writes them as empty cells.
+        """
+        return [
+            {
+                "id": test_id,
+                **{d: self.dims.get(test_id, {}).get(d) for d in self.dim_columns},
+                **{
+                    f"{col}:{lab}": self.values.get((col, test_id, lab))
+                    for col in self.value_columns
+                    for lab in self.labels
+                },
+            }
+            for test_id in self.ids
+        ]
+
+
+def _write_csv(table: _CsvTable, path: Path) -> None:
+    """Write the raw (unscaled) comparison — see :class:`_CsvTable` for the shape."""
     import pandas as pd
 
-    rows = [
-        {"id": i, **{f"{m}:{lab}": values.get((m, i, lab)) for m in columns for lab in labels}}
-        for i in ids
-    ]
-    pd.DataFrame(rows).set_index("id").to_csv(path)
+    pd.DataFrame(table.rows()).set_index("id").to_csv(path)
