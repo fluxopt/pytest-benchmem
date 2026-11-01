@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.15' and sys_platform == 'win32'",
@@ -636,7 +636,7 @@ wheels = [
 
 [[package]]
 name = "ipykernel"
-version = "7.3.0"
+version = "7.4.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "appnope", marker = "sys_platform == 'darwin'" },
@@ -648,14 +648,13 @@ dependencies = [
     { name = "matplotlib-inline" },
     { name = "nest-asyncio2" },
     { name = "packaging" },
-    { name = "psutil" },
     { name = "pyzmq" },
     { name = "tornado" },
     { name = "traitlets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/3d/c4/e4a38f579de4225a561305666f7541cdabb30075def2aa1ac17bd73c1fb5/ipykernel-7.3.0.tar.gz", hash = "sha256:9acaaaf97d16355166e4085afe9d225bfbdf2b7ef520f9df3be8f2b248275e09", size = 184899, upload-time = "2026-06-10T08:41:25.481Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/7a/05/e5499c8b762387d83926bf0389e8fff888c9bf6e7af30566a8527bc12f4a/ipykernel-7.4.0.tar.gz", hash = "sha256:4330114d22b9b33575b2c7c68753fc8faabbbcfbc60b0cdff9f14dd4ce63742f", size = 192731, upload-time = "2026-09-29T16:33:11.468Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3d/02/77b271f5dc58bfbc0b577c877b2365d1ffea2afe66a80c13f2312820348c/ipykernel-7.3.0-py3-none-any.whl", hash = "sha256:897eb64da762549ef610698fca5e9675195ec6ac8ec7f19d81ce1ca20c876057", size = 120583, upload-time = "2026-06-10T08:41:23.648Z" },
+    { url = "https://files.pythonhosted.org/packages/a5/f8/8b5c10c7f36ab5a3b5c4703669e5b14e44e98782b58e535dd30670e8799a/ipykernel-7.4.0-py3-none-any.whl", hash = "sha256:a6757f790ddc5a6006b813d82da1a9dbb65b3a00f2b6607df776418c6566ec1c", size = 123184, upload-time = "2026-09-29T16:33:09.612Z" },
 ]
 
 [[package]]
@@ -785,7 +784,7 @@ wheels = [
 
 [[package]]
 name = "jupytext"
-version = "1.19.5"
+version = "1.19.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "markdown-it-py" },
@@ -794,9 +793,9 @@ dependencies = [
     { name = "packaging" },
     { name = "pyyaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a1/ca/473f8ebb101553fb2ea6ab1d34324d6677844c968947ac050c759d539f2c/jupytext-1.19.5.tar.gz", hash = "sha256:605026446d605aa54fd7f7fc69df6ae51c7a46053d4cebf05afdc64d66de3df0", size = 4600916, upload-time = "2026-07-21T22:00:29.198Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/79/7f/5d2cc9618eca61dbc2d76628da3622a311702abd6b15c824bbf2b53e0db6/jupytext-1.19.6.tar.gz", hash = "sha256:ba1d143bb3751e054d3164376b148ee8fa74e1a860fc9411e1da93ff588b8a17", size = 4603767, upload-time = "2026-10-04T21:00:31.103Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7c/c6/76ee9dacedcd8c67d8fa53dd975613733bdd28242a4c41518ff1c8aeaa64/jupytext-1.19.5-py3-none-any.whl", hash = "sha256:af22351202171116b986fe1f4f9233a13ca4a85d5eec57a87900ed48521dbae4", size = 229246, upload-time = "2026-07-21T22:00:27.218Z" },
+    { url = "https://files.pythonhosted.org/packages/70/c3/c4eff5bdbe79b688dda8f06f2b66dbcf9a483cf660e5ced0b2dd5c21623d/jupytext-1.19.6-py3-none-any.whl", hash = "sha256:eb725d66841f1a91707bdcf4703b194a53151a060ecb3fd31d78139cc9ec090a", size = 230809, upload-time = "2026-10-04T21:00:29.143Z" },
 ]
 
 [[package]]
@@ -1228,7 +1227,7 @@ wheels = [
 
 [[package]]
 name = "mkdocs-material"
-version = "9.7.7"
+version = "9.8.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "babel" },
@@ -1243,9 +1242,9 @@ dependencies = [
     { name = "pymdown-extensions" },
     { name = "requests" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f1/cd/c05d3a530ba7934f144fb45f7203cd236adc25c7bdcc34673d202f4b0278/mkdocs_material-9.7.7.tar.gz", hash = "sha256:c0649c065b1b0512d60aad8c10f947f8e455284475239b364b610f2deb4d0855", size = 4097923, upload-time = "2026-07-17T16:21:33.156Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b9/02/3c0df248819286810d8479b3a72d9531db0cc36c042fe1ab3985f137c664/mkdocs_material-9.8.0.tar.gz", hash = "sha256:1ed4c5edaf405a3fb62e55288b8fdff592971729361548b1ffa757bf9849fb81", size = 4094495, upload-time = "2026-10-24T09:50:16.181Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ad/21/17c1bc9e6f47c972ad66fb2ac2568f99f90f1207eeb6fc3b34d094dba7b5/mkdocs_material-9.7.7-py3-none-any.whl", hash = "sha256:8ea9bb1737a5b524a5f9dcf2e1b4ebda8274ae3008aa7845720a97083bef708f", size = 9305438, upload-time = "2026-07-17T16:21:30.017Z" },
+    { url = "https://files.pythonhosted.org/packages/c8/16/360f44c7702f27ff4670a647a16c72432291e311371d72b4c34a57e990e0/mkdocs_material-9.8.0-py3-none-any.whl", hash = "sha256:19304a7263c5700428227122b3b2699aa73f432c9de8816876adaec7d7293ce3", size = 9302245, upload-time = "2026-10-24T09:50:12.636Z" },
 ]
 
 [[package]]
@@ -2089,15 +2088,15 @@ wheels = [
 
 [[package]]
 name = "pymdown-extensions"
-version = "10.21.3"
+version = "12.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "markdown" },
     { name = "pyyaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9e/26/d1015444da4d952a1ca487a236b522eb979766f0295a0bd0c5fc089989a9/pymdown_extensions-10.21.3.tar.gz", hash = "sha256:72cfcf55f07aea0d4af2c4f11dd4e52466ddfb1bb819673146398e0bd3a77354", size = 854140, upload-time = "2026-05-13T12:57:32.267Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f3/fe/ac50ee24a80a1b344e643f6fb626063cc7041b978cd1dd9a7f9963ae1cd1/pymdown_extensions-12.3.tar.gz", hash = "sha256:a7f2a4e0bc60c6e6babfa7922cfb3b01cd640eb00fb208f3c582e12bae00ea67", size = 870532, upload-time = "2026-10-14T22:40:43.252Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7e/85/545a951eecc270fcd688288c600017e2050a1aacb56c711d208586d3e470/pymdown_extensions-10.21.3-py3-none-any.whl", hash = "sha256:d7a5d08014fc571e80ca21dd6f854e31f94c489800350564d55d15b3c41e76b6", size = 269002, upload-time = "2026-05-13T12:57:30.296Z" },
+    { url = "https://files.pythonhosted.org/packages/8a/d0/758afe732c2da502c051b4d03ff88daa3c0fc1a1e671e6c5a6318177bab4/pymdown_extensions-12.3-py3-none-any.whl", hash = "sha256:345493a8e3497e24382902903a1c43a28e34a52f2b7571a1c9641429b820ca74", size = 277597, upload-time = "2026-10-14T22:40:41.543Z" },
 ]
 
 [[package]]
